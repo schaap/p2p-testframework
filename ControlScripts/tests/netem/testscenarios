@@ -1,0 +1,78 @@
+HOST_TC_IFACE="eth0"
+
+HOST_TC_INBOUNDPORTS		""	or	-1 	or	22
+HOST_TC_OUTBOUNDPORTS		""	or	-1 	or 	22
+HOST_TC_LOSS			0.0	or	5
+HOST_TC_CORRUPTION		0.0	or 	5
+HOST_TC_DUPLICATION		0.0	or	50
+HOST_TC_DOWN			""	or	10mbit
+HOST_TC_DOWN_BURST		""	or	50mbit
+HOST_TC_UP			""	or	10mbit
+HOST_TC_UP_BURST		""	or	50mbit
+HOST_TC_DELAY			0ms	or	200ms
+
+
+tcInstall "host"
+
+
+
+All settings default values (first mentioned) unless otherwise noted.
+
+INBOUND		-1
+DOWN		10mbit
+
+INBOUND 	22
+DOWN		10mbit
+
+INBOUND		-1
+DOWN		10mbit
+DOWN_BURST	50mbit
+
+INBOUND		-1
+LOSS		5
+
+INBOUND		-1
+CORRUPTION	5
+
+INBOUND		-1
+DUPLICATION	50
+
+INBOUND		-1
+LOSS		5
+DOWN		10mbit
+
+INBOUND		-1
+LOSS		5
+CORRUPTION	5
+DUPLICATION	5
+DOWN		10mbit
+DOWN_BURST	30mbit
+
+OUTBOUND	-1
+UP		10mbit
+
+OUTBOUND	22
+UP		10mbit
+
+OUTBOUND	-1
+UP		10mbit
+UP_BURST	30mbit
+
+OUTBOUND	-1
+DELAY		200ms
+
+OUTBOUND	-1
+UP		10mbit
+DELAY		200ms
+
+OUTBOUND	-1
+UP		10mbit
+UP_BURST	30mbit
+DELAY		200ms
+
+INBOUND		-1
+OUTBOUND	-1
+DOWN		10mbit
+UP		10mbit
+LOSS		5
+DELAY		200ms

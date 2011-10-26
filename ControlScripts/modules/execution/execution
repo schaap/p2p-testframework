@@ -1,0 +1,87 @@
+#!/bin/bash
+
+#
+# The execution of a client on a host. This is NOT a module, it's just implemented in the same structure for convenience' sake.
+#
+
+##
+# Loads previously saved settings into memory.
+#
+# @param    The number of the execution object to be loaded.
+##
+function executionLoadSettings() {
+    # Load the settings that were previously stored in ${LOCAL_TEST_DIR}/executions/exec_$1
+    # These files are written by execution:_parser_.sh
+    if [ ! -f "${LOCAL_TEST_DIR}/executions/exec_$1" ]; then
+        logError "execution:execution :: Can't load settings for execution $1"
+        fail
+    fi
+    . "${LOCAL_TEST_DIR}/executions/exec_$1"
+}
+
+##
+# Returns whether the current execution is supposed to be a seeder.
+#
+# @return   True (0) iff this execution is to be a seeder.
+##
+function executionIsSeeder() {
+    if [ -z "$EXECUTION_SEEDER" ]; then
+        return 1
+    fi
+    return 0
+}
+
+##
+# The number of this execution.
+#
+# @output   The number of this execution (zero-based integer).
+##
+function executionNumber() {
+    echo $EXECUTION_NUMBER
+}
+
+##
+# Loads the host for this execution.
+##
+function executionLoadHost() {
+    hostLoadSettings $EXECUTION_HOST
+}
+
+##
+# Loads the file for this execution
+##
+function executionLoadFile() {
+    fileLoadSettings $EXECUTION_FILE
+}
+
+##
+# Loads the client for this execution
+##
+function executionLoadClient() {
+    clientLoadSettings $EXECUTION_CLIENT
+}
+
+##
+# Runs all the parsers for this execution
+# Uses the client API if needed, so the client needs to be loaded.
+##
+function executionRunParsers() {
+    if [ "${#EXECUTION_PARSER[@]}" -gt 0 ]; then
+        for index in `seq 0 $((${#EXECUTION_PARSER[@]} - 1))`; do
+            parserLoadSetting ${EXECUTION_PARSER[index]}
+            parserParseLogs "$1" "$2"
+        done
+    else
+        clientLoadDefaultParser
+        parserParseLogs "$1" "$2"
+    fi
+}
+
+##
+# Returns the version number of the module.
+#
+# @output   The API version this module was written for.
+##
+function executionAPIVersion() {
+    echo "1.0.0"
+}

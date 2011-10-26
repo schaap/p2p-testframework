@@ -1,0 +1,53 @@
+#!/bin/bash
+
+#
+# A skeleton implementation (i.e. interface description) of the TC API.
+# The interface described in this file should be implemented by every TC module.
+# Module implementors can copy this file and modify it as they see fit.
+# All implementations need to implement all methods.
+#
+# TC modules use the settings of their parent host object. All methods can use the Hosts API
+# and should especially look at HOST_TC_PROTOCOL, HOST_TC_INBOUNDPORTS and HOST_TC_OUTBOUNDPORTS.
+#
+
+##
+# Checks whether traffic control can be set up on the host using the current settings.
+#
+# @return   True (0) iff traffic control can be set up.
+##
+function tcCheck() {
+    # TODO
+    echo "TO BE IMPLEMENTED"
+    return 1
+}
+
+##
+# Installs traffic control on the currently loaded host with the currently loaded settings.
+# Note that this function can't influence the surrounding environment due to the way it is called.
+#
+# @param    A space separated list of subnets of the other hosts.
+##
+function tcInstall() {
+    # TODO
+    echo "TO BE IMPLEMENTED"
+}
+
+##
+# Removes traffic control from the currently loaded host with the currently loaded settings.
+# Note that this function can't influence the surrounding environment due to the way it is called.
+##
+function tcRemove() {
+    # TODO
+    echo "TO BE IMPLEMENTED"
+}
+
+##
+# This function returns the API version implemented in this module.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function tcAPIVersion() {
+    echo "1.0.0"
+}

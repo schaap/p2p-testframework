@@ -1,0 +1,279 @@
+#!/bin/bash
+
+#
+# This viewer builds an HTML page based on all the processed data.
+# Note that it does not care what the data is, not does it understand it.
+# However, some sense is made of things by the following tricks:
+# - 'file' is used, when available, to determine what type of data each file is, and output is adjusted accordingly
+# - hostname_X, which X being the execution number, is looked for and, if available, executions are separated
+# -- a table is built with one row per execution
+# -- each file that matches the regular expression "..*_X(\..*)?" with X being the execution number, is taken to be part of that very execution
+# - subdirectories of the processed directory will not be recursed
+#
+# This module expects to find the following processed files:
+# - hostname_X, for execution based output (otherwise all data is thrown on one heap called 'other data'); use processor:savehostname to get this file
+#
+
+##
+# Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER .
+# Please return false (non-0) when an error occurs, instead of calling fail.
+# The way the settings are saved into ${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER/ does not matter, but make sure it exists and that ${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER/modulename contains the module subtype and nothing else.
+#
+# @param    The settings file to read from.
+# @param    The line number at which this viewer object was defined. The first line in the settings file is at line $(($2 + 1))
+#
+# @return   True (0) iff the settings were parsed and saves succesfully.
+##
+function viewerReadSettings() {
+    local parameterName=""
+    local parameterValue=""
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropiately
+        case $parameterName in
+            *)
+                logError "viewer:htmlcollection :: Unknown parameter name \"$parameterName\" in viewer $VIEWER_NUMBER. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    # Delegate the rest to the default implementation
+    viewerReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not.
+#
+# @param    The name of the file object to be loaded.
+##
+function viewerLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for viewerReadSettings is used
+    viewerLoadSettings__default "$1" "htmlcollection"
+}
+
+##
+# Creates the view from the processed data.
+#
+# @param    processedDir    The directory on the local machine where processed data resides.
+# @param    viewDir         The directory on the local machine where views are to be placed.
+##
+function viewerCreateView() {
+    # Make sure the relativepath.sh function library is loaded
+    loadFunctionsScript relativepath.sh
+    # Get the relative path from $2 to $1
+    local canon1="$1"
+    local canon2="$2"
+    if which readlink > /dev/null; then
+        # if readlink is available, try and canonicalize the paths; otherwise just hope they're canonical
+        local thereadlink=`which readlink`
+        canon1=`$thereadlink -e "$1"`
+        canon2=`$thereadlink -e "$2"`
+    fi
+    local relPath=`relativepath "$canon2" "$canon1"`
+
+    # See if file behaves as we expect. If not, let's not use it.
+    local useFile=1
+    if [ "`file -b --mime-type "${TEST_ENV_DIR}/run_campaign.sh" 2> /dev/null`" != "text/x-shellscript" ]; then
+        useFile=0
+        logError "viewer:htmlcollection :: the 'file' utility does not exist or does not behave as expected. Not using 'file' to determine the type of output files."
+        logError "Actual output: `file -b --mime-type "${TEST_ENV_DIR}/run_campaign.sh" 2> /dev/null`"
+    fi
+
+    # Test for the hostname_X files to see if we're going to build the executions table
+    local executionNumbers=1
+    for execNum in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+        if [ ! -f "$1/hostname_$execNum" ]; then
+            executionNumbers=0
+            break
+        fi
+    done
+
+    # cd to the processed dir to get easier listings
+    local olddir=`pwd`
+    cd "$1"
+
+    # Header of the output HTML, including table of contents
+    local out="$2/collection.html"
+    cat > "$out" <<EOF
+<html>
+    <head>
+        <title>HTML Collection output for scenario $SCENARIO_NAME</title>
+    </head>
+    <body>
+        <h1>$SCENARIO_NAME</h1>
+        <h3>Contents</h3>
+        <table>
+EOF
+    # Table of contents
+    if [ $executionNumbers -eq 1 ]; then
+        echo "            <tr><td><a href='#execs'>Executions</a></td></tr>" >> "$out"
+        for execNum in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+            echo "            <tr><td>- <a href='#exec_$execNum'>Execution $execNum @ `cat "$1/hostname_$execNum"`</a></td></tr>" >> "$out"
+        done
+    fi
+    cat >> "$out" <<EOF
+            <tr><td><a href='#other'>Other data</a></td></tr>
+        </table>
+
+EOF
+    # Build a full list of all files that need displaying in the other data section
+    local allFiles=( )
+    for f in `ls`; do
+        if [ -d "$f" ]; then
+            continue
+        fi
+        allFiles[${#allFiles[@]}]="$f"
+    done
+    
+    # The executions table, if needed
+    if [ $executionNumbers -eq 1 ]; then
+        echo "        <h3><a name='execs'>Executions</a></h3>" >> "$out"
+        echo "        <table>" >> "$out"
+        # Build the list of columns, i.e. the list of all possible files
+        local columnspre=( )
+        local columnspost=( )
+        for execNum in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+            for f in `ls`; do
+                if [ -d "$f" ]; then
+                    continue
+                fi
+                if [ "$f" = "hostname_$execNum" ]; then
+                    # Remove the file from the allFiles list
+                    if [ ${#allFiles[@]} -gt 0 ]; then
+                        for index in `seq 0 $((${#allFiles[@]} - 1))`; do
+                            if [ "${allFiles[index]}" = "$f" ]; then
+                                allFiles[$index]=""
+                                break
+                            fi
+                        done
+                    fi
+                fi
+                if ! echo "$f" | grep -E "..*_$execNum(\..*)?" > /dev/null; then
+                    continue
+                fi
+                local pre=`echo "$f" | sed -e "s/\(..*\)_$execNum\(\..*\)\?/\\1/"`
+                local post=`echo "$f" | sed -e "s/\(..*\)_$execNum\(\..*\)\?/\\2/"`
+                local found=0
+                if [ ${#columnspre[@]} -gt 0 ]; then
+                    for index in `seq 0 $((${#columnspre[@]} - 1))`; do
+                        if [ "${columnspre[index]}" != "$pre" ]; then
+                            continue
+                        fi
+                        if [ "${columnspost[index]}" != "$post" ]; then
+                            continue
+                        fi
+                        found=1
+                        break
+                    done
+                fi
+                if [ $found -eq 0 ]; then
+                    columnspre[${#columnspre[@]}]="$pre"
+                    columnspost[${#columnspost[@]}]="$post"
+                fi
+            done
+        done
+        # Build the header row
+        echo "            <thead><tr>" >> "$out"
+        echo "                <td>Execution number</td>" >> "$out"
+        echo "                <td>Host name</td>" >> "$out"
+        for colindex in `seq 0 $((${#columnspre[@]} - 1))`; do
+            echo "                <td>${columnspre[colindex]}_X${columnspost[colindex]}</td>" >> "$out"
+        done
+        echo "            </tr></thead>" >> "$out"
+        # The table body
+        echo "            <tbody>" >> "$out"
+        # Build a row
+        for execNum in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+            echo "                <tr>" >> "$out"
+            echo "                    <td><a name='exec_$execNum'>$execNum</a></td>" >> "$out"
+            echo "                    <td>`cat hostname_$execNum`</td>" >> "$out"
+            # Build a cell
+            for colindex in `seq 0 $((${#columnspre[@]} - 1))`; do
+                # Check that the file for this column exists for this execution
+                local f="${columnspre[colindex]}_${execNum}${columnspost[colindex]}"
+                if [ ! -f "$f" ]; then
+                    # Nope, empty cell
+                    echo "                    <td></td>" >> "$out"
+                else
+                    # Write the cell (use file to determine if it should be an image, if possible)
+                    if [ $useFile -eq 1 ]; then
+                        if file --mime-type -b "$f" | grep -E "^image/" > /dev/null; then
+                            echo "                    <td><a href='$relPath/$f'><img src='$relPath/$f' alt='$f' /></a></td>" >> "$out"
+                        else
+                            echo "                    <td><a href='$relPath/$f'>$f</a></td>" >> "$out"
+                        fi
+                    else
+                        echo "                    <td><a href='$relPath/$f'>$f</a></td>" >> "$out"
+                    fi
+                    # Remove the file from the allFiles list
+                    if [ ${#allFiles[@]} -gt 0 ]; then
+                        for index in `seq 0 $((${#allFiles[@]} - 1))`; do
+                            if [ "${allFiles[index]}" = "$f" ]; then
+                                allFiles[$index]=""
+                                break
+                            fi
+                        done
+                    fi
+                fi
+            done
+            echo "                </tr>" >> "$out"
+        done
+        echo "            </tbody>" >> "$out"
+        echo "        </table>" >> "$out"
+    fi
+
+    # The other data
+    echo "        <h3><a name='#other'>Other data</a></h3>" >> "$out"
+    echo "        <ul>" >> "$out"
+    for index in `seq 0 $((${#allFiles[@]} - 1))`; do
+        # Skip a file if it have already been shown above
+        if [ -z "${allFiles[index]}" ]; then
+            continue
+        fi
+        local f="${allFiles[index]}"
+        # Show the file (use file to determine if it should be an image, if possible)
+        if [ $useFile -eq 1 ]; then
+            if file --mime-type -b "$f" | grep -E "^image/" > /dev/null; then
+                echo "            <li>$f<br /><a href='$relPath/$f'><img src='$relPath/$f' alt='$f' /></a></li>" >> "$out"
+            else
+                echo "            <li><a href='$relPath/$f'>$f</a></li>" >> "$out"
+            fi
+        else
+            echo "            <li><a href='$relPath/$f'>$f</a></li>" >> "$out"
+        fi
+    done
+    echo "        </ul>" >> "$out"
+
+    # Finish the HTML
+    echo "    </body>" >> "$out"
+    echo "</html>" >> "$out"
+
+    # Restore working directory
+    cd "$olddir"
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function viewerAPIVersion() {
+    echo "1.0.0"
+}

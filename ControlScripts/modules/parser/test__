@@ -1,0 +1,122 @@
+#!/bin/bash
+
+#
+# A test implementation for the parser API.
+#
+# Raw logs expected by this module:
+# - None (this is a test implementation that just outputs bogus data)
+#
+# Parsed log files created by this module:
+# - log.data
+# -- logical time
+# -- file completion (%)
+# -- upload speed (kBps)
+# -- download speed (kBps)
+#
+
+##
+# Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/parsers/$PARSER_NAME .
+# Please return false (non-0) when an error occurs, instead of calling fail.
+# The way the settings are saved into ${LOCAL_TEST_DIR}/parsers/$PARSER_NAME/ does not matter, but make sure it exists and that ${LOCAL_TEST_DIR}/parsers/$PARSER_NAME/modulename contains the module subtype and nothing else.
+#
+# @param    The settings file to read from.
+# @param    The line number at which this parser object was defined. The first line in the settings file is at line $(($2 + 1))
+#
+# @return   True (0) iff the settings were parsed and saves succesfully.
+##
+function parserReadSettings() {
+    local parameterName=""
+    local parameterValue=""
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropiately
+        case $parameterName in
+            name)
+                # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            *)
+                logError "parser:test__ :: Unknown parameter name \"$parameterName\" in parser $PARSER_NAME. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    # Delegate the rest to the default implementation
+    parserReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/parsers/$PARSER_NAME/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not.
+#
+# @param    The name of the file object to be loaded.
+##
+function parserLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for parserReadSettings is used
+    parserLoadSettings__default "$1" "test__"
+}
+
+##
+# Loads the default settings for this parser.
+# Be sure to override all relevant variables, whether they have a default or not (in which case: override them with "").
+##
+function parserLoadDefaultSettings() {
+    PARSER_NAME=""
+    PARSER_SUBTYPE="test__"
+}
+
+##
+# Parse the logs for the current execution.
+# Use the execution API to find out data about this particular execution.
+#
+# Be sure to document in the header of your module file which logs you expect to be present and with which filename.
+#
+# @param    logDir      The directory on the local machine where the log files are stored.
+# @param    outputDir   The directory on the local machine where parsed logs are to be stored.
+##
+function parserParseLogs() {
+    if [ ! -d $1 ]; then
+        logError "parser:test__::parserParseLogs(logDir,outputDir) was given logDir \"$1\", which seems not to exist."
+        fail
+    fi
+    if [ ! -r $1 ]; then
+        logError "parser:test__::parserParseLogs(logDir,outputDir) was given logDir \"$1\", which seems not to be readable."
+        fail
+    fi
+    if [ ! -d $2 ]; then
+        logError "parser:test__::parserParseLogs(logDir,outputDir) was given outputDir \"$2\", which seems not to exist."
+        fail
+    fi
+    if [ ! -w $2 ]; then
+        logError "parser:test__::parserParseLogs(logDir,outputDir) was given outputDir \"$2\", which seems not t o be writable."
+        fail
+    fi
+    logError "parser:test just gives bogus output data. Have fun with them."
+
+    echo "0     50      10      20" > "$2/log.data"
+    echo "1     100     15      15" >> "$2/log.data"
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function parserAPIVersion() {
+    echo "1.0.0"
+}

@@ -1,0 +1,60 @@
+#!/bin/bash
+
+#
+# A dummy implementation of the builder API.
+#
+# This is the default builder, which does not build at all.
+#
+
+##
+# Outputs the command line for building a client.
+# Note: should not attempt to do the building itself!
+#
+# @output   The command line for building a client.
+##
+function builderBuildCommand() {
+    echo "true"
+}
+
+##
+# Builds the client on the local machine.
+#
+# @param    Directory where the client's sources reside.
+#
+# @return   True (0) iff the build command seems to have succeeded succesfully.
+##
+function builderBuildLocal() {
+    if [ ! -d "$CLIENT_LOCATION" ]; then
+        logError "builder:none :: Local client directory \"$CLIENT_LOCATION\" does not exist for client $CLIENT_NAME."
+        return 1
+    fi
+    return 0
+}
+
+##
+# Builds the client on the remote machine.
+# Use the Host API to send commands.
+#
+# @param    Remote directory where the client's sources reside.
+#
+# @return   True (0) iff the build command seems to have succeeded succesfully.
+##
+function builderBuildRemote() {
+    ans=`sendHostCommand "[ -d \"$CLIENT_LOCATION\" ] && echo -n \"OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "builder:none :: Remote client directory \"$CLIENT_LOCATION\" does not exist on host $HOST_NAME for client $CLIENT_NAME."
+        return 1
+    fi
+    return 0
+}
+
+##
+# This function returns the API version implemented in this module.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function builderAPIVersion() {
+    echo "1.0.0"
+}

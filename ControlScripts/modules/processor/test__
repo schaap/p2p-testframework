@@ -1,0 +1,136 @@
+#!/bin/bash
+
+#
+# A test implementation for the processor API.
+#
+# This module expects the following raw logs to be present:
+# - None (this module outputs bogus data)
+#
+# This module expects the following parsed logs to be present:
+# - None (this module outputs bogus data)
+#
+# This module outputs the following generated files:
+# - processed.txt
+# -- pure bogus text proclaiming it has been processed
+#
+
+##
+# Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/processors/proc_$PROCESSOR_NUMBER .
+# Please return false (non-0) when an error occurs, instead of calling fail.
+# The way the settings are saved into ${LOCAL_TEST_DIR}/processors/proc_$PROCESSOR_NUMBER/ does not matter, but make sure it exists and that ${LOCAL_TEST_DIR}/processors/proc_$PROCESSOR_NUMBER/modulename contains the module subtype and nothing else.
+#
+# @param    The settings file to read from.
+# @param    The line number at which this processor object was defined. The first line in the settings file is at line $(($2 + 1))
+#
+# @return   True (0) iff the settings were parsed and saves succesfully.
+##
+function processorReadSettings() {
+    local parameterName=""
+    local parameterValue=""
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropiately
+        case $parameterName in
+            *)
+                logError "processor:test__ :: Unknown parameter name \"$parameterName\" in processor $PROCESSOR_NUMBER. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    # Delegate the rest to the default implementation
+    processorReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/processors/proc_$PROCESSOR_NUMBER/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not.
+#
+# @param    The name of the file object to be loaded.
+##
+function processorLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for processorReadSettings is used
+    processorLoadSettings__default "$1" "test__"
+}
+
+##
+# Processes the raw and parsed logs found in the base directory.
+# The raw logs are found in exec_${execNum}/logs/.
+# The parsed logs are found in exec_${execNum}/parsedLogs/.
+# Here, ${execNum} ranges from 0 to $((${EXECUTION_COUNT} - 1)), inclusive.
+#
+# It migt happen that more information about the executions or their parts is required.
+# In such cases, use the Execution API to load the execution and continue from there on.
+# For example, to figure out the client module subtype of execution $execNum:
+#   executionLoadSettings $execNum
+#   executionLoadClient
+#   currentExecutionClientType=$CLIENT_SUBTYPE
+#
+# @param    The base directory for the logs.
+# @param    The directory in which to place processed results.
+##
+function processorProcessLogs() {
+    if [ ! -d "$1" ]; then
+        logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given logBaseDir \"$1\", which seems not to exist."
+        fail
+    fi
+    if [ ! -r "$1" ]; then
+        logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given logBaseDir \"$1\", which seems not to be readable."
+        fail
+    fi
+    if [ ! -d "$2" ]; then
+        logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given processedResultsDir \"$2\", which seems not to exist."
+        fail
+    fi
+    if [ ! -w "$2" ]; then
+        logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given processedResultsDir \"$2\", which seems not to be writable."
+        fail
+    fi
+
+    for execNum in `seq 0 $((${EXECUTION_COUNT} - 1))`; do
+        local rawLogDir="$1/exec_${execNum}/logs"
+        local parsedLogDir="$1/exec_${execNum}/parsedLogs"
+        if [ ! -d "$rawLogDir" ]; then
+            logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given logBaseDir \"$1\". For execution number $execNum this means the raw log directory \"$rawLogDir\" should be present, but is seems not to exist."
+            fail
+        fi
+        if [ ! -r "$rawLogDir" ]; then
+            logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given logBaseDir \"$1\". For execution number $execNum this means the raw log directory \"$rawLogDir\" should be present, but is seems not to be readable."
+            fail
+        fi
+        if [ ! -d "$parsedLogDir" ]; then
+            logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given logBaseDir \"$1\". For execution number $execNum this means the parsed log directory \"$parsedLogDir\" should be present, but is seems not to exist."
+            fail
+        fi
+        if [ ! -r "$parsedLogDir" ]; then
+            logError "processor:test__::processorProcessLogs(logBaseDir,processedResultsDir) was given logBaseDir \"$1\". For execution number $execNum this means the parsed log directory \"$parsedLogDir\" should be present, but is seems not to be readable."
+            fail
+        fi
+    done
+
+    echo "I haz bin processored!!!!1!11!111one1!eleven" > "$2/processed.txt"
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function processorAPIVersion() {
+    echo "1.0.0"
+}

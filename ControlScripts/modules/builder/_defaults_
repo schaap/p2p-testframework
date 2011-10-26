@@ -1,0 +1,78 @@
+#!/bin/bash
+
+#
+# The default implementations for the builder API.
+# Module implementors can copy these functions if they really wish to change them, or just call them if needed.
+# Whenever copying, please do NOT overwrite the default implementations, but just the actual API function.
+#
+
+##
+# Returns the API version of this defaults file.
+# This function should not be used by implementations!
+#
+# @output   The API version
+##
+function builderAPIVersion__default() {
+    echo "1.0.0"
+}
+
+##
+# Outputs the command line for building a client.
+# Note: should not attempt to do the building itself!
+#
+# No default implementation.
+#
+# @output   The command line for building a client.
+##
+#function builderBuildCommand() {
+#}
+
+##
+# Builds the client on the local machine.
+# The default implementation changes directory and calls the build command, encapsulating it in a bit of bash scripting to check whether it succeeds.
+#
+# @param    Directory where the client's sources reside.
+#
+# @return   True (0) iff the build command seems to have succeeded succesfully.
+##
+function builderBuildLocal__default() {
+    local cmd=`builderBuildCommand`
+    local logfile=`mktemp`
+    local ans=`bash -l -c "cd \"$1\"; ( $cmd ) 1>&2 && echo -n \"OK\"" 2> "$logfile"`
+    if [ "$ans" != "OK" ]; then
+        logError "builder:_defaults_ :: building locally seems to have failed. Any output follows."
+        ans=`cat "$logfile"`
+        logError "$ans"
+        rm -f "$logfile"
+        return 1
+    fi
+    rm -f "$logfile"
+    return 0
+}
+
+##
+# Builds the client on the remote machine.
+# Use the Host API to send commands.
+# The default implementation changes directory and calls the build command, encapsulating it in a bit of bash scripting to check whether it succeeds.
+#
+# @param    Remote directory where the client's sources reside.
+#
+# @return   True (0) iff the build command seems to have succeeded succesfully.
+##
+function builderBuildRemote__default() {
+    local cmd=`builderBuildCommand`
+    local logfile=`hostSendCommand "mktemp"`
+    local ans=`hostSendCommand "( cd \"$1\"; ( $cmd ) 1>&2 && echo -n \"OK\" ) 2> \"$logfile\""`
+    if [ "$ans" != "OK" ]; then
+        logError "builder:_defaults_ :: building remotely seems to have failed. Any output follows."
+        local locallogfile=`mktemp`
+        hostGetFile "$logfile" "$locallogfile" 1
+        ans=`cat "$locallogfile"`
+        logError "$ans"
+        rm -f "$logfile"
+        hostSendCommand "rm -f \"$logfile\""
+        return 1
+    fi
+    hostSendCommand "rm -f \"$logfile\""
+    return 0
+}

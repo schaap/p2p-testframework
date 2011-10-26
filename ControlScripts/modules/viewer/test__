@@ -1,0 +1,109 @@
+#!/bin/bash
+
+#
+# A test implementation for the viewer API.
+# This implementation outputs some bogus HTML (view.html) that just begs to be viewed.
+#
+# This module expects to find the following processed files:
+# - None (this module outputs bogus HTML)
+#
+
+##
+# Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER .
+# Please return false (non-0) when an error occurs, instead of calling fail.
+# The way the settings are saved into ${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER/ does not matter, but make sure it exists and that ${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER/modulename contains the module subtype and nothing else.
+#
+# @param    The settings file to read from.
+# @param    The line number at which this viewer object was defined. The first line in the settings file is at line $(($2 + 1))
+#
+# @return   True (0) iff the settings were parsed and saves succesfully.
+##
+function viewerReadSettings() {
+    local parameterName=""
+    local parameterValue=""
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropiately
+        case $parameterName in
+            *)
+                logError "viewer:test__ :: Unknown parameter name \"$parameterName\" in viewer $VIEWER_NUMBER. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    # Delegate the rest to the default implementation
+    viewerReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/viewers/view_$VIEWER_NUMBER/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not.
+#
+# @param    The name of the file object to be loaded.
+##
+function viewerLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for viewerReadSettings is used
+    viewerLoadSettings__default "$1" "test__"
+}
+
+##
+# Creates the view from the processed data.
+#
+# @param    processedDir    The directory on the local machine where processed data resides.
+# @param    viewDir         The directory on the local machine where views are to be placed.
+##
+function viewerCreateView() {
+    if [ ! -d "$1" ]; then
+        logError "viewer:test__::viewerCreateView(processedDir,viewDir) was given processedDir \"$1\", which seems not to exist."
+        fail
+    fi
+    if [ ! -r "$1" ]; then
+        logError "viewer:test__::viewerCreateView(processedDir,viewDir) was given processedDir \"$1\", which seems not to be readable."
+        fail
+    fi
+    if [ ! -d "$2" ]; then
+        logError "viewer:test__::viewerCreateView(processedDir,viewDir) was given viewDir \"$1\", which seems not to exist."
+        fail
+    fi
+    if [ ! -w "$2" ]; then
+        logError "viewer:test__::viewerCreateView(processedDir,viewDir) was given viewDir \"$1\", which seems not to be writable."
+        fail
+    fi
+
+    cat > "$2/view.html" <<EOF
+<html>
+    <head>
+        <title>The Viewable Test</title>
+    </head>
+    <body>
+        <h1>View</h1>
+        README! Please, README! I beg of you: have mercy and README...
+    </body>
+</html>
+EOF
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function viewerAPIVersion() {
+    echo "1.0.0"
+}

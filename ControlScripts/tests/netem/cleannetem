@@ -1,0 +1,9 @@
+#!/bin/bash
+
+HOST_NAME="localhost"
+HOST_TC_IFACE="eth0"
+
+function logError() { echo "$1"; }; function hostSendCommand() { bash -l -c "cd; $1"; }; function fail() { echo "FAIL"; echo "FAIL"; exit; }
+. netem
+
+tcRemove

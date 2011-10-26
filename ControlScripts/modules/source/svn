@@ -1,0 +1,78 @@
+#!/bin/bash
+
+#
+# An svn implementation of the source API.
+# This module can be used to retrieve the source using the svn command line utility.
+#
+# This module interprets CLIENT_LOCATION as follows:
+# A URI to a valid SVN repository that can be checked out with svn checkout.
+#
+
+##
+# Outputs the command line for retrieving the source code of a client.
+# Interpret $CLIENT_LOCATION for figuring out where the source is to be fetched from.
+# Note: should not attempt to do the retrieving itself!
+#
+# @output   The command line for retrieving the source code of a client.
+##
+function sourcePrepareCommand() {
+    echo "svn co \"${CLIENT_LOCATION}\" ."
+}
+
+##
+# Prepares the source code of the client on the local machine.
+#
+# @return   True (0) iff the prepare command seems to have succeeded succesfully.
+##
+function sourcePrepareLocal() {
+    # The default implementation creates the directory ${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/source/, changes to it and calls the prepare command, encapsulating it in a bit of bash scripting to check whether it succeeds.
+    if sourcePrepareLocal__default; then
+        return 0
+    fi
+    return 1
+}
+
+##
+# Prepares the source code of the client on the remote machine.
+# Use the Host API to send commands.
+#
+# @return   True (0) iff the prepare command seems to have succeeded succesfully.
+##
+function sourcePrepareRemote() {
+    # The default implementation creates the directory `hostGetTestDir`/clients/$CLIENT_NAME/source/, changes to it and calls the prepare command, encapsulating it in a bit of bash scripting to check whether it succeeds.
+    if sourcePrepareRemote__default; then
+        return 0
+    fi
+    return 1
+}
+
+##
+# Outputs the local directory in which the source was prepared.
+# Note that this is a static function that does not track whether the directory was actually created: use this directory only after calling sourcePrepareLocal.
+#
+# @output   The local directory in which the sources reside.
+##
+function sourceLocalLocation() {
+    echo "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/source"
+}
+
+##
+# Outputs the remote directory in which the source was prepared.
+# Note that this is a static function that does not track whether the directory was actually created: use this directory only after calling sourcePrepareRemote.
+#
+# @output   The remote directory in which the sources reside.
+##
+function sourceRemoteLocation() {
+    echo "`hostGetTestDir`/clients/$CLIENT_NAME/source"
+}
+
+##
+# This function returns the API version implemented in this module.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function sourceAPIVersion() {
+    echo "1.0.0"
+}

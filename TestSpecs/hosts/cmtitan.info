@@ -1,0 +1,4 @@
+[host:ssh]
+hostname=cmtitan.info
+#params=-i /home/schaap/.ssh/id_rsa2
+user=thomas

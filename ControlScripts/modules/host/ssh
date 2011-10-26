@@ -1,0 +1,409 @@
+#!/bin/bash
+
+#
+# An SSH implementation for the host API.
+#
+# Parameters:
+# - hostname        The hostname of the host to be used over SSH. Hostnames and IP adresses are accepted.
+# - port            The port on which the SSH daemon listens on the host; optional, defaults to 22.
+# - user            The user name to be used for logging in over SSH.
+# - params          Other parameters to be passed to SSH.
+#
+# Note that for sending and receiving files SCP is used via the scp utility program. The params parameter is used for both calls to the ssh utility and calls to the scp utility, without any changes.
+#
+
+##
+# Reads the settings for this host and saves them.
+# Saving is done to ${LOCAL_TEST_DIR}/hosts/$HOST_NAME/. It does not matter how, as long as it exists and ${LOCAL_TEST_DIR}/hosts/$HOST_NAME/modulename contains the module subtype and nothing else.
+# Note that it is allowed for $HOST_NAME to be "", in which case either an error is to be logged and false to be returned or the HOST_NAME is to be set to a default and this function should check no such host exists yet.
+#
+# @param    The settings file from which the settings are to be read.
+# @param    The line number at which the host object was declared (the first setting in the settings file is at line number $(($3 + 1))).
+#
+# @return   True (0) iff no errors were found and the settings saved.
+##
+function hostReadSettings() {
+    # Thanks to Stephen Ryan at Dartware for this one
+    # http://forums.intermapper.com/viewtopic.php?t=452
+    local IPV6_REGEX="^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$"
+
+    local parameterName="";
+    local parameterValue="";
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    HOST_SSH_HOSTNAME=""
+    HOST_SSH_POST=""
+    HOST_SSH_USER=""
+    HOST_SSH_PARAMS=""
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue;
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropriately
+        case $parameterName in
+            name|preparation|cleanup|remoteFolder|tc_iface|tc_down|tc_down_burst|tc_up|tc_up_burst|tc|tc_loss|tc_corruption|tc_duplication|tc_delay|tc_jitter)
+                # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            hostname)
+                if ! echo "$parameterValue" | grep -E "[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?" > /dev/null; then
+                    if ! echo "$parameterValue" | grep -E -i "$IPV6_REGEX" > /dev/null; then
+                        if ! host "$parameterValue" > /dev/null 2>/dev/null; then
+                            logError "host:ssh :: Hostname \"$parameterValue\", supplied for host defined at line $3 of scenario $5, is not an IP address nor a resolvable hostname (line $LINE_NUMBER)."
+                            return 1
+                        fi
+                    fi
+                fi
+                if [ ! -z "$HOST_SSH_HOSTNAME" ]; then
+                    logError "host:ssh :: Host defined at line $3 of scenario $5 already has a hostname set (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_SSH_HOSTNAME="$parameterValue"
+                ;;
+            port)
+                if ! echo "$parameterValue" | grep -E "[1-9][0-9]?[0-9]?[0-9]?[0-9]?[0-9]?" > /dev/null; then
+                    logError "host:ssh :: Host defined at line $3 of scenario $5 was supplied with port \"$parameterValue\", which is not valid (line $LINE_NUMBER)."
+                    return 1
+                fi
+                if [ ! -z "$HOST_SSH_PORT" ]; then
+                    logError "host:ssh :: Host defined at line $3 of scenario $5 already has a port set (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_SSH_PORT="$parameterValue"
+                ;;
+            user)
+                if [ ! -z "$HOST_SSH_USER" ]; then
+                    logError "host:ssh :: Host defined at line $3 of scenario $5 already has a user name set (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_SSH_USER="$parameterValue"
+                ;;
+            params)
+                if [ ! -z "$HOST_SSH_PARAMS" ]; then
+                    logError "host:ssh :: Host defined at line $3 of scenario $5 already has parameters set (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_SSH_PARAMS="$parameterValue"
+                ;;
+            *)
+                logError "host:ssh :: Unknown parameter name \"$parameterName\" in host defined at line $3 of scenario $5 on line $LINE_NUMBER. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    if [ -z "$HOST_SSH_HOSTNAME" ]; then
+        logError "host:ssh :: Host defined at line $3 of scenario $5 has no hostname set."
+        return 1
+    fi
+
+    if [ -z "$HOST_NAME" ]; then
+        if ! isValidName "$HOST_SSH_HOSTNAME"; then
+            logError "host:ssh :: Host defined at line $3 of scenario $5 has no name set, but the default name (the hostname: \"$HOST_SSH_HOSTNAME\") is not a valid name."
+            return 1
+        fi
+        if [ -e "${LOCAL_TEST_DIR}/hosts/$HOST_SSH_HOSTNAME" ]; then
+            logError "host:ssh :: Host defined at line $3 of scenario $5 has no name set, but the default name (the hostname: \"$HOST_SSH_HOSTNAME\") is already in use."
+            return 1
+        fi
+        HOST_NAME="$HOST_SSH_HOSTNAME"
+    fi
+
+    # Build the commands for contacting the host, so we don't need to do it again and again
+    HOST_SSH_COMMAND="`which ssh` -T -n -o BatchMode=yes"
+    if [ ! -z "$HOST_SSH_USER" ]; then
+        HOST_SSH_COMMAND="$HOST_SSH_COMMAND -l $HOST_SSH_USER"
+    fi
+    if [ ! -z "$HOST_SSH_PORT" ]; then
+        HOST_SSH_COMMAND="$HOST_SSH_COMMAND -p $HOST_SSH_PORT"
+    fi
+    if [ ! -z "$HOST_SSH_PARAMS" ]; then
+        HOST_SSH_COMMAND="$HOST_SSH_COMMAND $HOST_SSH_PARAMS"
+    fi
+    HOST_SSH_COMMAND="$HOST_SSH_COMMAND $HOST_SSH_HOSTNAME"
+
+    HOST_SSH_SCPCMD="`which scp` -o BatchMode=yes "
+    if [ ! -z "$HOST_SSH_PORT" ]; then
+        HOST_SSH_SCPCMD="$HOST_SSH_SCPCMD -P $HOST_SSH_PORT "
+    fi
+    if [ ! -z "$HOST_SSH_PARAMS" ]; then
+        HOST_SSH_SCPCMD="$HOST_SSH_SCPCMD $HOST_SSH_PARAMS "
+    fi
+    HOST_SSH_SCPHOST=""
+    if [ ! -z "$HOST_SSH_USER" ]; then
+        HOST_SSH_SCPHOST="${HOST_SSH_USER}@"
+    fi
+    HOST_SSH_SCPHOST="${HOST_SSH_SCPHOST}${HOST_SSH_HOSTNAME}"
+
+    # Check whether we can actually contact the host before serious stuff is needed.
+    local ans=`$HOST_SSH_COMMAND "echo \"OK\"" 2>&1`
+    if [ "$ans" != "OK" ]; then
+        logError "host:ssh :: Could not contact SSH host $HOST_NAME. The command line  $HOST_SSH_COMMAND \"echo \\\"OK\\\"\" 2>&1  should output just \"OK\", but \"$ans\" was observed."
+        return 1
+    fi
+
+    # Check whether we can actually copy to and from the host before doing serious copying.
+    # Note that this is a bit more involved
+    local tmpFile=`mktemp`
+    echo -n "OK" > "$tmpFile"
+    local remoteTmpFile=`$HOST_SSH_COMMAND "mktemp"`
+    if [ -z "$remoteTmpFile" ]; then
+        logError "host:ssh :: Could not create a remote temporary file on $HOST_NAME."
+        rm -f "$tmpFile"
+        return 1
+    fi
+    ans=`$HOST_SSH_COMMAND "[ -f \"$remoteTmpFile\" ] && echo -n \"OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:ssh :: Apparently the created remote temporary file (\"$remoteTmpFile\") on $HOST_NAME does not exist?"
+        rm -f "$tmpFile"
+        return 1
+    fi
+    if ! $HOST_SSH_SCPCMD "$tmpFile" $HOST_SSH_SCPHOST:"$remoteTmpFile"; then
+        logError "host:ssh :: Copying a small file to remote host $HOST_NAME failed: scp returned $?."
+        logError "host:ssh :: Command used:  $HOST_SSH_SCPCMD \"$tmpFile\" $HOST_SSH_SCPHOST:\"$remoteTmpFile\""
+        $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
+        rm -f "$tmpFile"
+        return 1
+    fi
+    ans=`$HOST_SSH_COMMAND "cat \"$remoteTmpFile\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:ssh :: Copying a small file to remote host $HOST_NAME failed: contents were expected to be \"OK\", but observed was: \"$ans\"."
+        $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
+        rm -f "$tmpFile"
+        return 1
+    fi
+    echo -n "" > "$tmpFile"
+    if ! $HOST_SSH_SCPCMD $HOST_SSH_SCPHOST:"$remoteTmpFile" "$tmpFile"; then
+        logError "host:ssh :: Copying a small file from remote host $HOST_NAME failed: scp returned $?."
+        logError "host:ssh :: Command used:  $HOST_SSH_SCPCMD $HOST_SSH_SCPHOST:\"$remoteTmpFile\" \"$tmpFile\""
+        $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
+        rm -f "$tmpFile"
+        return 1
+    fi
+    $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
+    ans=`cat "$tmpFile"`
+    rm -f "$tmpFile"
+    if [ "$ans" != "OK" ]; then
+        logError "host:ssh :: Copying a small file from remote host $HOST_NAME failed: contents were expected to be \"OK\", but observed was: \"$ans\"."
+        return 1
+    fi
+
+    ans=`$HOST_SSH_COMMAND "bash -l -c \"echo -n \\\"OK\\\"\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:ssh :: Remote host does not seem to have bash. The test framework requires bash to be present. You can subvert this check by having a small script called 'bash' that just passes on the command to your own shell, but this is at your own risk: some of the commands may contain bashisms."
+        return 1
+    fi
+
+    # Delegate the rest to the default implementation
+    hostReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_HOSTNAME=\"$HOST_SSH_HOSTNAME\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_PORT=\"$HOST_SSH_PORT\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_USER=\"$HOST_SSH_USER\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_PARAMS=\"$HOST_SSH_PARAMS\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_COMMAND=\"$HOST_SSH_COMMAND\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_SCPCMD=\"$HOST_SSH_SCPCMD\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_SSH_SCPHOST=\"$HOST_SSH_SCPHOST\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not!
+#
+# @param    The host object name to be loaded.
+##
+function hostLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for hostReadSettings is used
+    hostLoadSettings__default "$1" "ssh"
+}
+
+##
+# Executes the given command on the loaded host.
+#
+# @param    The command to be executed as one string.
+#
+# @output   The output of the command on the host.
+##
+function hostSendCommand() {
+    $HOST_SSH_COMMAND "bash -l -c \"$1\""
+}
+
+##
+# Sends the given local file to the host and stores it in the specified remote path.
+#
+# @param    The path to the local file to be sent.
+# @param    The path on the remote host where the file is to be stored.
+# @param    If this parameter is set to "1", then the remote file will be overwritten if it already exists. Otherwise the function would fail if the destination already exists.
+##
+function hostSendFile() {
+    if [ "$3" != "1" ]; then
+        if [ "`$HOST_SSH_COMMAND "[ -e \"$2\" ] && echo \"UHOH\""`" == "UHOH" ]; then
+            logError "Remote file \"$2\" already exists on host $HOST_NAME and overwriting is not allowed."
+            fail
+        fi
+    fi
+    $HOST_SSH_SCPCMD "$1" $HOST_SSH_SCPHOST:"$2"
+}
+
+##
+# Sends the given local directory to the host and stores it in the specified remote path.
+# This function will overwrite if needed.
+# This function does *not* check its succes. It optimistically assumes every operation succeeds.
+#
+# @param    The path to the local directory of which the contents are to be sent.
+# @param    The path on the remote host to the directory where the contents are to be stored.
+##
+function hostSendFiles() {
+    $HOST_SSH_SCPCMD -r "$1"/* $HOST_SSH_SCPHOST:"$2"
+}
+
+##
+# Retrieves a file from the host from a specified remote path and stores it at the given local path.
+# Fails if the local file already exists.
+#
+# @param    The path on the remote host of the file to be retrieved.
+# @param    The path on the local machine where the retrieved file is to be stored.
+# @param    If this parameter is set to "1", then the local file will be overwritten if it already exists. Otherwise the function would fail if the destination already exists.
+##
+function hostGetFile() {
+    if [ "$3" != "1" ]; then
+        if [ -e "$2" ]; then
+            logError "Local file \"$2\" already exists and overwriting is not allowed."
+        fi
+    fi
+    $HOST_SSH_SCPCMD $HOST_SSH_SCPHOST:"$1" "$2"
+}
+
+##
+# Executes the commands to do host specific preparation.
+##
+function hostPrepare() {
+    # The default implementation creates and sets up a cleanup file (index: $HOST_CLEANUPIDX), creates a remote temporary directory if no HOST_REMOTEFOLDER is given (will be placed in HOST_TEMPFOLDER, but see hostGetTestDir).
+    hostPrepare__default
+
+    # If nothing else is needed, just the host preparation script needs to be run
+    if [ ! -z "$HOST_PREPARATION" ]; then
+        . "$HOST_PREPARATION"
+    fi
+}
+
+##
+# Executes the commands to do host specific cleanup.
+##
+function hostCleanup() {
+    # If nothing else is needed, just the host cleanup script needs to be run
+    if [ ! -z "$HOST_CLEANUP" ]; then
+        . "$HOST_CLEANUP"
+    fi
+
+    # The default implementation cleans up the cleanup and removes the remote temporary directory in HOST_TEMPFOLDER.
+    hostCleanup__default
+}
+
+##
+# Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment.
+##
+function hostGetTestDir() {
+    # The default implementation checks HOST_REMOTEFOLDER and HOST_TEMPFOLDER, which should be fine, especially when hostPrepare__default is used above.
+    hostGetTestDir__default
+}
+
+##
+# Outputs the subnet of the external addresses of the host.
+#
+# @output   The subnet of the host(s).
+##
+function hostGetSubnet() {
+    # Thanks to Stephen Ryan at Dartware for this one
+    # http://forums.intermapper.com/viewtopic.php?t=452
+    local IPV6_REGEX="^\s*((([0-9A-Fa-f]{1,4}:){7}([0-9A-Fa-f]{1,4}|:))|(([0-9A-Fa-f]{1,4}:){6}(:[0-9A-Fa-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){5}(((:[0-9A-Fa-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9A-Fa-f]{1,4}:){4}(((:[0-9A-Fa-f]{1,4}){1,3})|((:[0-9A-Fa-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){3}(((:[0-9A-Fa-f]{1,4}){1,4})|((:[0-9A-Fa-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){2}(((:[0-9A-Fa-f]{1,4}){1,5})|((:[0-9A-Fa-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9A-Fa-f]{1,4}:){1}(((:[0-9A-Fa-f]{1,4}){1,6})|((:[0-9A-Fa-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9A-Fa-f]{1,4}){1,7})|((:[0-9A-Fa-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))(%.+)?\s*$"
+
+    local address="$HOST_SSH_HOSTNAME"
+    # If that is neither an IPv4 or an IPv6 address, try and figure out the address by doing a host lookup
+    if ! echo "$HOST_SSH_HOSTNAME" | grep -E "[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?" > /dev/null; then
+        if ! echo "$HOST_SSH_HOSTNAME" | grep -E -i "$IPV6_REGEX" > /dev/null; then
+            if ! which host > /dev/null; then
+                logError "host:ssh :: Warning: trying to determine subnet, but can't find local utility \"host\" to figure out the address of the hostname."
+            else
+                local hostutil=`which host`
+                address=`$hostutil -tA HOST_SSH_HOSTNAME | sed -e "s/^.* has address //"`
+            fi
+        fi
+    fi
+    
+    # Try and create a subnet out of it
+    if echo "$address" | grep -E "[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?\.[1-9][0-9]?[0-9]?" > /dev/null; then
+        echo -n "$address/32"
+    else
+        if echo "$addresss" | grep -E -i "$IPV6_REGEX" > /dev/null; then
+            echo -n "$address/128"
+        else
+            echo -n "$HOST_SSH_HOSTNAME"
+        fi
+    fi
+}
+
+##
+# Sets the list of outbound ports to be used for restricted outbound traffic control.
+# This is an internal function that should never be used by others.
+#
+# Special values:
+# - "-1"    Unrestricted control
+# - ""      No control
+#
+# Be sure to set the variable HOST_TC_OUTBOUNDPORTS to this list and save it.
+#
+# @param    The list of ports.
+##
+function hostTCSaveOutboundPortList() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveOutboundPortList__default "$1"
+}
+
+##
+# Sets the list of inbound ports to be used for restricted inbound traffic control.
+# This is an internal function that should never be used by others.
+#
+# Special values:
+# - "-1"    Unrestricted control
+# - ""      No control
+#
+# Be sure to set the variable HOST_TC_INBOUNDPORTS to this list and save it.
+#
+# @param    The list of ports.
+##
+function hostTCSaveInboundPortList() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveInboundPortList__default "$1"
+}
+
+##
+# Sets the protocol to be used for restricted traffic control.
+# This is an internal function that should never be used by others.
+#
+# Be sure to set the variable HOST_TC_PROTOCOL to this value and save it.
+#
+# @param    The name of the protocol ("UDP", "TCP", ...)
+##
+function hostTCSaveProtocol() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveProtocol__default "$1"
+} 
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function hostAPIVersion() {
+    echo "1.0.0"
+}

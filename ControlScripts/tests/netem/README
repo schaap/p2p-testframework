@@ -1,0 +1,9 @@
+This directory contains two scripts and a number of test scenarios which show how the netem module was tested. The procedure was as follows:
+- Set the parameters in testnetem to the ones required by the scenario to be tested
+- Run ./testnetem
+- Use scp to transmit a file of 50 Mb between the hosts in differing ways (host1: pull from host2, host1: push to host2, host2: pull from host1, host2: push to host1)
+- Examine speeds of these transmits, as well as use the tc utility to see if the traffic control is set up as expected
+- Use an interactive SSH session to 'feel' the delay introduced (typing with 200ms delay is noticeable)
+- Run ./cleannetem
+
+The setup for these tests requires both scripts to be in the ControlScripts/modules/tc directory. They contain hardcoded adresses of both hosts involved, so repeating these tests would require adjusting those. As stated: two hosts, connected with a direct cable (no hubs or anything), make sure they can see each other before testing. All ways of using scp gave speeds of 10 Mb/s, which is expected given that they both had 100 mbit NICs. The host the tests were run on, i.e. the host where the traffic control is set up and done, has enough pocessing power to not get bogged down by it (1.2 Ghz dual core netbook). Note that it was also connected to the internet via wireless; all traffic control and tests were done on its wired link eth0.

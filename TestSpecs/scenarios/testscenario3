@@ -1,0 +1,21 @@
+[client:swift]
+name=swift_seed
+listenPort=10000
+location=../swift
+wait=30
+# Just a small test, so wait only 30 secs
+
+[client:swift]
+name=swift_leech
+location=../swift
+tracker=127.0.0.1:10000
+
+[execution]
+host=local
+file=test
+client=swift_seed
+
+[execution]
+host=local
+file=test
+client=swift_leech

@@ -1,0 +1,256 @@
+#!/bin/bash
+
+#
+# A testn implementation for the host API.
+# All interactions with the host are logged in the file __host__test__.log in the campaign results directory.
+# Note that the commands will always output "", since they are not actually run. This is a clear limitation of the test host, use host:local for actually functioning tests on the local host.
+#
+
+##
+# Reads the settings for this host and saves them.
+# Saving is done to ${LOCAL_TEST_DIR}/hosts/$HOST_NAME/. It does not matter how, as long as it exists and ${LOCAL_TEST_DIR}/hosts/$HOST_NAME/modulename contains the module subtype and nothing else.
+# Note that it is allowed for $HOST_NAME to be "", in which case either an error is to be logged and false to be returned or the HOST_NAME is to be set to a default and this function should check no such host exists yet.
+#
+# @param    The settings file from which the settings are to be read.
+# @param    The line number at which the host object was declared (the first setting in the settings file is at line number $(($3 + 1))).
+#
+# @return   True (0) iff no errors were found and the settings saved.
+##
+function hostReadSettings() {
+    # Check validity of passed host object name and set to a default if possible.
+    # In case a new name is set: check that it's unique.
+    if [ -z $HOST_NAME ]; then
+        logError "host:test__ :: Host has no name."
+        return 1
+    fi
+
+    local parameterName="";
+    local parameterValue="";
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue;
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropriately
+        case $parameterName in
+            name|preparation|cleanup|remoteFolder|tc_iface|tc_down|tc_down_burst|tc_up|tc_up_burst|tc|tc_loss|tc_corruption|tc_duplication|tc_delay|tc_jitter)
+                # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            *)
+                logError "host:test__ :: Unknown parameter name \"$parameterName\" in host $HOST_NAME on line $LINE_NUMBER. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    # Since no actual initialization can be done, and the host DOES like to have an actual remote folder (in the default implementations), we give one here
+    if [ -z "$HOST_REMOTEFOLDER" ]; then
+        HOST_REMOTEFOLDER="."
+    fi
+
+    # Delegate the rest to the default implementation
+    hostReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not!
+#
+# @param    The host object name to be loaded.
+##
+function hostLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for hostReadSettings is used
+    hostLoadSettings__default "$1" "test__"
+}
+
+##
+# Executes the given command on the loaded host.
+#
+# @param    The command to be executed as one string.
+#
+# @output   The output of the command on the host.
+##
+function hostSendCommand() {
+    if [ -z "$1" ]; then
+        logError "host:test__::hostSendCommand(command) had not expected an empty command to be sent to host $HOST_NAME, ignoring"
+    fi
+    echo "Host $HOST_NAME: execute \"$1\"" >> "${CAMPAIGN_RESULTS_DIR}/__host__test__.log"
+}
+
+##
+# Sends the given local file to the host and stores it in the specified remote path.
+#
+# @param    The path to the local file to be sent.
+# @param    The path on the remote host where the file is to be stored.
+# @param    If this parameter is set to "1", then the remote file will be overwritten if it already exists. Otherwise the function would fail if the destination already exists.
+##
+function hostSendFile() {
+    if [ ! -f "$1" ]; then
+        logError "host:test__::hostSendFile(localFile,remoteFile) was given localFile \"$1\", which seems not to exist (note that directories are not supported)."
+        fail
+    fi
+    if [ ! -r "$1" ]; then
+        logError "host:test__::hostSendFile(localFile,remoteFile) was given localFile \"$1\", which seems not to be readable (note that directories are not supported)."
+        fail
+    fi
+    if [ -z "$2" ]; then
+        logError "host:test__::hostSendFile(localFile,remoteFile) was given remoteFile \"$2\", which is empty. Usually filenames can't be empty."
+        fail
+    fi
+    echo "Host $HOST_NAME: send \"$1\" to \"$2\"" >> "${CAMPAIGN_RESULTS_DIR}/__host__test__.log"
+}
+
+##
+# Sends the given local directory to the host and stores it in the specified remote path.
+# This function will overwrite if needed.
+# This function does *not* check its succes. It optimistically assumes every operation succeeds.
+#
+# @param    The path to the local directory of which the contents are to be sent.
+# @param    The path on the remote host to the directory where the contents are to be stored.
+##
+function hostSendFiles() {
+    # The default implementation is a manual recursion of the fiels and directories, sending them using "hostSendFile $x $y 1" one by one.
+    hostSendFiles__default "$1" "$2"
+}
+
+##
+# Retrieves a file from the host from a specified remote path and stores it at the given local path.
+# Fails if the local file already exists.
+#
+# @param    The path on the remote host of the file to be retrieved.
+# @param    The path on the local machine where the retrieved file is to be stored.
+# @param    If this parameter is set to "1", then the local file will be overwritten if it already exists. Otherwise the function would fail if the destination already exists.
+##
+function hostGetFile() {
+    if [ -z "$1" ]; then
+        logError "host:test__::hostGetFile(remoteFile,localFile,overwrite) was given remoteFile \"$1\", which is empty. Usually filenames can't be empty."
+        fail
+    fi
+    if [ "$3" = "1" ]; then
+        if [ -d "$2" ]; then
+            logError "host:test__::hostGetFile(remoteFile,localFile,overwrite) was given localFile \"$2\" and overwrite instructions, but \"$2\" is a directory."
+            fail
+        fi
+    else
+        if [ -e "$2" ]; then
+            logError "host:test__::hostGetFile(remoteFile,localFile,overwrite) was given localFile \"$2\", which already exists."
+            fail
+        fi
+    fi
+    if [ ! -d `dirname "$2"` ]; then
+        logError "host:test__::hostGetFile(remoteFile,localFile,overwrite) was given localFile \"$2\", which would be placed in a non-existing directory."
+        fail
+    fi
+    echo "Host $HOST_NAME: retrieve \"$1\" to \"$2\"" >> "${CAMPAIGN_RESULTS_DIR}/__host__test__.log"
+}
+
+##
+# Executes the commands to do host specific preparation.
+##
+function hostPrepare() {
+    # The default implementation creates and sets up a cleanup file (index: $HOST_CLEANUPIDX), creates a remote temporary directory if no HOST_REMOTEFOLDER is given (will be placed in HOST_TEMPFOLDER, but see hostGetTestDir).
+    hostPrepare__default
+
+    # If nothing else is needed, just the host preparation script needs to be run
+    if [ ! -z "$HOST_PREPARATION" ]; then
+        . "$HOST_PREPARATION"
+    fi
+}
+
+##
+# Executes the commands to do host specific cleanup.
+##
+function hostCleanup() {
+    # If nothing else is needed, just the host cleanup script needs to be run
+    if [ ! -z "$HOST_CLEANUP" ]; then
+        . "$HOST_CLEANUP"
+    fi
+
+    # The default implementation cleans up the cleanup and removes the remote temporary directory in HOST_TEMPFOLDER.
+    hostCleanup__default
+}
+
+##
+# Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment.
+##
+function hostGetTestDir() {
+    # The default implementation checks HOST_REMOTEFOLDER and HOST_TEMPFOLDER, which should be fine, especially when hostPrepare__default is used above.
+    hostGetTestDir__default
+}
+
+##
+# Outputs the subnet of the external addresses of the host.
+#
+# @output   The subnet of the host(s).
+##
+function hostGetSubnet() {
+    echo "127.0.0.1"
+}
+
+##
+# Sets the list of outbound ports to be used for restricted outbound traffic control.
+# This is an internal function that should never be used by others.
+#
+# Special values:
+# - "-1"    Unrestricted control
+# - ""      No control
+#
+# Be sure to set the variable HOST_TC_OUTBOUNDPORTS to this list and save it.
+#
+# @param    The list of ports.
+##
+function hostTCSaveOutboundPortList() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveOutboundPortList__default "$1"
+}
+
+##
+# Sets the list of inbound ports to be used for restricted inbound traffic control.
+# This is an internal function that should never be used by others.
+#
+# Special values:
+# - "-1"    Unrestricted control
+# - ""      No control
+#
+# Be sure to set the variable HOST_TC_INBOUNDPORTS to this list and save it.
+#
+# @param    The list of ports.
+##
+function hostTCSaveInboundPortList() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveInboundPortList__default "$1"
+}
+
+##
+# Sets the protocol to be used for restricted traffic control.
+# This is an internal function that should never be used by others.
+#
+# Be sure to set the variable HOST_TC_PROTOCOL to this value and save it.
+#
+# @param    The name of the protocol ("UDP", "TCP", ...)
+##
+function hostTCSaveProtocol() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveProtocol__default "$1"
+} 
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function hostAPIVersion() {
+    echo "1.0.0"
+}

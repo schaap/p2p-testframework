@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# This file is just here to make run_scenario less complex. It basically makes execution look even more like a module to the generic module loading code.
+
+##
+# Returns the API version of this defaults file.
+# This function should not be used by implementations!
+#
+# @output   The API version
+##
+function executionAPIVersion__default() {
+    echo "1.0.0"
+}

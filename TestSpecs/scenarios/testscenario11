@@ -1,0 +1,27 @@
+[client:swift]
+name=swift_seed
+listenPort=10000
+location=../swift
+wait=30
+builder=make
+remoteClient=yes
+source=local
+# Just a small test, so wait only 30 secs
+
+[client:swift]
+name=swift_leech
+location=../swift
+tracker=127.0.0.1:10000
+builder=make
+remoteClient=yes
+source=local
+
+[execution]
+host=cmtitan.info
+file=test
+client=swift_seed
+
+[execution]
+host=cmtitan.info
+file=test
+client=swift_leech

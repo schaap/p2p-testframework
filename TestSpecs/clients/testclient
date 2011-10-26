@@ -1,0 +1,3 @@
+[client:test__]
+name=test
+location=.

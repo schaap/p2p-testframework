@@ -1,0 +1,22 @@
+# Simple gnuplot script for plotting a file looking like this:
+# time percent upspeed dlspeed
+# 0 35.00 392.23 19568.04
+# 1 79.00 484.89 24310.52
+# 2 100.00 230.61 11602.66
+
+# The generic processor:gnuplot will prepend this script with four variables:
+# - indir       The path to the directory on the local machine containing the parsed logs
+# - rawdir      The path to the directory on the local machine containing the raw logs
+# - outdir      The path to the directory on the local machine where the output files should be stored
+# - execnum     The number of the execution being processed
+
+set term png large size 2048,768
+set out outdir.'/graph_'.execnum.'.png'
+
+set ylabel 'Percentage'
+set yrange [0:100]
+set y2label 'Speed (kB/s)'
+set y2tics
+set xlabel 'Time (s)'
+
+plot indir.'/log.data' using 1:2 axis x1y1 title 'Completion' with lines, indir.'/log.data' using 1:3 axis x1y2 title 'Upload speed' with lines, indir.'/log.data' using 1:4 axis x1y2 title 'Download speed' with lines
