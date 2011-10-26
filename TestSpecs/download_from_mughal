@@ -1,0 +1,3 @@
+[scenario]
+name=download_from_mughal
+file=TestSpecs/scenarios/download_from_mughal
