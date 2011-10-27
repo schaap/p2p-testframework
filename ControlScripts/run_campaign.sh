@@ -7,17 +7,10 @@
 #
 #
 
-# = Check for a campaign file. If none, try and use the default =
+# = Check for a campaign file. =
 
 if [ ! $# -eq 1 ]; then
     echo "Usage: $0 campaign_file"
-    if [ -f "default_campaign" ]; then
-        echo "Rerunning using campaign file default_campaign"
-        "$0" default_campaign
-        exit $? 
-    else
-        echo "default_campaign does not exist, not using that now"
-    fi
     exit 1
 fi
 
@@ -49,6 +42,23 @@ fi
 . "${TEST_ENV_DIR}/functions/stderrlogging.sh"
 . "${TEST_ENV_DIR}/functions/cleanup.sh"
 
+# Now that cleanup exists, let's make sure we clean up when we receive a signal
+function trapHandlerHup() {
+    logError "Received signal SIGHUP"
+    fail
+}
+function trapHandlerTerm() {
+    logError "Received signal SIGTERM"
+    fail
+}
+function trapHandlerInt() {
+    logError "Received signal SIGINT"
+    fail
+}
+trap trapHandlerHup SIGHUP
+trap trapHandlerTerm SIGTERM
+trap trapHandlerInt SIGINT
+
 ##
 # Check whether the functions script in the first argument is available in ${TEST_ENV_DIR}/functions and loads it.
 # Will not return if the script is not available.
@@ -71,11 +81,15 @@ if [ -z "$LOCAL_TEST_DIR" ]; then
         fail
     fi
     addCleanupCommand "rm -rf $LOCAL_TEST_DIR"
+    TMPDIR="$LOCAL_TEST_DIR"
 else
     if [ ! -d "$LOCAL_TEST_DIR" ]; then
         logError "LOCAL_TEST_DIR is set to an invalid path"
         fail
     fi
+    local atmpdir=`mktemp -d`
+    addCleanupCommand "rm -rf $atmpdir"
+    TMPDIR="$atmpdir"
 fi
 
 ## Points to a local directory where results from the campaign will be stored

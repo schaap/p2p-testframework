@@ -556,10 +556,10 @@ function runScenario() {
         done
 
         loadModule "tc/$HOST_TC"
-        (tcInstall $otherhostnames)
         addCleanupCommand "hostLoadSettings \"${hosts[index]}\"" $scenario_cleanup_tc_script_idx
         addCleanupCommand "loadModule \"tc/$HOST_TC\"" $scenario_cleanup_tc_script_idx
         addCleanupCommand "(tcRemove)" $scenario_cleanup_tc_script_idx
+        (tcInstall $otherhostnames)
     done
 
     echo "Starting all clients"
