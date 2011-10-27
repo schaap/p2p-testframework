@@ -239,7 +239,7 @@ function run_campaign() {
                     ;;
                 timelimit)
                     # Time limit for the execution of a scenario, in seconds
-                    if echo "$parameterValue" | grep -E "[^0-9]" >/dev/null; then
+                    if echo "$parameterValue" | grep -E "[^[:digit:]]" >/dev/null; then
                         logError "The time limit for the scenario defined on line $scenarioLine should be given in seconds, which is a positive integer value, unlike \"$parameterValue\"."
                         fail
                     fi

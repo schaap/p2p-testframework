@@ -173,18 +173,18 @@ function tcCheck() {
         logError "tc:netem :: Host $HOST_NAME does not have ifconfig installed, which is used for checking the availability of interface $HOST_TC_IFACE, on which to do traffic control. To bypass this check, please see the documentation in the module."
         return 1
     fi
-    ans=`hostSendCommand "\`which ifconfig\` | grep -E \"^$HOST_TC_IFACE\\s\" > /dev/null && echo -n \"OK\""`
+    ans=`hostSendCommand "\`which ifconfig\` | grep -E \"^$HOST_TC_IFACE[[:space:]]\" > /dev/null && echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "tc:netem :: Host $HOST_NAME does not seem to have an interface called \"$HOST_TC_IFACE\", on which traffic control was requested."
         return 1
     fi
     # If we need to do some inbound traffic, interface ifb0 should be up as well
     if [ "$HOST_TC_INBOUNDPORTS" != "" ]; then
-        ans=`hostSendCommand "\`which ifconfig\` | grep -E \"^ifb0\\s\" > /dev/null && echo -n \"OK\""`
+        ans=`hostSendCommand "\`which ifconfig\` | grep -E \"^ifb0[[:space:]]\" > /dev/null && echo -n \"OK\""`
         if [ "$ans" != "OK" ]; then 
             # Try and get the link up
             (hostSendCommand "\`which sudo\` \`which ip\` link set dev ifb0 up")
-            ans=`hostSendCommand "\`which ifconfig\` | grep -E \"^ifb0\\s\" > /dev/null && echo -n \"OK\""`
+            ans=`hostSendCommand "\`which ifconfig\` | grep -E \"^ifb0[[:space:]]\" > /dev/null && echo -n \"OK\""`
             if [ "$ans" != "OK" ]; then
                 logError "tc:netem :: Host $HOST_NAME has IFB support and the module is loaded, but it was not possible to get the link up. Please manually enable it, e.g. using \"sudo ip link set dev ifb0 up\"."
                 return 1

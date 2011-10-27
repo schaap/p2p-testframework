@@ -81,7 +81,7 @@ function hostLoadSettings__default() {
             logError "host:_defaults_ :: API version mismatch: the core expects API version `hostAPIVersion__default` but module host:`cat "${LOCAL_TEST_DIR}/hosts/$1/modulename"` seems to have API version `hostAPIVersion`."
             fail
         fi
-        fileLoadSettings $1
+        hostLoadSettings $1
         return
     fi
     . "${LOCAL_TEST_DIR}/hosts/$1/conf"

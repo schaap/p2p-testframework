@@ -8,6 +8,9 @@
 # - outdir      The path to the directory on the local machine where the output files should be stored
 # - execnum     The number of the execution being processed
 #
+# This module has the following parameters:
+# - script      Path to the gnuplot script to be run
+#
 # This module expects the following raw logs to be present:
 # - gnuplot script dependent
 #

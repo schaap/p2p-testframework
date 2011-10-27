@@ -36,7 +36,7 @@ function getSectionName() {
         logError "Found garbage after section header on line $LINE_NUMBER"
         signalFail
     fi
-    if echo "$1" | grep -E "\[.*\s.*\]" > /dev/null; then
+    if echo "$1" | grep -E "\[.*[[:space:]].*\]" > /dev/null; then
         logError "Section names are not allowed to have whitespace in them (line $LINE_NUMBER)"
         signalFail
     fi
@@ -61,7 +61,7 @@ function getParameterName() {
         signalFail
     fi
     local parameterName=`echo "$1" | sed -e"s/\([^=]*\)=.*/\\1/"`
-    if echo "$parameterName" | grep -E "\s" > /dev/null; then
+    if echo "$parameterName" | grep -E "[[:space:]]" > /dev/null; then
         logError "Parameter names are not allowed to have whitespace in them (line $LINE_NUMBER)"
         signalFail
     fi
@@ -129,6 +129,6 @@ function getModuleSubType() {
 # @return   True (0) iff the name is valid.
 ##
 function isValidName() {
-    echo "$1" | grep -E "^[a-zA-Z][a-zA-Z0-9_\-\.]*$" > /dev/null
+    echo "$1" | grep -E "^[[:alpha:]][[:alnum:]_\-\.]*$" > /dev/null
     return $?
 }

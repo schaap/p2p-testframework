@@ -91,7 +91,7 @@ function clientLoadSettings__default() {
             logError "client:_defaults_ :: API version mismatch: the core expects API version `clientAPIVersion__default` but module client:`cat "${LOCAL_TEST_DIR}/clients/$1/modulename"` seems to have API version `clientAPIVersion`."
             fail
         fi
-        fileLoadSettings $1
+        clientLoadSettings $1
         return
     fi
     . "${LOCAL_TEST_DIR}/clients/$1/conf"

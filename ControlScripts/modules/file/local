@@ -4,6 +4,7 @@
 # Implementation of the file API for a single local file.
 # This file module supports these extra parameters:
 # - path        The path to the actual file on the local machine
+# - torrent     Set this to "yes" to have a torrent file automatically generated from the file; the torrent file will be uploaded and its location available through fileGetMetaName
 #
 
 ##
@@ -21,6 +22,7 @@ function fileReadSettings() {
     local parameterValue=""
     LINE_NUMBER=$(($2 + 1))
     FILE_LOCAL_PATH=""
+    local file_local_torrent_requested=0
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -46,6 +48,11 @@ function fileReadSettings() {
                 fi
                 FILE_LOCAL_PATH="$parameterValue"
                 ;;
+            torrent)
+                if [ "$parameterValue" == "yes" ]; then
+                    file_local_torrent_requested=1
+                fi
+                ;;
             *)
                 logError "file:local :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
                 ;;
@@ -65,10 +72,15 @@ function fileReadSettings() {
     echo "FILE_LOCAL_PATH=\"$FILE_LOCAL_PATH\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 
     # Try and create a torrent file for this single file.
-    loadFunctionsScript torrent.sh
     FILE_LOCAL_TORRENT=''
-    if torrentCreateFromSingleFile "$FILE_LOCAL_PATH" "${LOCAL_TEST_DIR}/files/$FILE_NAME/torrent.torrent"; then
-        FILE_LOCAL_TORRENT="${LOCAL_TEST_DIR}/files/$FILE_NAME/torrent.torrent"
+    if [ $file_local_torrent_requested -eq 1 ]; then
+        loadFunctionsScript torrent.sh
+        if torrentCreateFromSingleFile "$FILE_LOCAL_PATH" "${LOCAL_TEST_DIR}/files/$FILE_NAME/torrent.torrent"; then
+            FILE_LOCAL_TORRENT="${LOCAL_TEST_DIR}/files/$FILE_NAME/torrent.torrent"
+        else
+            logError "file:local :: Could not generate the torrent file from local file \"$FILE_LOCAL_PATH\". Perhaps the file is too large?"
+            return 1
+        fi
     fi
     echo "FILE_LOCAL_TORRENT=\"$FILE_LOCAL_TORRENT\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 

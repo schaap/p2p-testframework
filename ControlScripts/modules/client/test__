@@ -38,7 +38,7 @@ function clientReadSettings() {
         CLIENT_TEST_TIME=1
         case $parameterName in
             testTime)
-                if ! echo "$parameterValue" | grep -E "^[0-9]*$" > /dev/null; then
+                if ! echo "$parameterValue" | grep -E "^[[:digit:]]*$" > /dev/null; then
                     logError "client:test__ :: The test time parameter to a test client may only contain numbers (line $LINE_NUMBER)"
                     return 1
                 fi

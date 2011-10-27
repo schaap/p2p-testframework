@@ -57,7 +57,7 @@ function parseSettings() {
                 FILE_NAME="$parameterValue"
                 ;;
             rootHash)
-                if ! echo "$parameterValue" | grep -E "[a-fA-F0-9]{40}" > /dev/null; then
+                if ! echo "$parameterValue" | grep -E "[[:xdigit:]]{40}" > /dev/null; then
                     logError "file:_parser_.sh :: \"$parameterValue\" is not a valid SHA1 hash for the file defined on line $3 of scenario $5 (line $LINE_NUMBER); expected 40 hexadecimal digits."
                     failScenarioFile "$6"
                 fi

@@ -46,28 +46,28 @@ function clientReadSettings() {
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
             listenAddress)
-                if echo "$parameterValue" | grep " " > /dev/null; then
+                if echo "$parameterValue" | grep "[[:space:]]" > /dev/null; then
                     logError "client:swift :: The listenAddress parameter to a swift client may not contain spaces (line $LINE_NUMBER)"
                     return 1
                 fi
                 CLIENT_SWIFT_LISTEN="$parameterValue"
                 ;;
             listenPort)
-                if echo "$parameterValue" | grep " " > /dev/null; then
+                if echo "$parameterValue" | grep "[[:space:]]" > /dev/null; then
                     logError "client:swift :: The listenPort parameter to a swift client may not contain spaces (line $LINE_NUMBER)"
                     return 1
                 fi
                 CLIENT_SWIFT_LISTENPORT="$parameterValue"
                 ;;
             tracker)
-                if echo "$parameterValue" | grep " " > /dev/null; then
+                if echo "$parameterValue" | grep "[[:space:]]" > /dev/null; then
                     logError "client:swift :: The tracker parameter to a swift client may not contain spaces (line $LINE_NUMBER)"
                     return 1
                 fi
                 CLIENT_SWIFT_TRACKER="$parameterValue"
                 ;;
             wait)
-                if ! echo "$parameterValue" | grep -E "^[0-9]*$" > /dev/null; then
+                if ! echo "$parameterValue" | grep -E "^[[:digit:]]*$" > /dev/null; then
                     logError "client:swift :: The wait parameter to a swift client may only contain numbers (line $LINE_NUMBER)"
                     return 1
                 fi
@@ -178,6 +178,11 @@ function clientPrepareExecution() {
             CLIENT_SWIFT_WAIT="900s"
         fi
     else
+        local roothash=`fileGetRootHash`
+        if ! echo "$roothash" | grep -E "[[:xdigit:]]{40}" > /dev/null; then
+            logError "client:swift :: The swift client is to be downloading, but the root hash returned by file $FILE_NAME is not a valid roothash: \"$roothash\" (it should consist of 40 hex digits)."
+            fail
+        fi
         args="--hash `fileGetRootHash` --file \"`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/outputFile\""
     fi
     if [ "$CLIENT_SWIFT_WAIT" != "" ]; then

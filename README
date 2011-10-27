@@ -3,6 +3,8 @@ This document is the work-in-progress documentation of the P2P testing framework
 = TODO =
 
 Include (more) builtin help
+Handle Ctrl+C nicely
+Test as much settings as possible before actually starting anything
 
 = Stages =
 
@@ -169,7 +171,7 @@ parameters:
 remote single host adressable via ssh
 parameters:
 - name              -> required but may be left out, in which case it defaults to the address of the host, postfixed with a colon and the port if the port is not 22
-- address           -> required, IP address or hostname of host
+- hostname          -> required, IP address or hostname of host
 - port              -> optional, port to SSH to, defaults to 22
 - user              -> optional, username to connect to use for the SSH connection, defaults to '' which specifies no user to SSH (and hence will use logged in user)
 - params            -> optional, extra parameters to pass to SSH when connecting, defaults to ''
@@ -185,7 +187,7 @@ parameters:
 - parser            -> optional, sets the name for the default parser object for executions with this client; if not given, the default parser for a client of subtype $CLIENT_SUBTYPE is the module parser:${CLIENT_SUBTYPE}
 - remoteClient      -> optional, if this is set to anything but "", the client should not be copied from the local machine to the remote machine, but is assumed to be present there, already; directory in this case point to the directory on the remote machine where the client is situated
 - builder           -> optional, specifies the subtype of the builder module to be used to build the client prior to running it; this building is done remotely in case of a remoteClient
-- source            -> optional, specifies the subtype of the source module to be used for providing the source code when building the client; this parameter changes the meaning of the parameter directory: the latter contains source location within the context of the given source module; default to "directory"
+- source            -> optional, specifies the subtype of the source module to be used for providing the source code when building the client; this parameter changes the meaning of the parameter location: the latter contains source location within the context of the given source module; default to "directory"
 
 ==== client:test__ ====
 fake client that just waits a bit
@@ -208,7 +210,8 @@ parameters:
 
 ==== file:local ====
 parameters:
-- file              -> required, path to the file on the local machine
+- path              -> required, path to the file on the local machine
+- torrent           -> optional, set to yes to enable automated generation of a torrent file for this file
 
 ==== file:test__ ====
 fake file

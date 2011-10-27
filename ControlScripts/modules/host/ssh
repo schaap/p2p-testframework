@@ -192,7 +192,7 @@ function hostReadSettings() {
         return 1
     fi
 
-    ans=`$HOST_SSH_COMMAND "bash -l -c \"echo -n \\\"OK\\\"\""`
+    ans=`hostSendCommand "echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:ssh :: Remote host does not seem to have bash. The test framework requires bash to be present. You can subvert this check by having a small script called 'bash' that just passes on the command to your own shell, but this is at your own risk: some of the commands may contain bashisms."
         return 1
