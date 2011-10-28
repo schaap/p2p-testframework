@@ -15,6 +15,88 @@
 # @return   True (0) iff the dependencies for calculating merkle root hashes seem available.
 ##
 function merkleCanCalculate() {
+    # First try and see if we can compile the Utils version for fast calculation. If that fails, we'll see if we can script it.
+    local GCC="$CC"
+    while true; do
+        if [ -z "$GCC" ]; then
+            GCC="`which gcc`"
+            break
+        fi
+        if ! which "$GCC" > /dev/null; then
+            GCC="`which gcc`"
+            break
+        fi
+        if [ ! -f `which "$GCC"` ]; then
+            GCC="`which gcc`"
+            break
+        fi
+        if [ ! -x `which "$GCC"` ]; then
+            GCC="`which gcc`"
+            break
+        fi
+        break
+    done
+    while true; do
+        if [ -z "$GCC" ]; then
+            GCC="`which cc`"
+            break
+        fi
+        if ! which "$GCC" > /dev/null; then
+            GCC="`which cc`"
+            break
+        fi
+        if [ ! -f `which "$GCC"` ]; then
+            GCC="`which cc`"
+            break
+        fi
+        if [ ! -x `which "$GCC"` ]; then
+            GCC="`which cc`"
+            break
+        fi
+        break
+    done
+    while true; do
+        if [ -z "$GCC" ]; then
+            break
+        fi
+        if ! which "$GCC" > /dev/null; then
+            GCC=""
+            break
+        fi
+        if [ ! -f `which "$GCC"` ]; then
+            GCC=""
+            break
+        fi
+        if [ ! -x `which "$GCC"` ]; then
+            GCC=""
+            break
+        fi
+        break
+    done
+    while [ ! -z "$GCC" ]; do
+        if [ ! -d "$TEST_ENV_DIR/../Utils/merkle/" ]; then
+            break
+        fi
+        ( cd "$TEST_ENV_DIR/../Utils/merkle/" && "$GCC" -o calculateRootHash calculateRootHash.c sha1.c )
+        if [ ! -f "$TEST_ENV_DIR/../Utils/merkle/calculateRootHash" ]; then
+            break
+        fi
+        if [ ! -x "$TEST_ENV_DIR/../Utils/merkle/calculateRootHash" ]; then
+            break
+        fi
+        local tmpfile=`createTempFile`
+        echo -n "abcd" > "$tmpfile"
+        ans=`"$TEST_ENV_DIR/../Utils/merkle/calculateRootHash" "$tmpfile"`
+        rm -f $tmpfile
+        if [ "$ans" != "6349c449a6127896130bdd60d786d1ca8792688a" ]; then
+            rm -f "$TEST_ENV_DIR/../Utils/merkle/calculateRootHash"
+            break
+        fi
+        # Yay! We can do it fast!
+        return 0
+    done
+
+    # OK, no good compiler available, apparently. Let's move on and see if we can script it.
     local OPENSSL="`which openssl`"
     if [ -z "$OPENSSL" ]; then
         # No openssl? No Merkle hashes.
@@ -117,8 +199,17 @@ function merkleCalculateRootHashFromSingleFile() {
         return 1
     fi
 
+    # If we have the compiled version, we're done
+    if [ -f "$TEST_ENV_DIR/../Utils/merkle/calculateRootHash" -a -x "$TEST_ENV_DIR/../Utils/merkle/calculateRootHash" ]; then
+        "$TEST_ENV_DIR/../Utils/merkle/calculateRootHash" "$1"
+        return 0
+    fi
+
+    # No compiled version.
+    # Give a warning: you really don't want this.
+    # Optimistically try and use logError for the warning; if it isn't there, it isn't there.
+    ( logError "Warning: the compiled version of the root hash calculation can't be found or created. Falling back to the terribly slow scripted version. You can try and compile it yourself if it's there; call the executable calculateRootHash and place it in the same directory as the sources." ) &
     if [ `stat -c %s "$1"` -gt $((5 * 1024 * 1024)) ]; then
-        # Optimistically try and use logError; if it isn't there, it isn't there.
         ( logError "merkleCalculateRootHashFromSingleFile refuses to manually calculate the root hash for files larger than 5M. It takes too much time." ) &
         return 1
     fi

@@ -3,8 +3,9 @@
 #
 # Implementation of the file API for a single local file.
 # This file module supports these extra parameters:
-# - path        The path to the actual file on the local machine
-# - torrent     Set this to "yes" to have a torrent file automatically generated from the file; the torrent file will be uploaded and its location available through fileGetMetaName
+# - path                The path to the actual file on the local machine
+# - torrent             Set this to "yes" to have a torrent file automatically generated from the file; the torrent file will be uploaded and its location available through fileGetMetaName
+# - generateRootHash    Set this to "yes" to have the SHA1 root hash automatically generated from the file; the rootHash parameter must not be set in this case
 #
 
 ##
@@ -23,6 +24,7 @@ function fileReadSettings() {
     LINE_NUMBER=$(($2 + 1))
     FILE_LOCAL_PATH=""
     local file_local_torrent_requested=0
+    local file_local_roothash_requested=0
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -49,8 +51,17 @@ function fileReadSettings() {
                 FILE_LOCAL_PATH="$parameterValue"
                 ;;
             torrent)
-                if [ "$parameterValue" == "yes" ]; then
+                if [ "$parameterValue" = "yes" ]; then
                     file_local_torrent_requested=1
+                fi
+                ;;
+            generateRootHash)
+                if ["$parameterValue" = "yes" ]; then
+                    if [ ! -z "FILE_ROOTHASH" ]; then
+                        logError "file:local :: File $FILE_NAME has a request to have the SHA1 root hash calculated, but it was already supplied: $FILE_ROOTHASH (line $LINE_NUMBER)."
+                        return 1
+                    fi
+                    file_local_roothash_requested=1
                 fi
                 ;;
             *)
@@ -84,8 +95,25 @@ function fileReadSettings() {
     fi
     echo "FILE_LOCAL_TORRENT=\"$FILE_LOCAL_TORRENT\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 
-    # FIXME: Automated root hash calculation? Use FILE_ROOTHASH
-
+    # Try and calculate the roor hash for this single file.
+    if [ $file_local_roothash_requested -eq 1]; then
+        loadFunctionsScript merkle.sh
+        if !merkleCanCalculate; then
+            logError "file:local :: Could not generate the root hash from local file \"$FILE_LOCAL_PATH\". Perhaps the file is too large?"
+            return 1
+        fi
+        FILE_ROOTHASH=`merkleCalculateRootHashFromSingleFile`
+        if [ -z "FILE_ROOTHASH" ]; then
+            logError "file:local :: No root hash was calculated for \"$FILE_LOCAL_PATH\", although requested."
+            return 1
+        fi
+        if ! echo "$FILE_ROOTHASH" | grep -E "[[:xdigit:]]{40}" > /dev/null; then
+            logError "file:local :: A root hash seemed to have been calculated, but it does not consists of 40 hexadecimal digits, as was expected. The output of the calculation: \"$FILE_ROOTHASH\"."
+            return 1
+        fi
+        echo "FILE_ROOTHASH=\"$FILE_ROOTHASH\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+    fi
+    
     # Finally, register our file with the environment
     FILES="$FILES $FILE_NAME"
     return 0

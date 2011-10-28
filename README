@@ -1,10 +1,5 @@
 This document is the work-in-progress documentation of the P2P testing framework.
 
-= TODO =
-
-Include (more) builtin help
-Test as much settings as possible before actually starting anything
-
 = Stages =
 
 This section is a setup for the flow of work in the testing framework. It's not entirely up to date at the moment, but should give an insight into what steps are done and in what order.
@@ -211,6 +206,7 @@ parameters:
 parameters:
 - path              -> required, path to the file on the local machine
 - torrent           -> optional, set to yes to enable automated generation of a torrent file for this file
+- generateRootHash  -> optional, set to yes to enable automated generation of the SHA1 root hash for this file
 
 ==== file:test__ ====
 fake file
