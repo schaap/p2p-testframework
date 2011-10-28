@@ -1,5 +1,0 @@
-Finally, it seems I figured out the TC toruble with netem and, especially, the other tc qdiscs and classes.
---This line, and those below, will be ignored--
-
-M    tc/_skeleton_
-M    tc/netem

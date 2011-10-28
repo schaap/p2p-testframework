@@ -16,8 +16,8 @@
 ##
 function reinitializeCleanup() {
     ## The array with cleanup scripts
-    CLEANUP_TMP_FILES=([0]=`mktemp`)
     CLEANUP_MAX_INDEX=0
+    CLEANUP_TMP_FILES=([0]=`mktemp`)
     if [ -z ${CLEANUP_TMP_FILES[0]} ]; then
         logError "Could not create general cleanup script file" 1>&2
         exit -1
@@ -108,14 +108,15 @@ function cleanup() {
     CLEANUP_TMP_FILES=( )
     for index in `seq $(( ${#cleanStack[@]} - 1)) -1 0`; do
         if [ ! -f ${cleanStack[index]} ]; then
-            echo "Recursion error in cleanup! Stack trace follows." 1>&2
+            echo "Recursion error in cleanup! Cleanup file at index $index does not exist. Stack trace follows." 1>&2
             local frame=0
             while caller $frame 1>&2; do
                 frame=$(($frame + 1))
             done
+        else
+            .  ${cleanStack[index]}
+            rm -f ${cleanStack[index]}
         fi
-        .  ${cleanStack[index]}
-        rm -f ${cleanStack[index]}
     done
 }
 
@@ -155,13 +156,15 @@ function addCleanupCommand() {
 # @return   The index of the new cleanup script for use with addCleanupCommand and removeCleanupScript.
 ##
 function addCleanupScript() {
+    local oldIndex=$CLEANUP_MAX_INDEX
     local newIndex=$((CLEANUP_MAX_INDEX + 1))
+    CLEANUP_MAX_INDEX=$newIndex
     CLEANUP_TMP_FILES[$newIndex]=`mktemp`
     if [ -z ${CLEANUP_TMP_FILES[newIndex]} ]; then
+        CLEANUP_MAX_INDEX=$oldIndex
         logError "Could not create cleanup script file" 1>&2
         fail
     fi
-    CLEANUP_MAX_INDEX=$newIndex
     return $newIndex
 }
 

@@ -43,15 +43,19 @@ fi
 . "${TEST_ENV_DIR}/functions/cleanup.sh"
 
 # Now that cleanup exists, let's make sure we clean up when we receive a signal
+TEST_BASE_DIR=`pwd`
 function trapHandlerHup() {
+    cd "${TEST_BASE_DIR}"
     logError "Received signal SIGHUP"
     fail
 }
 function trapHandlerTerm() {
+    cd "${TEST_BASE_DIR}"
     logError "Received signal SIGTERM"
     fail
 }
 function trapHandlerInt() {
+    cd "${TEST_BASE_DIR}"
     logError "Received signal SIGINT"
     fail
 }
@@ -80,16 +84,19 @@ if [ -z "$LOCAL_TEST_DIR" ]; then
         logError "Could not create temporary local test directory"
         fail
     fi
-    addCleanupCommand "rm -rf $LOCAL_TEST_DIR"
-    TMPDIR="$LOCAL_TEST_DIR"
+    mkdir "${LOCAL_TEST_DIR}/tmp"
+    addCleanupCommand "rm -rf \"$LOCAL_TEST_DIR\""
 else
     if [ ! -d "$LOCAL_TEST_DIR" ]; then
         logError "LOCAL_TEST_DIR is set to an invalid path"
         fail
     fi
-    local atmpdir=`mktemp -d`
-    addCleanupCommand "rm -rf $atmpdir"
-    TMPDIR="$atmpdir"
+    if [ -e "${LOCAL_TEST_DIR}/tmp" ]; then
+        logError "${LOCAL_TEST_DIR}/tmp already exists, but was not expected to exist."
+        fail
+    fi
+    addCleanupCommand "rm -rf \"${LOCAL_TEST_DIR}/tmp/\""
+    mkdir -p "${LOCAL_TEST_DIR}/tmp/"
 fi
 
 ## Points to a local directory where results from the campaign will be stored
@@ -109,10 +116,13 @@ else
     fi
 fi
 
+# = Load base functions #
+loadFunctionsScript basefunctions.sh
+
 # = Load the parsing function #
 loadFunctionsScript parsing.sh
 
-# === Read the campaign script ===
+# === Read and run the campaign script ===
 # Why is it a function? Because functions introduce scope for local variables
 function run_campaign() {
     # Check whether campaign file exists

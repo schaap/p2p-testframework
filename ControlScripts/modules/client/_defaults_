@@ -141,6 +141,7 @@ function clientKill__default() {
     # If that doesn't work, SIGINT is tries twice, giving 5 seconds after each try.
     # If that fails as well SIGKILL is sent.
     local killScript=`cat <<EOF
+    (
         kill -0 $pidfile 2> /dev/null || exit
         kill -TERM $pidfile
         WAITTIME=0
@@ -156,6 +157,8 @@ function clientKill__default() {
         sleep 5
         kill -0 $pidfile 2> /dev/null || exit
         kill -KILL $pidfile
+    ) &
+wait
 EOF`
     hostSendCommand "$killScript"
 }
@@ -167,12 +170,13 @@ EOF`
 # Client cleanup is extended with cleanup for this host.
 ##
 function clientPrepareHost__default() {
+    # Make sure the cleanup is called on failure, as well as the running client is killed
+    addCleanupCommand "hostLoadSettings $HOST_NAME" $CLIENT_CLEANUPIDX
+    addCleanupCommand "clientKill" $CLIENT_CLEANUPIDX
+    addCleanupCommand "clientCleanupHost" $CLIENT_CLEANUPIDX
+
     # Create client specific directories on host
     hostSendCommand "mkdir -p \"`hostGetTestDir`/clients/$CLIENT_NAME/\"; mkdir -p \"`hostGetTestDir`/logs/$CLIENT_NAME/\""
-
-    # Make sure the cleanup is called on failure
-    addCleanupCommand "hostLoadSettings $HOST_NAME" $CLIENT_CLEANUPIDX
-    addCleanupCommand "clientCleanupHost" $CLIENT_CLEANUPIDX
 
     # Build the client if a remote build is requested
     if [ ! -z "$CLIENT_REMOTECLIENT" ]; then
@@ -211,7 +215,7 @@ function clientPrepareExecution__default() {
     hostSendCommand "mkdir -p \"`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/\"; mkdir -p \"`hostGetTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/\""
         
     # Build and send the command script for running the client
-    local clientRunnerScript=`mktemp`
+    local clientRunnerScript=`createTempFile`
     # This script, that will be run on the server, basically does this:
     # - Enable job control (essential for getting the background process back to the foreground)
     # - Create a new process in which your command line is run, and run that in the background

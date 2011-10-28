@@ -37,7 +37,7 @@ function builderAPIVersion__default() {
 ##
 function builderBuildLocal__default() {
     local cmd=`builderBuildCommand`
-    local logfile=`mktemp`
+    local logfile=`createTempFile`
     local ans=`bash -l -c "cd \"$1\"; ( $cmd ) 1>&2 && echo -n \"OK\"" 2> "$logfile"`
     if [ "$ans" != "OK" ]; then
         logError "builder:_defaults_ :: building locally seems to have failed. Any output follows."
@@ -61,18 +61,24 @@ function builderBuildLocal__default() {
 ##
 function builderBuildRemote__default() {
     local cmd=`builderBuildCommand`
+    addCleanupScript
+    local cleanupidx=$?
+    addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
     local logfile=`hostSendCommand "mktemp"`
+    addCleanupCommand "hostSendCommand \"rm -f \\\"$logfile\\\"\"" $cleanupidx
     local ans=`hostSendCommand "( cd \"$1\"; ( $cmd ) 1>&2 && echo -n \"OK\" ) 2> \"$logfile\""`
     if [ "$ans" != "OK" ]; then
         logError "builder:_defaults_ :: building remotely seems to have failed. Any output follows."
-        local locallogfile=`mktemp`
+        local locallogfile=`createTempFile`
         hostGetFile "$logfile" "$locallogfile" 1
         ans=`cat "$locallogfile"`
         logError "$ans"
         rm -f "$logfile"
         hostSendCommand "rm -f \"$logfile\""
+        removeCleanupScript $cleanupidx
         return 1
     fi
     hostSendCommand "rm -f \"$logfile\""
+    removeCleanupScript $cleanupidx
     return 0
 }

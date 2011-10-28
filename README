@@ -3,7 +3,6 @@ This document is the work-in-progress documentation of the P2P testing framework
 = TODO =
 
 Include (more) builtin help
-Handle Ctrl+C nicely
 Test as much settings as possible before actually starting anything
 
 = Stages =
@@ -265,6 +264,7 @@ Each module also has a function call ${MODULE_TYPE}APIVersion(). This function i
 
 == Global ==
 The following global API is available:
+- TEST_BASE_DIR                         -> points to the local directory from where the test was started
 - LOCAL_TEST_DIR                        -> points to a local directory where temporary files for the testing environment can be stored
 - TEST_ENV_DIR                          -> points to the local directory containing the testing environment's main script (i.e. the ControlScripts directory)
 - RESULTS_DIR                           -> points to the local directory where results for the campaign will be stored under; defaults to ${TEST_ENV_DIR}/../Results
@@ -286,6 +286,8 @@ The following global API is available:
 - getParameterName                      -> parsing function that will output the name of the parameter line given as its argument (i.e. the string before the first =)
 - getParameterValue                     -> parsing function that will output the value of the parameter line given as its argument (i.e. the string after the first =)
 - loadFunctionsScript                   -> sources the file ${TEST_ENV_DIR}/functions/$1 or fails with a logged error if it doesn't exist
+- createTempFile                        -> create a local temporary file in a way that is safe with regard to signals (such as when the user presses Ctrl+C during a test run)
+- createTempDir                         -> create a local temporary directory in a way that is safe with regard to signals (such as when the user presses Ctrl+C during a test run)
 Some variables in the global API may be specified in the environment in which the test environment is started, in order to override the automated default behaviour:
 - LOCAL_TEST_DIR
 - TEST_ENV_DIR

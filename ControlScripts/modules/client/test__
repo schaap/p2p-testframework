@@ -126,7 +126,7 @@ function clientPrepareHost() {
 
     if [ -z "$CLIENT_REMOTECLIENT" ]; then
         # Create 'client'
-        local file=`mktemp`
+        local file=`createTempFile`
         echo "#!/bin/bash" > "$file"
         echo "cat <<232EOF454" >> "$file"
         echo "Full configuration of the test client:" >> "$file"

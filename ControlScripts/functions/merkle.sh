@@ -2,7 +2,7 @@
 
 #
 # Provides functions for on-the-fly calculation of Merkle root hashes.
-# Requires:
+# Requires: createTempFile
 # Provides: merkleCanCalculate, merkleCalculateRootHashFromSingleFile
 #
 
@@ -29,20 +29,6 @@ function merkleCanCalculate() {
         return 3;
     fi
 
-    MKTEMP="`which mktemp`"
-    if [ -z "$MKTEMP" ]; then
-        # No mktemp? No checking of openssl. No Merkle hashes.
-        return 4;
-    fi
-    if [ ! -f "$MKTEMP" ]; then
-        # Does not exist? Strange, but okay. No Merkle hashes.
-        return 5;
-    fi
-    if [ ! -x "$MKTEMP" ]; then
-        # Does not execute? Strange, but okay. No Merkle hashes.
-        return 6;
-    fi
-
     XXD="`which xxd`"
     if [ -z "$XXD" ]; then
         # No xxd? No Merkle hashes.
@@ -58,8 +44,8 @@ function merkleCanCalculate() {
     fi
 
     # Do a small testrun to see if openssl works as we expect
-    local tmpFile1=`$MKTEMP`
-    local tmpFile2=`$MKTEMP`
+    local tmpFile1=`createTempFile`
+    local tmpFile2=`createTempFile`
     echo "blabla" > "$tmpFile1"
     "$OPENSSL" sha1 -binary "$tmpFile1" > "$tmpFile2"
     # The terrible string below is the SHA1 of "blabla"

@@ -2,7 +2,7 @@
 
 #
 # Provides functions for on-the-fly creation of torrent files.
-# Requires:
+# Requires: createTempFile
 # Provides: torrentCanCreate, torrentCreateFromSingleFile
 #
 
@@ -29,20 +29,6 @@ function torrentCanCreate() {
         return 3;
     fi
 
-    MKTEMP="`which mktemp`"
-    if [ -z "$MKTEMP" ]; then
-        # No mktemp? No checking of openssl. No torrents.
-        return 4;
-    fi
-    if [ ! -f "$MKTEMP" ]; then
-        # Does not exist? Strange, but okay. No torrents.
-        return 5;
-    fi
-    if [ ! -x "$MKTEMP" ]; then
-        # Does not execute? Strange, but okay. No torrents.
-        return 6;
-    fi
-
     DIFF="`which diff`"
     if [ -z "$DIFF" ]; then
         # No diff? No checking of openssl. No torrents.
@@ -58,8 +44,8 @@ function torrentCanCreate() {
     fi
 
     # Do a small testrun to see if openssl works as we expect
-    local tmpFile1=`$MKTEMP`
-    local tmpFile2=`$MKTEMP`
+    local tmpFile1=`createTempFile`
+    local tmpFile2=`createTempFile`
     # The terrible string below is the SHA1 of "blabla"
     echo -n $'\xe1\xa9\xde\x5d\xc7\xf9\x7c\xc1\x8c\xad\xe5\x5d\x04\xea\x0b\x3d\xd5\x2a\xc4\xf0' > "$tmpFile1"
     echo "blabla" | "$OPENSSL" sha1 -binary > "$tmpFile2"

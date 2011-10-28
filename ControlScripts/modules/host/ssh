@@ -148,18 +148,24 @@ function hostReadSettings() {
 
     # Check whether we can actually copy to and from the host before doing serious copying.
     # Note that this is a bit more involved
-    local tmpFile=`mktemp`
+    local tmpFile=`createTempFile`
     echo -n "OK" > "$tmpFile"
+    addCleanupScript
+    local cleanupidx=$?
+    addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
     local remoteTmpFile=`$HOST_SSH_COMMAND "mktemp"`
+    addCleanupCommand "hostSendCommand \"rm -f \\\"$remoteTmpFile\\\"\"" $cleanupidx
     if [ -z "$remoteTmpFile" ]; then
         logError "host:ssh :: Could not create a remote temporary file on $HOST_NAME."
         rm -f "$tmpFile"
+        removeCleanupCommand $cleanupidx
         return 1
     fi
     ans=`$HOST_SSH_COMMAND "[ -f \"$remoteTmpFile\" ] && echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:ssh :: Apparently the created remote temporary file (\"$remoteTmpFile\") on $HOST_NAME does not exist?"
         rm -f "$tmpFile"
+        removeCleanupCommand $cleanupidx
         return 1
     fi
     if ! $HOST_SSH_SCPCMD "$tmpFile" $HOST_SSH_SCPHOST:"$remoteTmpFile"; then
@@ -167,6 +173,7 @@ function hostReadSettings() {
         logError "host:ssh :: Command used:  $HOST_SSH_SCPCMD \"$tmpFile\" $HOST_SSH_SCPHOST:\"$remoteTmpFile\""
         $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
         rm -f "$tmpFile"
+        removeCleanupCommand $cleanupidx
         return 1
     fi
     ans=`$HOST_SSH_COMMAND "cat \"$remoteTmpFile\""`
@@ -174,6 +181,7 @@ function hostReadSettings() {
         logError "host:ssh :: Copying a small file to remote host $HOST_NAME failed: contents were expected to be \"OK\", but observed was: \"$ans\"."
         $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
         rm -f "$tmpFile"
+        removeCleanupCommand $cleanupidx
         return 1
     fi
     echo -n "" > "$tmpFile"
@@ -182,9 +190,11 @@ function hostReadSettings() {
         logError "host:ssh :: Command used:  $HOST_SSH_SCPCMD $HOST_SSH_SCPHOST:\"$remoteTmpFile\" \"$tmpFile\""
         $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
         rm -f "$tmpFile"
+        removeCleanupCommand $cleanupidx
         return 1
     fi
     $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
+    removeCleanupCommand $cleanupidx
     ans=`cat "$tmpFile"`
     rm -f "$tmpFile"
     if [ "$ans" != "OK" ]; then

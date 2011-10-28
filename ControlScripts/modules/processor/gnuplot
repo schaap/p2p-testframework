@@ -108,7 +108,7 @@ function processorLoadSettings() {
 # @param    The directory in which to place processed results.
 ##
 function processorProcessLogs() {
-    local scriptFile=`mktemp`
+    local scriptFile=`createTempFile`
     for execNum in `seq 0 $((${EXECUTION_COUNT} - 1))`; do
         local rawLogDir="$1/exec_${execNum}/logs"
         local parsedLogDir="$1/exec_${execNum}/parsedLogs"

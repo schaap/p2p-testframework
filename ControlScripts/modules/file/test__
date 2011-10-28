@@ -73,7 +73,7 @@ function fileLoadSettings() {
 # Use the host API to do the actual sending of the files.
 ##
 function fileSendToHost() {
-    local file=`mktemp`
+    local file=`createTempFile`
     local counter=0
     echo -n > "$file"
     while [ $counter -lt 1024 ]; do
@@ -92,7 +92,7 @@ function fileSendToHost() {
 # Use the host API to do the actual sending of the files.
 ##
 function fileSendToSeedingHost() {
-    local file=`mktemp`
+    local file=`createTempFile`
     local counter=0
     echo -n "" > "$file"
     while [ $counter -lt 1024 ]; do
