@@ -114,7 +114,11 @@ function cleanup() {
                 frame=$(($frame + 1))
             done
         else
-            .  ${cleanStack[index]}
+            # Run each cleanup in a subprocess to make sure that, if any of them fail, the rest continues
+            (
+                .  ${cleanStack[index]}
+            ) &
+            wait $!
             rm -f ${cleanStack[index]}
         fi
     done

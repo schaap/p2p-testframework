@@ -86,6 +86,8 @@ function fileReadSettings() {
 
     # FIXME: Automated root hash calculation? Use FILE_ROOTHASH
 
+    # Finally, register our file with the environment
+    FILES="$FILES $FILE_NAME"
     return 0
 }
 

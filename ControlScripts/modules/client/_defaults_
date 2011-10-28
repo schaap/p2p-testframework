@@ -144,12 +144,26 @@ function clientKill__default() {
     (
         kill -0 $pidfile 2> /dev/null || exit
         kill -TERM $pidfile
-        WAITTIME=0
-        while [ \\\$WAITTIME -lt 30 ]; do
-            sleep 1
-            kill -0 $pidfile 2> /dev/null || exit
-            WAITTIME=\$((\$WAITTIME + 1))
-        done
+
+        sleep 1
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 1
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 1
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 2
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 5
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 5
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 5
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 5
+        kill -0 $pidfile 2> /dev/null || exit
+        sleep 5
+        kill -0 $pidfile 2> /dev/null || exit
+
         kill -INT $pidfile
         sleep 5
         kill -0 $pidfile 2> /dev/null || exit

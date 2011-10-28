@@ -194,7 +194,7 @@ function hostReadSettings() {
         return 1
     fi
     $HOST_SSH_COMMAND "rm -f \"$remoteTmpFile\""
-    removeCleanupCommand $cleanupidx
+    removeCleanupScript $cleanupidx
     ans=`cat "$tmpFile"`
     rm -f "$tmpFile"
     if [ "$ans" != "OK" ]; then
@@ -220,6 +220,8 @@ function hostReadSettings() {
     echo "HOST_SSH_SCPCMD=\"$HOST_SSH_SCPCMD\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     echo "HOST_SSH_SCPHOST=\"$HOST_SSH_SCPHOST\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
 
+    # Finally, register our host with the environment
+    HOSTS="$HOSTS $HOST_NAME"
     return 0
 }
 

@@ -1,16 +1,54 @@
 #!/bin/bash
 
 #
-#
-#
-#
-#
+# Runs a test campaign, scenario by scenario.
+# Usage:
+#   ./ControlScripts/run_campaign [--check|--nocheck] your_campaign_file
+# --check will check the correctness of the settings as well as try and see if what was requested is possible.
+# The checks made by --check may not be all-inclusive, but should eliminate a lot of possible errors during runs, and hence a lot of frustration when setting up tests.
+# --nocheck will skip the checking run and only do an actual run (useful for already tested setups)
+# When neither --check nor --nocheck is given, a test run is conducted first, followed by an actual run.
 #
 
 # = Check for a campaign file. =
 
-if [ ! $# -eq 1 ]; then
-    echo "Usage: $0 campaign_file"
+##
+# Informs the user how this script should be used.
+#
+# @param    The way this script was called (i.e. "$0").
+#
+# @output   Some usage information about this script.
+##
+function usage() {
+    echo "Usage: $1 [--check|--nocheck] campaign_file"
+    echo "--check:        Only check the campaign file and the scenarios defined therein."
+    echo "--nocheck:      Do not attempt to check the campaign file first, just run it."
+    echo ""
+    echo "Without --check or --nocheck the script will run a check first, followed by a full blown run."
+    echo "The checks done will try and eliminate a lot of potential errors, not only checking syntax, but also"
+    echo "checking whether what was requested in the scenarios is in fact possible. However, they can't be"
+    echo "all-inclusive, meaning that even if a run with --check succeeds, errors could still pop up during"
+    echo "an actual executing of the campaign."
+}
+
+if [ $# -lt 1 ]; then
+    echo "Error: Not enough arguments"
+    echo ""
+    usage "$0"
+    exit 1
+fi
+
+if [ "$1" = "--check" -a $# -eq 1 ]; then
+    echo "Error: found --check, but no campaign file."
+    echo ""
+    usage "$0"
+    exit 1
+fi
+
+if [ "$1" = "--nocheck" -a $# -eq 1 ]; then
+    echo "Error: found --nocheck, but no campaign file."
+    echo ""
+    usage "$0"
     exit 1
 fi
 
@@ -122,8 +160,13 @@ loadFunctionsScript basefunctions.sh
 # = Load the parsing function #
 loadFunctionsScript parsing.sh
 
+##
 # === Read and run the campaign script ===
 # Why is it a function? Because functions introduce scope for local variables
+#
+# @param    The campaign file to be used
+# @param    "1" if only a check of the settings is to be performed, "0" if only a real run of the campaign is to be done, "" for default behaviour (check first and then run)
+##
 function run_campaign() {
     # Check whether campaign file exists
     local CAMPAIGN_FILE=$1
@@ -290,76 +333,95 @@ function run_campaign() {
         fail
     fi
 
-    # = Reparse and run scenarios =
-    echo "Reading scenario"
-    # Prepare scenario-file
-    rm -f "${LOCAL_TEST_DIR}/scenario-file"
-    touch "${LOCAL_TEST_DIR}/scenario-file"
-    if [ ! -f "${LOCAL_TEST_DIR}/scenario-file" ]; then
-        logError "Scenario file \"${LOCAL_TEST_DIR}/scenario-file\" could not be created"
-        fail
+    # = Reparse and check and/or run scenarios =
+    local testOnly=0
+    # runList determines the campaign runs to be done: "1" for a checking only run; "0" for a real run; "1 0" for both in that order; other combinations might or might not work, but they're rubbish anyway
+    local runList="1 0"
+    if [ "$2" = "1" ]; then
+        runList="1"
     fi
-    # Reread the campaign file
-    local firstScenario=1
-    while IFS="" read LINE; do
-        if [ "$LINE" = "" ]; then
-            continue
+    if [ "$2" = "0" ]; then
+        runList="0"
+    fi
+    for testOnly in $runList; do
+        echo "Reading scenario"
+        # Prepare scenario-file
+        rm -f "${LOCAL_TEST_DIR}/scenario-file"
+        touch "${LOCAL_TEST_DIR}/scenario-file"
+        if [ ! -f "${LOCAL_TEST_DIR}/scenario-file" ]; then
+            logError "Scenario file \"${LOCAL_TEST_DIR}/scenario-file\" could not be created"
+            fail
         fi
-        if isSectionHeader "$LINE"; then
-            # New section, it is already checked, so this is a new scenario: run the one just read
-            if [ $firstScenario -eq 1 ]; then
-                firstScenario=0
+        # Reread the campaign file
+        local firstScenario=1
+        while IFS="" read LINE; do
+            if [ "$LINE" = "" ]; then
+                continue
+            fi
+            if isSectionHeader "$LINE"; then
+                # New section, it is already checked, so this is a new scenario: run the one just read
+                if [ $firstScenario -eq 1 ]; then
+                    firstScenario=0
+                else
+                    echo "Running scenario $scenarioName"
+                    local CWD=`pwd`
+                    . "${TEST_ENV_DIR}/run_scenario.sh" "$scenarioName" "${LOCAL_TEST_DIR}/scenario-file" $testOnly
+                    cd "${CWD}"
+                    echo "Reading scenario"
+                fi
+                # Initialize for the next scenario
+                # Prepare scenario file
+                rm -f "${LOCAL_TEST_DIR}/scenario-file"
+                touch "${LOCAL_TEST_DIR}/scenario-file"
+                if [ ! -f "${LOCAL_TEST_DIR}/scenario-file" ]; then
+                    logError "Scenario file \"${LOCAL_TEST_DIR}/scenario-file\" could not be created"
+                    fail
+                fi
             else
-                echo "Running scenario $scenarioName"
-                local CWD=`pwd`
-                . "${TEST_ENV_DIR}/run_scenario.sh" "$scenarioName" "${LOCAL_TEST_DIR}/scenario-file"
-                cd "${CWD}"
-                echo "Reading scenario"
+                # Not a section, so should be a parameter
+                local parameterName=`getParameterName "$LINE"`
+                checkFail
+                local parameterValue=`getParameterValue "$LINE"`
+                case $parameterName in
+                    name)
+                        # The name of the scenario: already checked, just use
+                        scenarioName="$parameterValue"
+                        ;;
+                    file)
+                        # A file for the scenario: already checked, just use
+                        local file="$parameterValue"
+                        if [ "${file:0:1}" != "/" ]; then
+                            file="${TEST_ENV_DIR}/../$parameterValue"
+                        fi
+                        echo "# ${file}" >> "${LOCAL_TEST_DIR}/scenario-file"
+                        cat ${file} | sed -e"s/^[\t ]*//" | sed -e"s/[\t ]*$//" | sed -e"s/#.*//" >> "${LOCAL_TEST_DIR}/scenario-file"
+                        ;;
+                    *)
+                        # Already logged, just ignore
+                        ;;
+                esac
             fi
-            # Initialize for the next scenario
-            # Prepare scenario file
-            rm -f "${LOCAL_TEST_DIR}/scenario-file"
-            touch "${LOCAL_TEST_DIR}/scenario-file"
-            if [ ! -f "${LOCAL_TEST_DIR}/scenario-file" ]; then
-                logError "Scenario file \"${LOCAL_TEST_DIR}/scenario-file\" could not be created"
-                fail
-            fi
-        else
-            # Not a section, so should be a parameter
-            local parameterName=`getParameterName "$LINE"`
-            checkFail
-            local parameterValue=`getParameterValue "$LINE"`
-            case $parameterName in
-                name)
-                    # The name of the scenario: already checked, just use
-                    scenarioName="$parameterValue"
-                    ;;
-                file)
-                    # A file for the scenario: already checked, just use
-                    local file="$parameterValue"
-                    if [ "${file:0:1}" != "/" ]; then
-                        file="${TEST_ENV_DIR}/../$parameterValue"
-                    fi
-                    echo "# ${file}" >> "${LOCAL_TEST_DIR}/scenario-file"
-                    cat ${file} | sed -e"s/^[\t ]*//" | sed -e"s/[\t ]*$//" | sed -e"s/#.*//" >> "${LOCAL_TEST_DIR}/scenario-file"
-                    ;;
-                *)
-                    # Already logged, just ignore
-                    ;;
-            esac
-        fi
-    done < "${LOCAL_TEST_DIR}/campaign-file"
-    # Run the last read scenario
-    echo "Running scenario $scenarioName"
-    local CWD=`pwd`
-    . "${TEST_ENV_DIR}/run_scenario.sh" "$scenarioName" "${LOCAL_TEST_DIR}/scenario-file"
-    cd "${CWD}"
+        done < "${LOCAL_TEST_DIR}/campaign-file"
+        # Run the last read scenario
+        echo "Running scenario $scenarioName"
+        local CWD=`pwd`
+        . "${TEST_ENV_DIR}/run_scenario.sh" "$scenarioName" "${LOCAL_TEST_DIR}/scenario-file" $testOnly
+        cd "${CWD}"
+    done
 
     # Reset the logError function
     loadFunctionsScript stderrlogging.sh
 }
 
-run_campaign $1
+if [ "$1" = "--check" ]; then
+    run_campaign "$2" 1
+else
+    if [ "$1" = "--nocheck" ]; then
+        run_campaign "$2" 0
+    else
+        run_campaign "$1"
+    fi
+fi
 
 cleanup
 

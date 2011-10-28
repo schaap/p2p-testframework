@@ -53,6 +53,8 @@ function fileReadSettings() {
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 
+    # Finally, register our file with the environment
+    FILES="$FILES $FILE_NAME"
     return 0
 }
 

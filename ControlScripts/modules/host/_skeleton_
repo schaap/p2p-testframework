@@ -55,6 +55,8 @@ function hostReadSettings() {
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
 
+    # Finally, register our host with the environment
+    HOSTS="$HOSTS $HOST_NAME"
     return 0
 }
 
@@ -131,6 +133,8 @@ function hostPrepare() {
     if [ ! -z "$HOST_PREPARATION" ]; then
         . "$HOST_PREPARATION"
     fi
+
+    # Note that both prepare and cleanup will be also be called when just testing the correctness of settings.
 }
 
 ##

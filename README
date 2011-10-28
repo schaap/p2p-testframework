@@ -306,6 +306,7 @@ Hosts are handled completely by the module. The module, after being loaded, expo
 - hostGetTestDir                        -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment; valid between hostPrepare and hostCleanup
 - hostGetSubnet                         -> outputs the external address(es) of the host(s) in the form of a subnet (either as a hostname or as an IP address); this is used for traffic control; "127.0.0.1" always is to be used for localhost and signifies that no traffic control should be done on that host
 The following global variables are available for each host:
+- HOSTS                                 -> a list of all loaded host objects, separated by spaces
 - HOST_NAME                             -> the name of the host object
 - HOST_PREPARATION                      -> the host specific preparation script
 - HOST_CLEANUP                          -> the host specific cleanup script
@@ -345,6 +346,7 @@ Clients are handled completely by the module. The module, after being loaded, ex
 - clientTrafficInboundPorts             -> returns a space separated list of inbound ports on which *all* traffic is received (this is used to set up traffic controle); valid values depend on clientTrafficProtocol(); return "" if no such list can be given (e.g. when inbound ports are dynamically added)
 - clientTrafficOutboundPorts            -> returns a space separated list of outbound ports through which *all* traffic is sent (this is used to set up traffic control); valid values depend on clientTrafficProtocol(); return "" if no such list can be given (e.g. when outbound ports are dynamically added)
 The following global variables are available for each client:
+- CLIENTS                               -> a list of all loaded client objects by name, separated by spaces
 - CLIENT_NAME                           -> the name of the client object
 - CLIENT_PARAMS                         -> extra parameters to the client
 - CLIENT_CLEANUPIDX                     -> the index of the client's cleanup script
@@ -383,6 +385,7 @@ Files are handled completely by the module. The module, after being loaded, expo
 - fileGetMetaName                       -> returns the filename of the metadata file, if any, on the currently loaded host (requires host to be loaded, may use Hosts API)
 - fileGetRootHash                       -> returns the Merkle root hash of the file, if any is known
 The following global variables are available for each file:
+- FILES                                 -> a list of all loaded file objects by name, separated by spaces
 - FILE_NAME                             -> the name of the file object
 - FILE_SUBTYPE                          -> the subtype of the file, as specified in the file module's name
 - FILE_ROOTHASH                         -> the SHA1 Merkle Root Hash for the file, or "" if unknown

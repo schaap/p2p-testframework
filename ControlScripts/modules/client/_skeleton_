@@ -48,6 +48,8 @@ function clientReadSettings() {
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
+    # Finally, register our client with the environment
+    CLIENTS="$CLIENTS $CLIENT_NAME"
     return 0
 }
 
@@ -176,6 +178,8 @@ function clientCleanupFinal() {
     # The default implementation removes the cleanup files
     # This is probably just fine for you
     clientCleanupFinal__default
+
+    # Note that, because of the symmetry of this function with clientReadSettings, this functions is also called when just testing the settings for correctness.
 }
 
 ##

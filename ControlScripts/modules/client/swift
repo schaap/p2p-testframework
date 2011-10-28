@@ -93,6 +93,8 @@ function clientReadSettings() {
     echo "CLIENT_SWIFT_TRACKER=\"$CLIENT_SWIFT_TRACKER\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_SWIFT_WAIT=\"$CLIENT_SWIFT_WAIT\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
+    # Finally, register our client with the environment
+    CLIENTS="$CLIENTS $CLIENT_NAME"
     return 0
 }
 

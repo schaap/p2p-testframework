@@ -60,6 +60,8 @@ function clientReadSettings() {
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_TEST_TIME=\"$CLIENT_TEST_TIME\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
+    # Finally, register our client with the environment
+    CLIENTS="$CLIENTS $CLIENT_NAME"
     return 0
 }
 

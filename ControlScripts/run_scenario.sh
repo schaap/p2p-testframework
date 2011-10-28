@@ -14,7 +14,7 @@ echo "Running scenario $1 with file $2"
 # 10. Clean up
 
 # === Check arguments ===
-if [ ! $# -eq 2 ]; then
+if [ ! $# -eq 3 ]; then
     echo "Do not call run_scenario directly" 1>&2
     exit -1
 fi
@@ -96,12 +96,24 @@ function existsModule() {
     return 1
 }
 
-# === Parse the scenario file ===
+##
+# === Parse and run the scenario file ===
 # The scenario file has already been concatenated and cleaned, so no need to compact/clean anymore
 # Why is it a function? Because functions introduce scope for local variables
+#
+# @param    Scenario name
+# @param    Path to a local file containing the full scenario description
+# @param    1 if only a test run needs to be done (i.e. no actual running of clients, just do as much checks as possible before starting)
+##
 function runScenario() {
     SCENARIO_NAME=$1
     local scenarioFile=$2
+    local testOnly=0
+    if [ "$3" = "1" ]; then
+        testOnly=1
+    fi
+
+    echo "Scenario testOnly: $testOnly"
 
     local APIVersion=`echo "1.0.0"`
 
@@ -119,6 +131,9 @@ function runScenario() {
     EXECUTION_COUNT=0
     PROCESSOR_COUNT=0
     VIEWER_COUNT=0
+    HOSTS=""
+    CLIENTS=""
+    FILES=""
     while IFS="" read LINE; do
         echo "Parsing $LINE" 1>&2
         if [ "${LINE:0:1}" = "#" ]; then
@@ -245,7 +260,7 @@ function runScenario() {
     echo "Preparing all objects for execution"
 
     # Collect all hosts from the executions
-    local hosts=( )
+    local executionhosts=( )
     local found=0
     for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
         local currExec__internal__saved=$currExec
@@ -253,28 +268,23 @@ function runScenario() {
         currExec=$currExec__internal__saved
 
         found=0
-        if [ ${#hosts[@]} -gt 0 ]; then
-            for index in `seq 0 $((${#hosts[@]} - 1))`; do
-                if [ "$EXECUTION_HOST" = "${hosts[index]}" ]; then
+        if [ ${#executionhosts[@]} -gt 0 ]; then
+            for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+                if [ "$EXECUTION_HOST" = "${executionhosts[index]}" ]; then
                     found=1
                     break
                 fi
             done
         fi
         if [ $found -eq 0 ]; then
-            hosts[${#hosts[@]}]="$EXECUTION_HOST"
+            executionhosts[${#executionhosts[@]}]="$EXECUTION_HOST"
         fi
     done
 
-    # Prepare the hosts and files
+    # Collect all used hostnames (for traffic control purposes)
     local hostnames=( )
-    for index in `seq 0 $((${#hosts[@]} - 1))`; do
-        local index__internal__saved=$index
-        hostLoadSettings ${hosts[index]}
-        hostPrepare
-        index=$index__internal__saved
-
-        # Collect all used hostnames (for traffic control purposes)
+    for host in $HOSTS; do
+        hostLoadSettings $host
         local found=0
         local myhostname=`hostGetSubnet`
         for index2 in `seq 0 $((${#hostnames[@]} - 1))`; do
@@ -286,16 +296,24 @@ function runScenario() {
         if [ $found -eq 0 ]; then
             hostnames[${#hostnames[@]}]="$myhostname"
         fi
+    done
+
+    # Prepare the hosts and files
+    for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+        local index__internal__saved=$index
+        hostLoadSettings ${executionhosts[index]}
+        hostPrepare
+        index=$index__internal__saved
 
         # Collect all files and clients to be used on this host from the executions
         local files=( )
         local seedingFiles=( )
-        local clients=( )
+        local hostclients=( )
         for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
             local currExec__internal__saved=$currExec
             executionLoadSettings $currExec
             currExec=$currExec__internal__saved
-            if [ "$EXECUTION_HOST" != "${hosts[index]}" ]; then
+            if [ "$EXECUTION_HOST" != "${executionhosts[index]}" ]; then
                 continue
             fi
 
@@ -328,16 +346,16 @@ function runScenario() {
             fi
 
             found=0
-            if [ ${#clients[@]} -gt 0 ]; then
-                for index2 in `seq 0 $((${#clients[@]} - 1))`; do
-                    if [ "$EXECUTION_CLIENT" = "${clients[index2]}" ]; then
+            if [ ${#hostclients[@]} -gt 0 ]; then
+                for index2 in `seq 0 $((${#hostclients[@]} - 1))`; do
+                    if [ "$EXECUTION_CLIENT" = "${hostclients[index2]}" ]; then
                         found=1
                         break;
                     fi
                 done
             fi
             if [ $found -eq 0 ]; then
-                clients[${#clients[@]}]="$EXECUTION_CLIENT"
+                hostclients[${#hostclients[@]}]="$EXECUTION_CLIENT"
             fi
         done
 
@@ -363,10 +381,10 @@ function runScenario() {
             fi
             local inboundrestrictedlist=""
             local outboundrestrictedlist=""
-            for index2 in `seq 0 $((${#clients[@]} - 1))`; do
+            for index2 in `seq 0 $((${#hostclients[@]} - 1))`; do
                 # Go over all clients to see how they think they should be restricted. Aggregate data to be saved in the host.
                 local index2__internal__saved=$index2
-                clientLoadSettings ${clients[index2]}
+                clientLoadSettings ${hostclients[index2]}
                 if [ -z "$tcprotocol" ]; then
                     tcprotocol="`clientTrafficProtocol`"
                 else
@@ -488,32 +506,73 @@ function runScenario() {
             # At this point, either tcCheck passes and the right settings have thus been saved, or we have already failed (and hence never reached this point)
         fi
 
-        # Prepare all files for this host
-        for index2 in `seq 0 $((${#files[@]} - 1))`; do
-            local index2__internal__saved=$index2
-            fileLoadSettings ${files[index2]}
-            fileSendToHost
-            index2=$index2__internal__saved
-        done
-
-        # Prepare all files for this host, if seeding is needed
-        if [ ${#seedingFiles[@]} -gt 0 ]; then
-            for index2 in `seq 0 $((${#seedingFiles[@]} - 1))`; do
+        # Everything after this point is for the actual execution only
+        if [ $testOnly -eq 0 ]; then
+            # Prepare all files for this host
+            for index2 in `seq 0 $((${#files[@]} - 1))`; do
                 local index2__internal__saved=$index2
-                fileLoadSettings ${seedingFiles[index2]}
-                fileSendToSeedingHost
+                fileLoadSettings ${files[index2]}
+                fileSendToHost
+                index2=$index2__internal__saved
+            done
+
+            # Prepare all files for this host, if seeding is needed
+            if [ ${#seedingFiles[@]} -gt 0 ]; then
+                for index2 in `seq 0 $((${#seedingFiles[@]} - 1))`; do
+                    local index2__internal__saved=$index2
+                    fileLoadSettings ${seedingFiles[index2]}
+                    fileSendToSeedingHost
+                    index2=$index2__internal__saved
+                done
+            fi
+
+            # Prepare all clients for this host
+            for index2 in `seq 0 $((${#hostclients[@]} - 1))`; do
+                local index2__internal__saved=$index2
+                clientLoadSettings ${hostclients[index2]}
+                clientPrepareHost
                 index2=$index2__internal__saved
             done
         fi
-
-        # Prepare all clients for this host
-        for index2 in `seq 0 $((${#clients[@]} - 1))`; do
-            local index2__internal__saved=$index2
-            clientLoadSettings ${clients[index2]}
-            clientPrepareHost
-            index2=$index2__internal__saved
-        done
     done
+
+    # When we're just testing, we're about done now
+    if [ $testOnly -eq 1 ]; then
+        echo "Cleaning up hosts"
+
+        # Clean up the hosts
+        for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+            local index__internal__saved=$index
+            hostLoadSettings ${executionhosts[index]}
+            hostCleanup
+            index=$index__internal__saved
+        done
+
+        echo "Cleaning up client objects"
+
+        # Final cleanup of all clients
+        for client in $CLIENTS; do
+            clientLoadSettings $client
+            clientCleanupFinal
+        done
+
+        echo "Cleaning up scenario"
+        
+        # Clean temporary data for scenario
+        rm -rf "${LOCAL_TEST_DIR}/clients/"
+        rm -rf "${LOCAL_TEST_DIR}/executions/"
+        rm -rf "${LOCAL_TEST_DIR}/files/"
+        rm -rf "${LOCAL_TEST_DIR}/hosts/"
+        rm -rf "${LOCAL_TEST_DIR}/parsers/"
+        rm -rf "${LOCAL_TEST_DIR}/processors/"
+        rm -rf "${LOCAL_TEST_DIR}/viewers/"
+
+        # Since we were only testing: clean results as well
+        rm -rf "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/"
+        
+        echo "Scenario \"$SCENARIO_NAME\" checked"
+        return
+    fi
 
     # Prepare all clients
     for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
@@ -532,9 +591,9 @@ function runScenario() {
     addCleanupScript
     local scenario_cleanup_tc_script_idx=$?
     # Since traffic control is rather invasive, don't try and load it before all hosts have been checked.
-    for index in `seq 0 $((${#hosts[@]} - 1))`; do
+    for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
         local index__internal__saved=$index
-        hostLoadSettings ${hosts[index]}
+        hostLoadSettings ${executionhosts[index]}
         index=$index__internal__saved
 
         if [ -z "$HOST_TC" ]; then
@@ -556,7 +615,7 @@ function runScenario() {
         done
 
         loadModule "tc/$HOST_TC"
-        addCleanupCommand "hostLoadSettings \"${hosts[index]}\"" $scenario_cleanup_tc_script_idx
+        addCleanupCommand "hostLoadSettings \"${executionhosts[index]}\"" $scenario_cleanup_tc_script_idx
         addCleanupCommand "loadModule \"tc/$HOST_TC\"" $scenario_cleanup_tc_script_idx
         addCleanupCommand "(tcRemove)" $scenario_cleanup_tc_script_idx
         (tcInstall $otherhostnames)
@@ -627,9 +686,9 @@ function runScenario() {
 
     echo "Removing any traffic control from hosts"
     # Immediately after all running has been done, not a step later
-    for index in `seq 0 $((${#hosts[@]} - 1))`; do
+    for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
         local index__internal__saved=$index
-        hostLoadSettings ${hosts[index]}
+        hostLoadSettings ${executionhosts[index]}
         index=$index__internal__saved
 
         if [ -z "$HOST_TC" ]; then
@@ -675,69 +734,54 @@ function runScenario() {
 
         clientCleanupExecution
 
-        found=0
-        if [ ${#allClients[@]} -gt 0 ]; then
-            for index2 in `seq 0 $((${#allClients[@]} - 1))`; do
-                if [ "$EXECUTION_CLIENT" = "${allClients[index2]}" ]; then
-                    found=1
-                    break;
-                fi
-            done
-        fi
-        if [ $found -eq 0 ]; then
-            allClients[${#allClients[@]}]="$EXECUTION_CLIENT"
-        fi
-
         currExec=$currExec__internal__saved
     done
 
     # Clean up the hosts
-    for index in `seq 0 $((${#hosts[@]} - 1))`; do
+    for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
         local index__internal__saved=$index
+        hostLoadSettings ${executionhosts[index]}
 
         # Collect all clients to be used on this host from the executions
-        local clients=( )
+        local hostclients=( )
         for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
             local currExec__internal__saved=$currExec
             executionLoadSettings $currExec
             currExec=$currExec__internal__saved
-            if [ "$EXECUTION_HOST" != "${hosts[index]}" ]; then
+            if [ "$EXECUTION_HOST" != "${executionhosts[index]}" ]; then
                 continue
             fi
 
             found=0
-            if [ ${#clients[@]} -gt 0 ]; then
-                for index2 in `seq 0 $((${#clients[@]} - 1))`; do
-                    if [ "$EXECUTION_CLIENT" = "${clients[index2]}" ]; then
+            if [ ${#hostclients[@]} -gt 0 ]; then
+                for index2 in `seq 0 $((${#hostclients[@]} - 1))`; do
+                    if [ "$EXECUTION_CLIENT" = "${hostclients[index2]}" ]; then
                         found=1
                         break;
                     fi
                 done
             fi
             if [ $found -eq 0 ]; then
-                clients[${#clients[@]}]="$EXECUTION_CLIENT"
+                hostclients[${#hostclients[@]}]="$EXECUTION_CLIENT"
             fi
         done
 
         # Cleanup all clients for this host
-        for index2 in `seq 0 $((${#clients[@]} - 1))`; do
+        for index2 in `seq 0 $((${#hostclients[@]} - 1))`; do
             local index2__internal__save=$index2
-            clientLoadSettings ${clients[index2]}
+            clientLoadSettings ${hostclients[index2]}
             clientCleanupHost
             index2=$index2__internal__save
         done
 
-        hostLoadSettings ${hosts[index]}
         hostCleanup
         index=$index__internal__saved
     done
 
     # Final cleanup of all clients
-    for index in `seq 0 $((${#allClients[@]} - 1))`; do
-        local index__internal__save=$index
-        clientLoadSettings ${allClients[index]}
+    for client in $CLIENTS; do
+        clientLoadSettings $client
         clientCleanupFinal
-        index=$index__internal__save
     done
 
     echo "Processing logs"
@@ -776,8 +820,8 @@ function runScenario() {
     rm -rf "${LOCAL_TEST_DIR}/parsers/"
     rm -rf "${LOCAL_TEST_DIR}/processors/"
     rm -rf "${LOCAL_TEST_DIR}/viewers/"
+
+    echo "Scenario \"$SCENARIO_NAME\" has completed"
 }
 
-runScenario "$1" "$2"
-
-echo "Scenario \"$1\" has completed"
+runScenario "$1" "$2" "$3"
