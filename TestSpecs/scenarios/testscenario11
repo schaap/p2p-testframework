@@ -1,7 +1,7 @@
 [client:swift]
 name=swift_seed
 listenPort=10000
-location=../swift
+location=../cleanedswift
 wait=30
 builder=make
 remoteClient=yes
@@ -10,18 +10,18 @@ source=local
 
 [client:swift]
 name=swift_leech
-location=../swift
+location=../cleanedswift
 tracker=127.0.0.1:10000
 builder=make
 remoteClient=yes
 source=local
 
 [execution]
-host=cmtitan.info
+host=mughal
 file=test
 client=swift_seed
 
 [execution]
-host=cmtitan.info
+host=mughal
 file=test
 client=swift_leech

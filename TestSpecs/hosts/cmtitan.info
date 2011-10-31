@@ -1,4 +1,0 @@
-[host:ssh]
-hostname=cmtitan.info
-params=-i /home/thomas/.ssh/id_rsa2
-user=thomas

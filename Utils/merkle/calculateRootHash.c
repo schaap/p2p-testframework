@@ -52,6 +52,13 @@ int main( int argc, char** argv ) {
         hashSet[i] = 0;
 
     /* Read the file, kilobyte by kilobyte, and build the hash tree */
+    /*
+     * If needed for debug, one can enable these statements.
+    int count[64];
+    int j;
+    for( j = 0; j < 64; j++ )
+        count[j] = 0;
+    */
     while( !feof( f ) ) {
         sizeRead = fread( buffer, 1, 1024, f );
         if( ferror( f ) ) {
@@ -60,11 +67,22 @@ int main( int argc, char** argv ) {
             return 3;
         }
 
+        if( !sizeRead ) {
+            /* Catch the corner case where we read 0 bytes. This is also EOF. */
+            break;
+        }
+
         /* Create the SHA1 hash of the kilobyte that has just been read */
         blk_SHA1_Init( &h );
         blk_SHA1_Update( &h, buffer, sizeRead );
         blk_SHA1_Final( hash, &h );
 
+        /*
+        fprintf( stderr, "(0,%d) : ", count[0]++ );
+        for( j = 0; j < 20; j++ )
+            fprintf( stderr, "%02x", (unsigned int)hash[j] );
+        fprintf( stderr, "\n" );
+        */
 
         /* Add the hash to the hash tree: going from bottom to top, find the first empty spot to insert the hash into, merging all the hashes found before that into this one. */
         for( i = 0; i < 64; i++ ) {
@@ -81,6 +99,12 @@ int main( int argc, char** argv ) {
                 blk_SHA1_Update( &h, hash, 20 );
                 blk_SHA1_Final( hash, &h );
                 hashSet[i] = 0;
+                /*
+                fprintf( stderr, "(%d,%d) : ", i+1, count[i+1]++ );
+                for( j = 0; j < 20; j++ )
+                    fprintf( stderr, "%02x", (unsigned int)hash[j] );
+                fprintf( stderr, "\n" );
+                */
             }
         }
     }

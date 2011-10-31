@@ -56,8 +56,8 @@ function fileReadSettings() {
                 fi
                 ;;
             generateRootHash)
-                if ["$parameterValue" = "yes" ]; then
-                    if [ ! -z "FILE_ROOTHASH" ]; then
+                if [ "$parameterValue" = "yes" ]; then
+                    if [ ! -z "$FILE_ROOTHASH" ]; then
                         logError "file:local :: File $FILE_NAME has a request to have the SHA1 root hash calculated, but it was already supplied: $FILE_ROOTHASH (line $LINE_NUMBER)."
                         return 1
                     fi
@@ -96,14 +96,14 @@ function fileReadSettings() {
     echo "FILE_LOCAL_TORRENT=\"$FILE_LOCAL_TORRENT\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 
     # Try and calculate the roor hash for this single file.
-    if [ $file_local_roothash_requested -eq 1]; then
+    if [ $file_local_roothash_requested -eq 1 ]; then
         loadFunctionsScript merkle.sh
-        if !merkleCanCalculate; then
+        if ! merkleCanCalculate; then
             logError "file:local :: Could not generate the root hash from local file \"$FILE_LOCAL_PATH\". Perhaps the file is too large?"
             return 1
         fi
-        FILE_ROOTHASH=`merkleCalculateRootHashFromSingleFile`
-        if [ -z "FILE_ROOTHASH" ]; then
+        FILE_ROOTHASH=`merkleCalculateRootHashFromSingleFile "$FILE_LOCAL_PATH"`
+        if [ -z "$FILE_ROOTHASH" ]; then
             logError "file:local :: No root hash was calculated for \"$FILE_LOCAL_PATH\", although requested."
             return 1
         fi

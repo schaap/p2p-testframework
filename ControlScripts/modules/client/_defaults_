@@ -121,7 +121,7 @@ function clientStart__default() {
 function clientRunning__default() {
     # kill -0 sends no signal to the process, but does do error checking. If the process does not exist this test fails, otherwise is succeeds.
     # This test relies on the pid file created in clientStart
-    local pidfile="\`cat `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`\`"
+    local pidfile="\`cat `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber` 2>/dev/null\`"
     local ret=`hostSendCommand "kill -0 $pidfile 2>/dev/null && echo -n OK"`
     if [ "$ret" = "OK" ]; then
         return 0
@@ -134,7 +134,7 @@ function clientRunning__default() {
 # This default implementation relies on the pid file being created in `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`
 ##
 function clientKill__default() {
-    local pidfile="\`cat `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`\`"
+    local pidfile="\`cat `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber` 2>/dev/null\`"
     # for the kill -0 test: see clientRunning
     # This script tries several times to kill the process, each time giving the process some time. This is considered a nice way of killing, rather than just using the shotgun method (kill -9).
     # The first time a simple SIGTERM is used, to tell the process to shut down. The process is given 30 seconds to do so.

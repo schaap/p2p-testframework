@@ -1,3 +1,31 @@
+ # This campaign runs quite some test using the file_50M.
+ # It is used as a regression test for the P2P testing framework.
+ # Not all functionality is covered, but most is here.
+ #
+ # You can use this test yourself by executing the following (if needed) from the directory containing the ControlScripts directory. This will create
+ # two directories containing the swift sources, one compiled (../swift) and one source-only (../cleanedswift). Both are used by the test campaign.
+ #      cd ..
+ #      mkdir swift
+ #      cd swift
+ #      git clone https://github.com/gritzko/swift.git
+ #      cd ..
+ #      mkdir cleanedswift
+ #      cd cleanedswift
+ #      cp -r ../swift/* .
+ #      rm -rf `find . -name ".git"`
+ #      cd ../swift
+ #      make
+ #
+ # You will also need to adjust the settings for the SSH test host, since you at least won't be able to use my credentials ;).
+ # The file you need to change is TestSpecs/hosts/mughal
+ # If you have access to mughal.tribler.org enter your own username and adjust the params (which are just passed to ssh) as needed.
+ # The params already there point ssh to my unencrypted RSA key (which, hence, is usually not authorized on any machine, unless when I need it).
+ # You can use a similar setup or just leave out the params if you already have password-less access to your ssh machine.
+ # Do change the hostname if you wish to use another machine. Leave the name parameter intact, though, it's by that name the test campaign refers to it.
+ #
+ # When everything is set up you can run the test campaign from the directory containing the ControlScripts directory:
+ #      ./ControlScripts/run_campaign.sh TestSpecs/testcampaign
+
 [scenario]
 name=testScenario1
 file=TestSpecs/files/testfile
@@ -62,7 +90,7 @@ timelimit=15
 [scenario]
 name=testScenario10
 file=TestSpecs/files/testfile
-file=TestSpecs/hosts/cmtitan.info
+file=TestSpecs/hosts/mughal
 file=TestSpecs/parsers/testparser
 file=TestSpecs/clients/testclient
 file=TestSpecs/scenarios/testscenario10
@@ -71,7 +99,7 @@ file=TestSpecs/viewers/testviewer
 [scenario]
 name=testScenario11
 file=TestSpecs/files/testfile
-file=TestSpecs/hosts/cmtitan.info
+file=TestSpecs/hosts/mughal
 file=TestSpecs/parsers/testparser
 file=TestSpecs/scenarios/testscenario11
 file=TestSpecs/processors/testprocessor
@@ -80,7 +108,7 @@ timelimit=15
 [scenario]
 name=testScenario12
 file=TestSpecs/files/testfile
-file=TestSpecs/hosts/cmtitan.info
+file=TestSpecs/hosts/mughal
 file=TestSpecs/parsers/testparser
 file=TestSpecs/scenarios/testscenario12
 file=TestSpecs/processors/testprocessor

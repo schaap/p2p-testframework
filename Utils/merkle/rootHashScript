@@ -1,0 +1,48 @@
+#!/bin/bash
+
+#
+# This small script will invoke the SHA1 root hash calculation for a file.
+# If this script doesn't work for you then the P2P testing framework probably won't
+# help you calculating it, either. However, if you have a swift compilation ready
+# (you can get the sourse using git from https://github.com/gritzko/swift.git),
+# you can just run
+#   ./swift -f /path/to/your/file
+# and it will tell you the root hash.
+#
+
+if [ ! $# -eq 1 ]; then
+    echo "Usage: $0 file"
+    echo "This will calculate the SHA1 root hash in the way the P2P testing framework would do."
+    exit -1
+fi
+
+function createTempFile() {
+    mktemp
+}
+
+function logError() {
+    echo "$1"
+}
+
+if [ ! -d ./ControlScripts ]; then
+    echo "Please run this script from the directory containing the ControlScripts directory."
+    exit 1
+fi
+
+if [ ! -f ./ControlScripts/functions/merkle.sh ]; then
+    echo "The ControlScripts directory seems to be present in the current directory, but the file ControlScripts/functions/merkle.sh can't be found."
+    exit 2
+fi
+
+TEST_ENV_DIR=./ControlScripts
+
+. ./ControlScripts/functions/merkle.sh
+
+if ! merkleCanCalculate; then
+    echo "The merkle functions script can't calculate the root hash. This usually means the C version can't be compiled and openssl is not found."
+    exit 3
+fi
+
+merkleCalculateRootHashFromSingleFile "$1"
+
+echo

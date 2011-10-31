@@ -1,0 +1,5 @@
+[host:ssh]
+name=mughal
+hostname=mughal.tribler.org
+params=-i /home/thomas/.ssh/id_rsa2
+user=schaap

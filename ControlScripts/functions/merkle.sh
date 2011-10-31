@@ -5,6 +5,8 @@
 # Requires: createTempFile
 # Provides: merkleCanCalculate, merkleCalculateRootHashFromSingleFile
 #
+# When editing this file, also look at the contents of the Utils/merkle/ directory. The two play together.
+#
 
 ##
 # Returns whether it is possible to calculate Merkle hashes.

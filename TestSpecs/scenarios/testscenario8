@@ -7,7 +7,7 @@ rootHash=8d59ad2d06e1f75c0f5cd135d14f557c63cdb055
 [client:swift]
 name=swift_seed
 listenPort=10000
-location=../swift
+location=../cleanedswift
 wait=30
 builder=make
 source=local
@@ -15,7 +15,7 @@ remoteClient=yes
 
 [client:swift]
 name=swift_leech
-location=../swift
+location=../cleanedswift
 tracker=127.0.0.1:10000
 builder=make
 source=local
