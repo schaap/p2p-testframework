@@ -193,15 +193,6 @@ parameters:
 - name              -> required, the file can be referred to by its name, no two files with the same name allowed
 - rootHash          -> optional, the Merkle root hash of the file (40 hexadecimal digits)
 
-==== file:torrent ====
-parameters:
-- torrent           -> required, path on the local machine to the torrent file to be used
-- file              -> optional, may be specified multiple times, path to a file or directory that is to be copied to the remote host for seeders
-
-==== file:generated ====
-parameters:
-- size              -> required, size of the generated file in MB
-
 ==== file:local ====
 parameters:
 - path              -> required, path to the file on the local machine
