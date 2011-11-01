@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function parserAPIVersion__default() {
-    echo "1.0.0"
+    echo "1.0.1"
 }
 
 ##

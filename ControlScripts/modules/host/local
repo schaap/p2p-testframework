@@ -172,10 +172,28 @@ function hostCleanup() {
 
 ##
 # Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment.
+#
+# Files placed in this directory are not guaranteed to remain available for later downloading.
+# This is the perfect location for files such as data to be downloaded by clients, which can be forgotten the moment the client finishes.
+# For logfiles and other files that are needed after the execution of the client, use hostGetPersistentTestDir
+#
+# @output   The test directory on the host.
 ##
 function hostGetTestDir() {
     # The default implementation checks HOST_REMOTEFOLDER and HOST_TEMPFOLDER, which should be fine, especially when hostPrepare__default is used above.
     hostGetTestDir__default
+}
+
+##
+# Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment, which will remain available until the host is cleaned.
+#
+# Note that persistence in this case is limited to the complete test as opposed to data being thrown away at any possible moment in between commands.
+#
+# @output   The persistent test directory on the host.
+##
+function hostGetPersistentTestDir() {
+    # The default implementation calls hostGetTestDir, since that is usually as persistent as is needed for this function.
+    hostGetPersistentTestDir__default
 }
 
 ##
@@ -244,5 +262,5 @@ function hostTCSaveProtocol() {
 # @output   The API version number.
 ##
 function hostAPIVersion() {
-    echo "1.0.0"
+    echo "1.0.1"
 }

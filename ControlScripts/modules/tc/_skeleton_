@@ -49,5 +49,5 @@ function tcRemove() {
 # @output   The API version number.
 ##
 function tcAPIVersion() {
-    echo "1.0.0"
+    echo "1.0.1"
 }

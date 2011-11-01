@@ -1,5 +1,11 @@
 This document is the work-in-progress documentation of the P2P testing framework.
 
+= API Version History =
+
+1.0.1
+    + Added hostGetPersistentTestDir
+            hosts need updating to include this function, clients need updating to use this function for storing logs
+
 = Stages =
 
 This section is a setup for the flow of work in the testing framework. It's not entirely up to date at the moment, but should give an insight into what steps are done and in what order.

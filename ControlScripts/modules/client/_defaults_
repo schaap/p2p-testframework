@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function clientAPIVersion__default() {
-    echo "1.0.0"
+    echo "1.0.1"
 }
 
 ##
@@ -180,7 +180,7 @@ EOF`
 ##
 # Does client/host specific preparation on the host as well as copying the file of the client to the host.
 # The default implementation creates client specific directories on the host
-# (`hostGetTestDir`/clients/$CLIENT_NAME/ and `hostGetTestDir`/logs/$CLIENT_NAME/)
+# (`hostGetTestDir`/clients/$CLIENT_NAME/ and `hostGetTestDir`/logs/$CLIENT_NAME/, as well as `hostGetPersistentTestDir`/clients/$CLIENT_NAME and `hostGetPersistentTestDir`/logs/$CLIENT_NAME)
 # Client cleanup is extended with cleanup for this host.
 ##
 function clientPrepareHost__default() {
@@ -190,7 +190,7 @@ function clientPrepareHost__default() {
     addCleanupCommand "clientCleanupHost" $CLIENT_CLEANUPIDX
 
     # Create client specific directories on host
-    hostSendCommand "mkdir -p \"`hostGetTestDir`/clients/$CLIENT_NAME/\"; mkdir -p \"`hostGetTestDir`/logs/$CLIENT_NAME/\""
+    hostSendCommand "mkdir -p \"`hostGetTestDir`/clients/$CLIENT_NAME/\"; mkdir -p \"`hostGetTestDir`/logs/$CLIENT_NAME/\"; mkdir -p \"`hostGetPersistentTestDir`/clients/$CLIENT_NAME\"; mkdir -p \"`hostGetPersistentTestDir`/logs/$CLIENT_NAME\""
 
     # Build the client if a remote build is requested
     if [ ! -z "$CLIENT_REMOTECLIENT" ]; then
@@ -226,7 +226,7 @@ function clientPrepareHost__default() {
 ##
 function clientPrepareExecution__default() {
     # Create client/execution specific directories on host
-    hostSendCommand "mkdir -p \"`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/\"; mkdir -p \"`hostGetTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/\""
+    hostSendCommand "mkdir -p \"`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/\"; mkdir -p \"`hostGetTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/\"; mkdir -p \"`hostGetPersistentTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/\"; mkdir -p \"`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/\""
         
     # Build and send the command script for running the client
     local clientRunnerScript=`createTempFile`
@@ -271,7 +271,7 @@ function clientCleanupExecution__default() {
 ##
 function clientCleanupHost__default() {
     # Remove the client specific directories
-    hostSendCommand "rm -rf \"`hostGetTestDir`/clients/$CLIENT_NAME\" \"`hostGetTestDir`/logs/$CLIENT_NAME\""
+    hostSendCommand "rm -rf \"`hostGetTestDir`/clients/$CLIENT_NAME\" \"`hostGetTestDir`/logs/$CLIENT_NAME\" \"`hostGetPersistentTestDir`/clients/$CLIENT_NAME\" \"`hostGetPersistentTestDir`/logs/$CLIENT_NAME\""
 }
 
 ##

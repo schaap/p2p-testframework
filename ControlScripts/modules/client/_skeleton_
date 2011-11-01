@@ -109,7 +109,8 @@ function clientKill() {
 ##
 function clientPrepareHost() {
     # The default implementation creates client specific directories (`hostGetTestDir`/clients/$CLIENT_NAME/ and
-    # `hostGetTestDir`/logs/$CLIENT_NAME/) and adds clientCleanupHost to the cleanup file.
+    # `hostGetTestDir`/logs/$CLIENT_NAME/ as well as `hostGetPersistentTestDir`/clients/$CLIENT_NAME/ and
+    # `hostGetPersistenTestDir`/logs/$CLIENT_NAME/) and adds clientCleanupHost to the cleanup file.
     clientPrepareHost__default
 
     # Add extra preparation, such as sending the binaries of your client, here
@@ -140,8 +141,11 @@ function clientPrepareExecution() {
     #
     # Please make sure to take $CLIENT_REMOTECLIENT into account in your command line.
     #
+    # When redirecting logs, please make sure you place them in hostGetPersistentTestDir, or you might not be able to download them after the client has finished executing.
+    #
     # Apart from creating the runner script, the default implementation creates a number of remote directories:
     # `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` and `hostGetTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`
+    # `hostGetPersistentTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` and `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`
     # TODO
     clientPrepareExecution__default "YOUR COMMAND LINE HERE"
 
@@ -258,5 +262,5 @@ function clientTrafficOutboundPorts() {
 # @output   The API version number.
 ##
 function clientAPIVersion() {
-    echo "1.0.0"
+    echo "1.0.1"
 }

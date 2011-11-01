@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function hostAPIVersion__default() {
-    echo "1.0.0"
+    echo "1.0.1"
 }
 
 ##
@@ -215,6 +215,14 @@ function hostGetTestDir__default() {
             echo ""
         fi
     fi
+}
+
+##
+# Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment that will remain available until the host is actually cleaned.
+# This default implementation simple call hostGetTestDir
+##
+function hostGetPersistentTestDir__default() {
+    hostGetTestDir
 }
 
 ##

@@ -57,5 +57,5 @@ function builderBuildRemote() {
 # @output   The API version number.
 ##
 function builderAPIVersion() {
-    echo "1.0.0"
+    echo "1.0.1"
 }
