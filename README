@@ -296,7 +296,8 @@ Hosts are handled completely by the module. The module, after being loaded, expo
 - hostGetFile remote_file path unsafe   -> retrieves the (remote) file or directory from the host, storing it in the local directory pointed to by path
 - hostPrepare                           -> send the commands to the host to do the host specific preparation, also makes sure a temporary directory is created if needed
 - hostCleanup                           -> send the commands to the host to do the host specific cleanup, also removes a temporary directory if needed
-- hostGetTestDir                        -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment; valid between hostPrepare and hostCleanup
+- hostGetTestDir                        -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment; valid between hostPrepare and the end of the execution of the client (i.e. as soon as the client stops executing this may be gone)
+- hostGetPersistentTestDir              -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment that will remain available until hostCleanup
 - hostGetSubnet                         -> outputs the external address(es) of the host(s) in the form of a subnet (either as a hostname or as an IP address); this is used for traffic control; "127.0.0.1" always is to be used for localhost and signifies that no traffic control should be done on that host
 The following global variables are available for each host:
 - HOSTS                                 -> a list of all loaded host objects, separated by spaces

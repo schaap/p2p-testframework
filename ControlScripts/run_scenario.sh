@@ -279,6 +279,37 @@ function runScenario() {
         fi
     done
 
+    # Prepare all hosts
+    for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+        local index__internal__saved=$index
+        hostLoadSettings ${executionhosts[index]}
+        hostPrepare
+        index=$index__internal__saved
+    done
+
+    # Executions list may be altered by the hostPrepare calls, build the executionhosts list again
+    # All executions should refer to prepared hosts, which means that a hostPrepare that alters the executions
+    # must take precautions to ensure this.
+    executionhosts=( )
+    for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+        local currExec__internal__saved=$currExec
+        executionLoadSettings $currExec
+        currExec=$currExec__internal__saved
+
+        found=0
+        if [ ${#executionhosts[@]} -gt 0 ]; then
+            for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+                if [ "$EXECUTION_HOST" = "${executionhosts[index]}" ]; then
+                    found=1
+                    break
+                fi
+            done
+        fi
+        if [ $found -eq 0 ]; then
+            executionhosts[${#executionhosts[@]}]="$EXECUTION_HOST"
+        fi
+    done
+
     # Collect all used hostnames (for traffic control purposes)
     local hostnames=( )
     for host in $HOSTS; do
@@ -300,7 +331,7 @@ function runScenario() {
     for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
         local index__internal__saved=$index
         hostLoadSettings ${executionhosts[index]}
-        hostPrepare
+        # hostPrepare has already been called, or the host has been prepared otherwise
         index=$index__internal__saved
 
         # Collect all files and clients to be used on this host from the executions
@@ -539,7 +570,7 @@ function runScenario() {
         echo "Cleaning up hosts"
 
         # Clean up the hosts
-        for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+        for index in `seq $((${#executionhosts[@]} - 1)) -1 0`; do
             local index__internal__saved=$index
             hostLoadSettings ${executionhosts[index]}
             hostCleanup
@@ -736,7 +767,7 @@ function runScenario() {
     done
 
     # Clean up the hosts
-    for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
+    for index in `seq $((${#executionhosts[@]} - 1)) -1 0`; do
         local index__internal__saved=$index
         hostLoadSettings ${executionhosts[index]}
 

@@ -1,0 +1,672 @@
+#!/bin/bash
+
+#
+# A DAS4 implementation of the host API.
+# Parameters added by this module:
+# - headNode        The hostname of the DAS4 host to SSH to. Optional, if left out the module will try and determine
+#                   which network you're on and use the local entry node. If you're not on one of the networks of
+#                   the institutes hosting DAS4, this will give an error.
+#                   The automated test uses dig -x for a reverse lookup on any inet address found in ifconfig, except
+#                   127.0.0.1, and tries to see if it's in one of the following networks:
+#                       .vu.nl      fs0.das4.cs.vu.nl
+#                       .liacs.nl   fs1.das4.liacs.nl
+#                       .uva.nl     fs4.das4.science.uva.nl         (fs2.das4.science.uva.nl is never chosen here)
+#                       .tudelft.nl fs3.das4.tudelft.nl
+#                       .atron.nl   fs5.das4.astron.nl
+#                   The headnode chosen is also shown here. You can give either of these headnodes as the value of
+#                   the headNode parameter.
+# - nNodes          The number of nodes to request, a positive integer. Optional, defaults to 2.
+# - reserveTime     A positive number of seconds to reserve the nodes; note that you should take into account that
+#                   the nodes will be reserved during setup, so some setup steps can still occur between reservation
+#                   and the actual running of the test scenario. It is recommended to reserve the nodes for a few
+#                   minutes more than the maximum execution time of the scenario. Optional, defaults to 900.
+# - user            The username to use for logging in on the DAS4 system. Required.
+# - params          Extra parameters to pass on to SSH when logging in on the DAS4. Optional.
+#
+# Requirements of the DAS4 module:
+# - You must be able to use SSH from the specified (or selected) headnode to the other nodes without interaction (i.e. passwordless)
+# - DO NOT use the same DAS4 host object for multiple executions. This is explicitly NOT supported. It will be detected and you will be scolded; for your convenience, of course.
+#
+# Because of the complexities of managing the different nodes in a host:das4, the HOST_PREPARATION script and HOST_CLEANUP script, if any are given, will be ignored.
+#
+# Traffic control on the DAS4 nodes is currently not supported. If you try and use it, anyway, results are unpredictable. Most likely it will break the moment any DAS4 node needs to
+# fall back to full IP-range based traffic control. For your convenienve and experimentation no warnings or errors will pop up if you try, though.
+#
+
+##
+# Reads the settings for this host and saves them.
+# Saving is done to ${LOCAL_TEST_DIR}/hosts/$HOST_NAME/. It does not matter how, as long as it exists and ${LOCAL_TEST_DIR}/hosts/$HOST_NAME/modulename contains the module subtype and nothing else.
+# Note that it is allowed for $HOST_NAME to be "", in which case either an error is to be logged and false to be returned or the HOST_NAME is to be set to a default and this function should check no such host exists yet.
+#
+# @param    The settings file from which the settings are to be read.
+# @param    The line number at which the host object was declared (the first setting in the settings file is at line number $(($3 + 1))).
+#
+# @return   True (0) iff no errors were found and the settings saved.
+##
+function hostReadSettings() {
+    # Check validity of passed host object name and set to a default if possible.
+    # In case a new name is set: check that it's unique.
+    if [ -z $HOST_NAME ]; then
+        if [ ! -e "${LOCAL_TEST_DIR}/hosts/das4" ]; then
+            HOST_NAME="das4"
+        else
+            logError "host:_skeleton_ :: Host has no name."
+            return 1
+        fi
+    fi
+
+    local parameterName="";
+    local parameterValue="";
+    LINE_NUMBER=$(($2 + 1))
+    HOST_DAS4_HEADNODE=""
+    HOST_DAS4_NNODES=""
+    HOST_DAS4_RESERVETIME=""
+    HOST_DAS4_USER=""
+    HOST_DAS4_PARAMS=""
+    HOST_
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue;
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropriately
+        case $parameterName in
+            name|preparation|cleanup|remoteFolder|tc_iface|tc_down|tc_down_burst|tc_up|tc_up_burst|tc|tc_loss|tc_corruption|tc_duplication|tc_delay|tc_jitter)
+                # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            headNode)
+                if [ ! -z "$HOST_DAS4_HEADNODE" ]; then
+                    logError "host:das4 :: A headnode has already been given for host $HOST_NAME: \"$HOST_DAS4_HEADNODE\" (line $LINE_NUMBER)."
+                    return 1
+                fi
+                if [ "$parameterValue" = "fs0.das4.cs.vu.nl" -o "$parameterValue" = "fs1.das4.liacs.nl" -o "$parameterValue" = "fs2.das4.science.uva.nl" -o "$parameterValue" = "fs3.das4.tudelft.nl" -o "$parameterValue" = "fs4.das4.science.uva.nl" -o "$parameterValue" = "fs5.das4.astron.nl" ]; then
+                    HOST_DAS4_HEADNODE="$parameterValue"
+                else
+                    logError "host:das4 :: The host \"$parameterValue\" is not a headnode of DAS4. Please use fs0.das4.cs.vu.nl, fs1.das4.liacs.nl, fs2.das4.science.uva.nl, fs3.das4.tudelft.nl, fs4.das4.science.uva.nl or fs5.das4.astron.nl (line $LINE_NUMBER)."
+                    return 1
+                fi
+                ;;
+            nNodes)
+                if [ ! -z "$HOST_DAS4_NNODES" ]; then
+                    logError "host:das4 :: The number of nodes for the host $HOST_NAME has already been set: \"$HOST_DAS4_NNODES\" (line $LINE_NUMBER)."
+                    return 1
+                fi
+                if ! echo "$parameterValue" | grep -E "^[[:digit:]][[:digit:]]*$" > /dev/null || [ ! "$parameterValue" -gt 0 ] ; then
+                    logError "host:das4 :: The number of nodes given to host $HOST_NAME (\"$parameterValue\") is not a positive integer (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_DAS4_NNODES="$parameterValue"
+                ;;
+            reserveTime)
+                if [ ! -z "$HOST_DAS4_RESERVETIME" ]; then
+                    logError "host:das4 :: A time to reserve the nodes has already been given for host $HOST_NAME: \"$HOST_DAS4_RESERVETIME\" (line $LINE_NUMBER)."
+                    return 1
+                fi
+                if ! echo "$parameterValue" | grep -E "^[[:digit:]][[:digit:]]*$" > /dev/null || [ ! "$parameterValue" -gt 0 ]; then
+                    logError "host:das4 :: The number of seconds to reserve the nodes of host $HOST_NAME (\"$parameterValue\") is not a positive integer (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_DAS4_RESERVETIME="$parameterValue"
+                ;;
+            user)
+                if [ ! -z "$HOST_DAS4_USER" ]; then
+                    logError "host:das4 :: Host $HOST_NAME already has a user name set (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_DAS4_USER="$parameterValue"
+                ;;
+            params)
+                if [ ! -z "$HOST_DAS4_PARAMS" ]; then
+                    logError "host:das4 :: Host $HOST_NAME already has parameters set (line $LINE_NUMBER)."
+                    return 1
+                fi
+                HOST_DAS4_PARAMS="$parameterValue"
+                ;;
+            *)
+                logError "host:das4 :: Unknown parameter name \"$parameterName\" in host $HOST_NAME on line $LINE_NUMBER. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    if [ -z "$HOST_DAS4_USER" ]; then
+        logError "host:das4 :: Parameter user to host $HOST_NAME is not optional."
+        return 1
+    fi
+
+    # Set defaults for optional parameters
+    if [ -z "$HOST_DAS4_RESERVETIME" ]; then
+        HOST_DAS4_RESERVETIME=900
+    fi
+    if [ -z "$HOST_DAS4_NNODES" ]; then
+        HOST_DAS4_NNODES=2
+    fi
+    if [ -z "$HOST_DAS4_HEADNODE" ]; then
+        local addresses=`ifconfig | grep "inet addr:" | sed -e "s/.*inet addr:\\([^[:space:]]*\\)[[:space:]].*/\\1/" | grep -v "127.0.0.1" 2>/dev/null`
+        if [ -z "$addresses" ]; then
+            logError "host:das4 :: Could not get the IP addresses of this machine to determine in which network it is. Please specify a headnode for host $HOST_NAME."
+            return 1
+        fi
+        for $ip in $addresses; do
+            local hostname=`dig -x $ip | grep -v -E "^;" | grep "PTR" | sed -e "s/^.*[[:space:]]IN[[:space:]]*PTR[[:space:]]*\\(.*\\)$/\\1/"`
+            if echo "$hostname" | grep -E "\\.vu\\.nl\\.$" > /dev/null; then
+                HOST_DAS4_HEADNODE="fs0.das4.cs.vu.nl"
+                break
+            fi
+            if echo "$hostname" | grep -E "\\.liacs\\.nl\\.$" > /dev/null; then
+                HOST_DAS4_HEADNODE="fs1.das4.liacs.nl"
+                break
+            fi
+            if echo "$hostname" | grep -E "\\.uva\\.nl\\.$" > /dev/null; then
+                HOST_DAS4_HEADNODE="fs4.das4.science.uva.nl"
+                break
+            fi
+            if echo "$hostname" | grep -E "\\.tudelft\\.nl\\.$" > /dev/null; then
+                HOST_DAS4_HEADNODE="fs3.das4.tudelft.nl"
+                break
+            fi
+            if echo "$hostname" | grep -E "\\.astron\\.nl\\.$" > /dev/null; then
+                HOST_DAS4_HEADNODE="fs5.das4.astron.nl"
+                break
+            fi
+        done
+        if [ -z "$HOST_DAS4_HEADNODE" ]; then
+            logError "host:das4 :: Could not find the network you are on based on your IP address, or you are not on one of the networks hosting the DAS4. Please specify a headnode for host $HOST_NAME."
+            return 1
+        fi
+    fi
+
+    # Delegate the rest to the default implementation
+    hostReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_HEADNODE=\"$HOST_DAS4_HEADNODE\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_NNODES=\"$HOST_DAS4_NNODES\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_RESERVETIME=\"$HOST_DAS4_RESERVETIME\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_NODENAME=\"\""
+    echo "HOST_DAS4_NODENUMBER=\"\""
+    echo "HOST_DAS4_SLAVE=\"\""
+    echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"\""
+    echo "HOST_DAS4_RESERVATIONID=\"\""
+
+    HOST_DAS4_COMMAND="`which ssh` -T -n -o BatchMode=yes"
+    if [ ! -z "$HOST_DAS4_USER" ]; then
+        HOST_DAS4_COMMAND="$HOST_DAS4_COMMAND -l $HOST_DAS4_USER"
+    fi
+    if [ ! -z "$HOST_DAS4_PARAMS" ]; then
+        HOST_DAS4_COMMAND="$HOST_DAS4_COMMAND $HOST_DAS4_PARAMS"
+    fi
+    HOST_DAS4_COMMAND="$HOST_DAS4_COMMAND $HOST_DAS4_HEADNODE"
+
+    HOST_DAS4_SCPCMD="`which scp` -o BatchMode=yes"
+    if [ ! -z "$HOST_DAS4_PARAMS" ]; then
+        HOST_DAS4_SCPCMD="$HOST_DAS4_SCPCMD $HOST_DAS4_PARAMS "
+    fi
+    HOST_DAS4_SCPHOST=""
+    if [ ! -z "$HOST_DAS4_USER" ]; then
+        HOST_DAS4_SCPHOST="${HOST_DAS4_USER}@"
+    fi
+    HOST_DAS4_SCPHOST="${HOST_DAS4_SCPHOST}${HOST_DAS4_HEADNODE}"
+
+    # Check whether we can actually contact the host before serious stuff is needed.
+    local ans=`$HOST_DAS4_COMMAND "echo \"OK\"" 2>&1`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: Could not contact DAS4 host $HOST_NAME. The command line  $HOST_DAS4_COMMAND \"echo \\\"OK\\\"\" 2>&1  should output just \"OK\", but \"$ans\" was observed."
+        return 1
+    fi
+
+    # Although we would check SCP in the SSH host at this point, we'll assume this to work here: we know about the environment on the headnodes.
+
+    # See if we can reserve nodes
+    local cmd=`cat <<EOF
+load module prun
+RESERVATION=\`preserve -1 -# 1 60 | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):.*$/\\1/"\`
+if [ -z "\$RESERVATION" ]; then
+    exit 1
+fi
+if ! preserve -llist | grep \$RESERVATION > /dev/null ; then
+    exit 1
+fi
+preserve -c \$RESERVATION > /dev/null
+echo -n "OK"
+EOF
+`
+    ans=`$HOST_DAS4_COMMAND "$cmd"`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: Reserving nodes on the DAS4 did not succeed."
+        fail
+    fi
+
+    # Finally, register our host with the environment
+    HOSTS="$HOSTS $HOST_NAME"
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not!
+#
+# @param    The host object name to be loaded.
+##
+function hostLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for hostReadSettings is used
+    hostLoadSettings__default "$1" "das4"
+}
+
+#
+# On DAS4:
+# - whenever logging in
+#   module load prun
+# - reserve nodes using
+#   preserve -1 -# nNodes timeToReserve
+#   the reservationID will be shown in the output, use sed to find it
+# - send commands using prun
+#   prun -1 -reserve reservationID programToRun nHosts
+# - running when the allocation is not ready yet will return an error
+#   this means polling will be required
+# - end the reservation using
+#   preserve -c reservationID
+#
+# - finding out on which hosts we should work
+#   preserve -llist | grep -E "^6840[[:space:]]" | sed -e "s/^[[:digit:]][[:digit:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*r[[:space:]][[:space:]]*[[:digit:]][[:digit:]]*[[:space:]][[:space:]]*\\(.*\\)$/\\1/"
+# - NOTE on timing
+#   The DAS4 scheduler, at least when scheduling manually, allots about one minute of extra time to your job. Presumably for safe cleanup purposes. Nonetheless we should not rely on this, nor take it into account.
+# - Having a prun running beyond the time limit will kill any other processes that are running at the same time as well (or at least, a copy of the same process)
+# - TO BE TESTED:
+#   a process that goes beyond time limit, without prun running                                     -> process got killed
+#   a completely different process that goes beyond time limit, with prun running out of time
+#   a process that goes beyond time limit, with prun staying clearly within limits
+# - Best timing option: run the process on the machine when it is still reserved; if things fail it'll get killed
+#   TO BE VERIFIED WITH OPERATORS!
+# - Run a prun over all hosts to allow testing for the presence of their process: this process will be restricted to the officially reserved time without the one minute buffer; only running processes if this process exists on the node ensures there is no race condition where one checks the availability of the queue just before sending the command to the node over SSH, but the reservation having been ended before the command starts
+# - Better way of getting the jobs done:
+#       Have a parameter set to each job to determine on which node it should run (0, 1, 2, ...)
+#       prun every command over all nodes
+#       Have each node that does not correspond to the parameter exit immediately
+#       That way only the node that should run the command actually runs the command
+# - To fix the problems with too much data going around
+#       Add a new directory to hosts, which will persist beyond execution
+#       This way, one directory can contain huge data files and the other, the persistent one, the logs. Only the latter would be mapped to the home dir on DAS4, preventing a lot of data from going around.
+#
+# The way this module will function:
+# - it will create additional executions on hostPrepare, all of which have been prepared in advance
+#       TODO: this must be made officially possible in the core (i.e. document it)
+#       TODO: make sure, in the core, that hostPrepare is called as soon as possible, so no other hostXXX functions can be called before that, but not until all executions have been loaded
+#               (the latter is why the readSettings can't really set up the executions)
+# - those additional executions will work with copies of this host:das4, but with different nodes set (and a flag indicating they're NOT the original one)
+
+##
+# Executes the given command on the loaded host.
+#
+# @param    The command to be executed as one string.
+#
+# @output   The output of the command on the host.
+##
+function hostSendCommand() {
+    $HOST_DAS4_COMMAND "module load prun; SCRIPTFILE=\`mktemp --tmpdir=`hostGetPersistenTestDir`\`; OUTFILE=\`mktemp --tmpdir=`hostGetPersistenTestDir`\`; echo \"if [ ! -f `hostGetTestDir`/host_das4_nodenumber ]; then exit 0; fi; if [ \"\`cat `hostGetTestDir`/host_das4_nodenumber\`\" != \"$HOST_DAS4_NODENUMBER\" ]; then exit 0; fi\" > \$SCRIPTFILE; echo \"( $1 ) > \$OUTFILE\" >> \$SCRIPTFILE; prun -1 -reserve $HOST_DAS4_RESERVATIONID \$SCRIPTFILE $HOST_DAS4_NNODES >> `hostGetPersistenTestDir`/das4_prun_debug; cat \$OUTFILE"
+    
+    # Send the command to a file on the das4 headnode
+    # Call prun with the appropriate parameters to run the script on only the node associated with this host
+}
+
+##
+# Sends the given local file to the host and stores it in the specified remote path.
+#
+# @param    The path to the local file to be sent.
+# @param    The path on the remote host where the file is to be stored.
+# @param    If this parameter is set to "1", then the remote file will be overwritten if it already exists. Otherwise the function would fail if the destination already exists.
+##
+function hostSendFile() {
+    local ans=""
+    if [ "$3" = "1" ]; then
+        ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; echo -n \"OK\""`
+        if [ "$ans" != "OK" ]; then
+            logError "host:das4 :: Can't send file anymore: reservation has passed."
+            fail
+        fi
+    else
+        ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; [ ! -e \"$2\" ] && echo -n \"OK\""`
+        if [ "$ans" != "OK" ]; then
+            logError "host:das4 :: Can't send file: either the reservation has passed or destination \"$2\" already exists."
+            fail
+        fi
+    fi
+    echo "put \"$1\" \"$2\"" | sftp -o BatchMode=yes -s "`hostGetPersistenTestDir`/das4_sftp/sftp_fwd_$HOST_DAS4_NODENAME" $HOST_DAS4_USER@$HOST_DAS4_HEADNODE >/dev/null
+
+    # Send the file over an indirect sftp connection:
+    # - create a small script on the headnode, let's say 'forward-sftp-to-nodeX'
+    # - in that script is the line:
+    #       ssh -s sftp nodeX
+    #       (probably some more parameters to make sure that no interactivity is needed)
+    # - call sftp using:
+    #       sftp -s "/path/to/the/forward-sftp-to-nodeX" fs3.das4.tudelft.nl
+    #       (probably some more parameters depending on the configuration)
+    # - then send the commands to send/retrieve the files using stdin to the sftp process
+    # Given that the ssh works without interactive authentication (which is easily checked), this sets up sftp directly to the node,
+    # over an SSH connection to the headnode.
+    # Note that some checks will be needed to check whether the reservation is still there (we don't want to start loading traffic onto
+    # a node that is no longer ours).
+}
+
+##
+# Sends the given local directory to the host and stores it in the specified remote path.
+# This function will overwrite if needed.
+# This function does *not* check its succes. It optimistically assumes every operation succeeds.
+#
+# @param    The path to the local directory of which the contents are to be sent.
+# @param    The path on the remote host to the directory where the contents are to be stored.
+##
+function hostSendFiles() {
+    local ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; echo -n \"OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: Can't send files anymore: reservation has passed."
+        fail
+    fi
+    echo "put -r \"$1\" \"$2\"" | sftp -o BatchMode=yes -s "`hostGetPersistenTestDir`/das4_sftp/sftp_fwd_$HOST_DAS4_NODENAME" $HOST_DAS4_USER@$HOST_DAS4_HEADNODE >/dev/null
+
+    # Like hostSendFile, but recursively.
+}
+
+##
+# Retrieves a file from the host from a specified remote path and stores it at the given local path.
+# Fails if the local file already exists.
+#
+# @param    The path on the remote host of the file to be retrieved.
+# @param    The path on the local machine where the retrieved file is to be stored.
+# @param    If this parameter is set to "1", then the local file will be overwritten if it already exists. Otherwise the function would fail if the destination already exists.
+##
+function hostGetFile() {
+    if [ "$3" != "1" ]; then
+        if [ -e "$2" ]; then
+            logError "The local file \"$2\" already exists."
+            fail
+        fi
+    fi
+    $HOST_DAS4_SCPCMD $HOST_DAS4_SCPHOST:"$1" "$2"
+
+    # Retrieve the file using normal scp from the headnode.
+}
+
+##
+# Executes the commands to do host specific preparation.
+##
+function hostPrepare() {
+    # Note that both prepare and cleanup will be also be called when just testing the correctness of settings.
+
+    # Make sure the host is cleaned up when interrupted
+    addCleanupCommand "hostCleanup" $HOST_CLEANUPIDX
+    
+    # Create the temporary persistent directory and make sure it can be used (take HOST_REMOTEFOLDER into account).
+    if [ -z "$HOST_REMOTEFOLDER" ]; then
+        HOST_TEMPFOLDER=`$HOST_DAS4_COMMAND "mktemp -d --tmpdir \"\`pwd\`\""`
+        if [ -z "$HOST_TEMPFOLDER" ]; then
+            logError "host:das4 :: Could not create 'persistent' temporary directory in the home directory on host $HOST_NAME."
+            fail
+        fi
+        echo "HOST_TEMPFOLDER=\"$HOST_TEMPFOLDER\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    fi
+
+    # Reserve the requested nodes and wait for them to become available.
+    HOST_DAS4_RESERVATIONID=`$HOST_DAS4_COMMAND "module load prun; preserve -1 -# $HOST_DAS4_NNODES $HOST_DAS4_RESERVETIME | grep \"Reservation number\" | sed -e \"s/^Reservation number ([[:digit:]]*):$/\\1/\" | grep -E \"^[[:digit:]]*$\""`
+    if [ -z "$HOST_DAS4_RESERVATIONID" ]; then
+        logError "host:das4 :: Could not reserve the nodes. No reservation ID found."
+        fail
+    fi
+    echo "HOST_DAS4_RESERVATIONID=\"$HOST_DAS4_RESERVATIONID\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    ( echo "Waiting for DAS4 nodes to become available" >&2 ) > /dev/null
+    local ans=`$HOST_DAS4_COMMAND "module load prun; while ! qstat -j $HOST_DAS4_RESERVATIONID | grep \"usage\" >/dev/null; do if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit 1; fi; sleep 1; done; echo -n \"OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: Nodes never became available and the reservation seems to be gone as well. Output follows."
+        logError $ans
+        ( echo "Nodes not available" >&2 ) > /dev/null
+        fail
+    fi
+    local nodes=`$HOST_DAS4_COMMAND "module load prun; preserve -llist | grep -E \"^$HOST_DAS4_RESERVATIONID[[:space:]]\" | sed -e \"s/^[[:digit:]][[:digit:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*r[[:space:]][[:space:]]*[[:digit:]][[:digit:]]*[[:space:]][[:space:]]*\\(.*\\)$/\\1/\""`
+    if [ -z "$nodes" ]; then
+        logError "host:das4 :: Nodes could not be extracted from the reservation."
+        ( echo "Nodes available, but unknown" >&2 ) > /dev/null
+        fail
+    fi
+    local node=""
+    local checkcmd=""
+    for node in $nodes; do
+        checkcmd="$checkcmd ssh -n -T -o BatchMode=yes $node && "
+    done
+    ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; $checkcmd echo -n \"OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: Nodes found, but not all could be reached from the headnode. List of nodes and output follows."
+        logError "$nodes"
+        logError "$ans"
+        ( echo "Nodes available, but unreachable: $nodes" >&2 ) > /dev/null
+        fail
+    fi
+    ( echo "Nodes available: $nodes" >&2 ) > /dev/null
+
+    # Create SFTP forwarding scripts
+    local cmd="mkdir -p `hostGetPersistentTestDir`/das4_sftp"
+    for node in $nodes; do
+        cmd="$cmd && echo \"ssh -o BatchMode=yes -s sftp $node\" > `hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$node && chmod +x `hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$node"
+    done
+    ans=`$HOST_DAS4_COMMAND "$cmd && echo -n \"OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: Could not create the SFTP forward scripts on the headnode of host $HOST_NAME."
+        fail
+    fi
+
+    # Make a temporary copy of the conf at this point
+    local confcopy=`createTempFile`
+    cp "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf" "$confcopy"
+
+    # Set this host to become the first node, the rest need to be spun off; shouldn't take too much effort, given that a new object is just a single file with settings (and a mention in HOSTS).
+
+    # Set the master's node number (0), node name and create the temporary directory there, including number-tag
+    HOST_DAS4_NODENUMBER=0
+    for node in $nodes; do
+        HOST_DAS4_NODENAME="$node"
+        break
+    done
+    echo "HOST_DAS4_NODENUMBER=\"$HOST_DAS4_NODENUMBER\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_NODENAME=\"$HOST_DAS4_NODENAME\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"echo -n OK\""`
+    if [ "$ans" != "OK" ]; then
+        logError "host:das4 :: It seems accessing a node without the requirement for a password is not possible. This is required for host:das4 to function."
+        rm "$confcopy"
+        fail
+    fi
+    HOST_DAS4_LOCALTEMPDIRECTORY=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"mktemp -d --tmpdir /local/$HOST_DAS4_USER\""`
+    if [ -z "$HOST_DAS4_LOCALTEMPDIRECTORY" ]; then
+        logError "host:das4 :: Could not create a node-specific temporary directory on node $HOST_DAS4_NODENAME of host $HOST_NAME."
+        rm "$confcopy"
+        fail
+    fi
+    echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"$HOST_DAS4_LOCALTEMPDIRECTORY\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"echo -n $HOST_DAS4_NODENUMBER > $HOST_DAS4_LOCALTEMPDIRECTORY/host_das4_nodenumber\""
+
+    # Be sure to setup cleanup stuff so reservations get cancelled!
+
+    # Then copy this host to new hosts and create new executions with them.
+    local hostcount=1
+    while [ $hostcount -lt $HOST_DAS4_NNODES ]; do
+        mkdir -p "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount"
+        cp "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/modulename" "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/modulename"
+        cp "$confcopy" "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        echo "HOST_DAS4_SLAVE=\"1\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        echo "HOST_DAS4_NODENAME=\"$hostcount\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        local i=0
+        local thisnodename=""
+        for node in $nodes; do
+            if [ $i -eq $hostcount ]; then
+                thisnodename=$node
+                break;
+            fi
+        done
+        echo "HOST_DAS4_NODENUMBER=\"$thisnodename\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        # Note that all the new host objects need to have their own cleanup file created and used.
+        addCleanupScript
+        local idx=$?
+        echo "HOST_CLEANUPIDX=\"$idx\""  >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        addCleanupCommand "hostLoadSettings $HOST_NAME\$$hostcount" $idx
+        addCleanupCommand "hostCleanup" $idx
+        # The new hosts should have a temporary directory created on the node and it should be made sure they can be used.
+        local thislocaltempdir=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"mktemp -d --tmpdir /local/$HOST_DAS4_USER\""`
+        echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"$thislocaltempdir\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"echo -n $hostcount > $thislocaltempdir/host_das4_nodenumber\""
+        HOSTS="$HOSTS $HOST_NAME\$$hostcount"
+    done
+
+    # Find the execution in which this host is used
+    # If we find more than one: error
+    local index=0
+    local theexec=-1
+    while [ $index -lt $EXECUTION_COUNT ]; do
+        executionLoadSettings $index
+        if [ "$EXECUTION_HOST" = "$HOST_NAME" ]; then
+            if [ $theexec -ge 0 ]; then
+                logError "host:das4 :: Host $HOST_NAME is used in more than one execution. This is explicitly NOT supported. Please be sure to use the host in exactly 1 execution."
+                fail
+            fi
+            theexec=$index
+        fi
+    done
+    if [ $theexec -eq -1 ]; then
+        logError "host:das4 :: Host $HOST_NAME is never used in any executions. This is explicitly NOT supported. Please be sure to use the host in exactly 1 execution."
+        fail
+    fi
+    executionLoadSetting $theexec
+
+    # Make copies of that execution that use the slave hosts
+    hostcount=1
+    while [ $hostcount -lt $HOST_DAS4_NNODES ]; do
+        local newexecnum=$EXECUTION_COUNT
+        cp "${LOCAL_TEST_DIR}/executions/exec_$theexec" "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+        echo "EXECUTION_HOST=\"$HOST_NAME\$$hostcount\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+        EXECUTION_COUNT=$(($newexecnum + 1))
+    done
+}
+
+##
+# Executes the commands to do host specific cleanup.
+##
+function hostCleanup() {
+    # Remove the temp dir. (Will this be needed? Can't we just tell the nodes we don't want the local storage preserved?)
+    if [ ! -z "$HOST_DAS4_LOCALTEMPDIRECTORY" ]; then
+        $HOST_DAS4_COMMAND "module load prun; if ! qstat -k $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"rm -rf $HOST_DAS4_LOCALTEMPDIRECTORY\""
+        echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    fi
+
+    # If this is the parent object, make sure to also cancel the reservation and remove the persistent temp dir.
+    if [ "$HOST_DAS4_SLAVE" != "1" ]; then
+        if [ -z "$HOST_TEMPFOLDER" ]; then
+            $HOST_DAS4_COMMAND "module load prun; preserve -c $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null"
+        else
+            $HOST_DAS4_COMMAND "module load prun; preserve -c $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; rm -rf $HOST_TEMPFOLDER"
+            HOST_TEMPFOLDER=""
+            echo "HOST_DAS4_TEMPFOLDER=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+        fi
+    fi
+}
+
+##
+# Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment.
+#
+# Files placed in this directory are not guaranteed to remain available for later downloading.
+# This is the perfect location for files such as data to be downloaded by clients, which can be forgotten the moment the client finishes.
+# For logfiles and other files that are needed after the execution of the client, use hostGetPersistentTestDir
+#
+# @output   The test directory on the host.
+##
+function hostGetTestDir() {
+    echo "$HOST_DAS4_LOCALTEMPDIRECTORY"
+
+    # Output the right temporary directory for this node
+}
+
+##
+# Outputs the (remote) directory on the host where (temporary) files are stored for the testing environment, which will remain available until the host is cleaned.
+#
+# Note that persistence in this case is limited to the complete test as opposed to data being thrown away at any possible moment in between commands.
+#
+# @output   The persistent test directory on the host.
+##
+function hostGetPersistentTestDir() {
+    # The default implementation of hostGetTestDir checks HOST_REMOTEFOLDER and HOST_TEMPFOLDER, which should be fine, especially when hostPrepare__default is used above.
+    hostGetTestDir__default
+
+    # Output the persistent temporary directory that will be removed 
+}
+
+##
+# Outputs the subnet of the external addresses of the host.
+#
+# @output   The subnet of the host(s).
+##
+function hostGetSubnet() {
+    # Important note: it seems the DAS4 routes all traffic from the nodes to hosts outside the DAS4 over the headnodes.
+    # Internally, however, it uses completely different links and hence subnets.
+    # FIXME: This should probably be increased to include the full ranges and hence hostGetSubnet would need to be allowed to return multiple ranges.
+    # FIXME: Given that TC on DAS4 is not really supported, anyway, and this is only used in the very unsupported case, is it useful to put energy into this?
+    echo `host $HOST_DAS4_HEADNODE | sed -e "s/^.* has address \\(.*\\)$/\\1/"`
+}
+
+##
+# Sets the list of outbound ports to be used for restricted outbound traffic control.
+# This is an internal function that should never be used by others.
+#
+# Special values:
+# - "-1"    Unrestricted control
+# - ""      No control
+#
+# Be sure to set the variable HOST_TC_OUTBOUNDPORTS to this list and save it.
+#
+# @param    The list of ports.
+##
+function hostTCSaveOutboundPortList() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveOutboundPortList__default "$1"
+}
+
+##
+# Sets the list of inbound ports to be used for restricted inbound traffic control.
+# This is an internal function that should never be used by others.
+#
+# Special values:
+# - "-1"    Unrestricted control
+# - ""      No control
+#
+# Be sure to set the variable HOST_TC_INBOUNDPORTS to this list and save it.
+#
+# @param    The list of ports.
+##
+function hostTCSaveInboundPortList() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveInboundPortList__default "$1"
+}
+
+##
+# Sets the protocol to be used for restricted traffic control.
+# This is an internal function that should never be used by others.
+#
+# Be sure to set the variable HOST_TC_PROTOCOL to this value and save it.
+#
+# @param    The name of the protocol ("UDP", "TCP", ...)
+##
+function hostTCSaveProtocol() {
+    # The default implementation is alright if you use the default way of saving your settings
+    hostTCSaveProtocol__default "$1"
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function hostAPIVersion() {
+    echo "1.0.1"
+}
