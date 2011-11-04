@@ -26,6 +26,8 @@
 # Requirements of the DAS4 module:
 # - You must be able to use SSH from the specified (or selected) headnode to the other nodes without interaction (i.e. passwordless)
 # - DO NOT use the same DAS4 host object for multiple executions. This is explicitly NOT supported. It will be detected and you will be scolded; for your convenience, of course.
+# - It is HIGHLY RECOMMENDED to place SGE_KEEP_TMPFILES="no" in ~/.bashrc : the test framework will try and cleanup nicely, but will first and foremost honor the reservation system.
+#   This means that when the cleanup comes after the reservation has ended, the cleanup will not be done and files in /local would remain behind without this variable set.
 #
 # Because of the complexities of managing the different nodes in a host:das4, the HOST_PREPARATION script and HOST_CLEANUP script, if any are given, will be ignored.
 #
@@ -63,7 +65,6 @@ function hostReadSettings() {
     HOST_DAS4_RESERVETIME=""
     HOST_DAS4_USER=""
     HOST_DAS4_PARAMS=""
-    HOST_
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -152,7 +153,8 @@ function hostReadSettings() {
             logError "host:das4 :: Could not get the IP addresses of this machine to determine in which network it is. Please specify a headnode for host $HOST_NAME."
             return 1
         fi
-        for $ip in $addresses; do
+        local ip=""
+        for ip in $addresses; do
             local hostname=`dig -x $ip | grep -v -E "^;" | grep "PTR" | sed -e "s/^.*[[:space:]]IN[[:space:]]*PTR[[:space:]]*\\(.*\\)$/\\1/"`
             if echo "$hostname" | grep -E "\\.vu\\.nl\\.$" > /dev/null; then
                 HOST_DAS4_HEADNODE="fs0.das4.cs.vu.nl"
@@ -188,11 +190,16 @@ function hostReadSettings() {
     echo "HOST_DAS4_HEADNODE=\"$HOST_DAS4_HEADNODE\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     echo "HOST_DAS4_NNODES=\"$HOST_DAS4_NNODES\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     echo "HOST_DAS4_RESERVETIME=\"$HOST_DAS4_RESERVETIME\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
-    echo "HOST_DAS4_NODENAME=\"\""
-    echo "HOST_DAS4_NODENUMBER=\"\""
-    echo "HOST_DAS4_SLAVE=\"\""
-    echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"\""
-    echo "HOST_DAS4_RESERVATIONID=\"\""
+    echo "HOST_DAS4_NODENAME=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_NODENUMBER=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_SLAVE=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    echo "HOST_DAS4_RESERVATIONID=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
+    HOST_DAS4_NODENAME=""
+    HOST_DAS4_NODENUMBER=""
+    HOST_DAS4_SLAVE=""
+    HOST_DAS4_LOCALTEMPDIRECTORY=""
+    HOST_DAS4_RESERVATIONID=""
 
     HOST_DAS4_COMMAND="`which ssh` -T -n -o BatchMode=yes"
     if [ ! -z "$HOST_DAS4_USER" ]; then
@@ -224,22 +231,26 @@ function hostReadSettings() {
 
     # See if we can reserve nodes
     local cmd=`cat <<EOF
-load module prun
-RESERVATION=\`preserve -1 -# 1 60 | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):.*$/\\1/"\`
-if [ -z "\$RESERVATION" ]; then
-    exit 1
-fi
-if ! preserve -llist | grep \$RESERVATION > /dev/null ; then
-    exit 1
-fi
-preserve -c \$RESERVATION > /dev/null
-echo -n "OK"
-EOF
-`
+        module load prun
+        RESERVATION=\\\`preserve -1 -# 1 60 | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):.*$/\\1/"\\\`
+        if [ -z "\\\$RESERVATION" ]; then
+            exit 1
+        fi
+        if ! preserve -llist | grep \\\$RESERVATION > /dev/null ; then
+            exit 1
+        fi
+        preserve -c \\\$RESERVATION > /dev/null
+        echo -n "OK"
+EOF`
     ans=`$HOST_DAS4_COMMAND "$cmd"`
     if [ "$ans" != "OK" ]; then
-        logError "host:das4 :: Reserving nodes on the DAS4 did not succeed."
+        logError "host:das4 :: Reserving nodes on the DAS4 did not succeed. Observed output: $ans"
         fail
+    fi
+
+    ans=`$HOST_DAS4_COMMAND "echo -n \"\\\$SGE_KEEP_TMPFILES\""`
+    if [ "$ans" != "no" ]; then
+        logError "host:das4 :: It is HIGHLY RECOMMENDED you place SGE_KEEP_TMPFILES=\"no\" in ~/.bashrc. See the module's documentation for more information. (ignoring)"
     fi
 
     # Finally, register our host with the environment
@@ -308,7 +319,7 @@ function hostLoadSettings() {
 # @output   The output of the command on the host.
 ##
 function hostSendCommand() {
-    $HOST_DAS4_COMMAND "module load prun; SCRIPTFILE=\`mktemp --tmpdir=`hostGetPersistenTestDir`\`; OUTFILE=\`mktemp --tmpdir=`hostGetPersistenTestDir`\`; echo \"if [ ! -f `hostGetTestDir`/host_das4_nodenumber ]; then exit 0; fi; if [ \"\`cat `hostGetTestDir`/host_das4_nodenumber\`\" != \"$HOST_DAS4_NODENUMBER\" ]; then exit 0; fi\" > \$SCRIPTFILE; echo \"( $1 ) > \$OUTFILE\" >> \$SCRIPTFILE; prun -1 -reserve $HOST_DAS4_RESERVATIONID \$SCRIPTFILE $HOST_DAS4_NNODES >> `hostGetPersistenTestDir`/das4_prun_debug; cat \$OUTFILE"
+    $HOST_DAS4_COMMAND "module load prun; SCRIPTFILE=\`mktemp --tmpdir=`hostGetPersistentTestDir`\`; OUTFILE=\`mktemp --tmpdir=`hostGetPersistentTestDir`\`; echo \"#!/bin/bash\" > \$SCRIPTFILE; echo \"if [ ! -f `hostGetTestDir`/host_das4_nodenumber ]; then exit 0; fi; if [ \"\\\`cat `hostGetTestDir`/host_das4_nodenumber\\\`\" != \"$HOST_DAS4_NODENUMBER\" ]; then exit 0; fi\" >> \$SCRIPTFILE; echo \"( $1 ) > \$OUTFILE\" >> \$SCRIPTFILE; chmod +x \$SCRIPTFILE; prun -1 -reserve $HOST_DAS4_RESERVATIONID \$SCRIPTFILE $HOST_DAS4_NNODES >> `hostGetPersistentTestDir`/das4_prun_debug; cat \$OUTFILE"
     
     # Send the command to a file on the das4 headnode
     # Call prun with the appropriate parameters to run the script on only the node associated with this host
@@ -336,7 +347,7 @@ function hostSendFile() {
             fail
         fi
     fi
-    echo "put \"$1\" \"$2\"" | sftp -o BatchMode=yes -s "`hostGetPersistenTestDir`/das4_sftp/sftp_fwd_$HOST_DAS4_NODENAME" $HOST_DAS4_USER@$HOST_DAS4_HEADNODE >/dev/null
+    echo "put \"$1\" \"$2\"" | sftp -o BatchMode=yes -s "`hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$HOST_DAS4_NODENAME" $HOST_DAS4_PARAMS $HOST_DAS4_USER@$HOST_DAS4_HEADNODE >/dev/null
 
     # Send the file over an indirect sftp connection:
     # - create a small script on the headnode, let's say 'forward-sftp-to-nodeX'
@@ -367,7 +378,9 @@ function hostSendFiles() {
         logError "host:das4 :: Can't send files anymore: reservation has passed."
         fail
     fi
-    echo "put -r \"$1\" \"$2\"" | sftp -o BatchMode=yes -s "`hostGetPersistenTestDir`/das4_sftp/sftp_fwd_$HOST_DAS4_NODENAME" $HOST_DAS4_USER@$HOST_DAS4_HEADNODE >/dev/null
+    echo "lcd $1
+cd $2
+put -r . ." | sftp -o BatchMode=yes -s "`hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$HOST_DAS4_NODENAME" $HOST_DAS4_PARAMS $HOST_DAS4_USER@$HOST_DAS4_HEADNODE >/dev/null
 
     # Like hostSendFile, but recursively.
 }
@@ -403,7 +416,7 @@ function hostPrepare() {
     
     # Create the temporary persistent directory and make sure it can be used (take HOST_REMOTEFOLDER into account).
     if [ -z "$HOST_REMOTEFOLDER" ]; then
-        HOST_TEMPFOLDER=`$HOST_DAS4_COMMAND "mktemp -d --tmpdir \"\`pwd\`\""`
+        HOST_TEMPFOLDER=`$HOST_DAS4_COMMAND "mktemp -d --tmpdir=\"\\\`pwd\\\`\""`
         if [ -z "$HOST_TEMPFOLDER" ]; then
             logError "host:das4 :: Could not create 'persistent' temporary directory in the home directory on host $HOST_NAME."
             fail
@@ -412,13 +425,14 @@ function hostPrepare() {
     fi
 
     # Reserve the requested nodes and wait for them to become available.
-    HOST_DAS4_RESERVATIONID=`$HOST_DAS4_COMMAND "module load prun; preserve -1 -# $HOST_DAS4_NNODES $HOST_DAS4_RESERVETIME | grep \"Reservation number\" | sed -e \"s/^Reservation number ([[:digit:]]*):$/\\1/\" | grep -E \"^[[:digit:]]*$\""`
+    HOST_DAS4_RESERVATIONID=`$HOST_DAS4_COMMAND "module load prun; preserve -1 -# $HOST_DAS4_NNODES $HOST_DAS4_RESERVETIME | grep \"Reservation number\" | sed -e \"s/^Reservation number \\([[:digit:]]*\\):$/\\1/\" | grep -E \"^[[:digit:]]*$\""`
     if [ -z "$HOST_DAS4_RESERVATIONID" ]; then
         logError "host:das4 :: Could not reserve the nodes. No reservation ID found."
         fail
     fi
     echo "HOST_DAS4_RESERVATIONID=\"$HOST_DAS4_RESERVATIONID\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     ( echo "Waiting for DAS4 nodes to become available" >&2 ) > /dev/null
+    # FIXME FIXME There are some statusses that will result in bogus data!
     local ans=`$HOST_DAS4_COMMAND "module load prun; while ! qstat -j $HOST_DAS4_RESERVATIONID | grep \"usage\" >/dev/null; do if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit 1; fi; sleep 1; done; echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:das4 :: Nodes never became available and the reservation seems to be gone as well. Output follows."
@@ -430,6 +444,11 @@ function hostPrepare() {
     if [ -z "$nodes" ]; then
         logError "host:das4 :: Nodes could not be extracted from the reservation."
         ( echo "Nodes available, but unknown" >&2 ) > /dev/null
+        fail
+    fi
+    if echo "$nodes" | grep -E "^$HOST_DAS4_RESERVATION_ID[[:space:]]" > /dev/null; then
+        logError "host:das4 :: Nodes could not be extracted from the reservation. Observed (and presumably incorrect) nodes: $nodes."
+        ( echo "Nodes available, but this seems to be wrong: $nodes" >&2 ) > /dev/null
         fail
     fi
     local node=""
@@ -450,7 +469,7 @@ function hostPrepare() {
     # Create SFTP forwarding scripts
     local cmd="mkdir -p `hostGetPersistentTestDir`/das4_sftp"
     for node in $nodes; do
-        cmd="$cmd && echo \"ssh -o BatchMode=yes -s sftp $node\" > `hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$node && chmod +x `hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$node"
+        cmd="$cmd && echo \"ssh -o BatchMode=yes -s $node sftp\" > `hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$node && chmod +x `hostGetPersistentTestDir`/das4_sftp/sftp_fwd_$node"
     done
     ans=`$HOST_DAS4_COMMAND "$cmd && echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
@@ -478,7 +497,7 @@ function hostPrepare() {
         rm "$confcopy"
         fail
     fi
-    HOST_DAS4_LOCALTEMPDIRECTORY=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"mktemp -d --tmpdir /local/$HOST_DAS4_USER\""`
+    HOST_DAS4_LOCALTEMPDIRECTORY=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"mkdir -p /local/$HOST_DAS4_USER; mktemp -d --tmpdir=/local/$HOST_DAS4_USER\""`
     if [ -z "$HOST_DAS4_LOCALTEMPDIRECTORY" ]; then
         logError "host:das4 :: Could not create a node-specific temporary directory on node $HOST_DAS4_NODENAME of host $HOST_NAME."
         rm "$confcopy"
@@ -492,31 +511,38 @@ function hostPrepare() {
     # Then copy this host to new hosts and create new executions with them.
     local hostcount=1
     while [ $hostcount -lt $HOST_DAS4_NNODES ]; do
-        mkdir -p "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount"
-        cp "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/modulename" "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/modulename"
-        cp "$confcopy" "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
-        echo "HOST_DAS4_SLAVE=\"1\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
-        echo "HOST_DAS4_NODENAME=\"$hostcount\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        mkdir -p "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount"
+        cp "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/modulename" "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/modulename"
+        cp "$confcopy" "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
+        echo "HOST_NAME=\"$HOST_NAME!$hostcount\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
+        echo "HOST_DAS4_SLAVE=\"1\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
+        echo "HOST_DAS4_NODENUMBER=\"$hostcount\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
         local i=0
         local thisnodename=""
         for node in $nodes; do
             if [ $i -eq $hostcount ]; then
-                thisnodename=$node
+                thisnodename="$node"
                 break;
             fi
+            i=$(($i + 1))
         done
-        echo "HOST_DAS4_NODENUMBER=\"$thisnodename\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        echo "HOST_DAS4_NODENAME=\"$thisnodename\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
         # Note that all the new host objects need to have their own cleanup file created and used.
+
+        # FIXME! FIXME! This addCleanupScript should actually try and insert the scripts into after the original cleanup script.
+        # This will require modding cleanup.sh
+
         addCleanupScript
         local idx=$?
-        echo "HOST_CLEANUPIDX=\"$idx\""  >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
-        addCleanupCommand "hostLoadSettings $HOST_NAME\$$hostcount" $idx
+        echo "HOST_CLEANUPIDX=\"$idx\""  >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
+        addCleanupCommand "hostLoadSettings \"$HOST_NAME!$hostcount\"" $idx
         addCleanupCommand "hostCleanup" $idx
         # The new hosts should have a temporary directory created on the node and it should be made sure they can be used.
-        local thislocaltempdir=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"mktemp -d --tmpdir /local/$HOST_DAS4_USER\""`
-        echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"$thislocaltempdir\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME\$$hostcount/conf"
+        local thislocaltempdir=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"mkdir -p /local/$HOST_DAS4_USER; mktemp -d --tmpdir=/local/$HOST_DAS4_USER\""`
+        echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"$thislocaltempdir\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
         $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"echo -n $hostcount > $thislocaltempdir/host_das4_nodenumber\""
-        HOSTS="$HOSTS $HOST_NAME\$$hostcount"
+        HOSTS="$HOSTS $HOST_NAME!$hostcount"
+        hostcount=$(($hostcount + 1))
     done
 
     # Find the execution in which this host is used
@@ -532,20 +558,23 @@ function hostPrepare() {
             fi
             theexec=$index
         fi
+        index=$(($index + 1))
     done
     if [ $theexec -eq -1 ]; then
         logError "host:das4 :: Host $HOST_NAME is never used in any executions. This is explicitly NOT supported. Please be sure to use the host in exactly 1 execution."
         fail
     fi
-    executionLoadSetting $theexec
+    executionLoadSettings $theexec
 
     # Make copies of that execution that use the slave hosts
     hostcount=1
     while [ $hostcount -lt $HOST_DAS4_NNODES ]; do
         local newexecnum=$EXECUTION_COUNT
         cp "${LOCAL_TEST_DIR}/executions/exec_$theexec" "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
-        echo "EXECUTION_HOST=\"$HOST_NAME\$$hostcount\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+        echo "EXECUTION_HOST=\"$HOST_NAME!$hostcount\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+        echo "EXECUTION_NUMBER=\"$newexecnum\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
         EXECUTION_COUNT=$(($newexecnum + 1))
+        hostcount=$(($hostcount + 1))
     done
 }
 
@@ -555,7 +584,7 @@ function hostPrepare() {
 function hostCleanup() {
     # Remove the temp dir. (Will this be needed? Can't we just tell the nodes we don't want the local storage preserved?)
     if [ ! -z "$HOST_DAS4_LOCALTEMPDIRECTORY" ]; then
-        $HOST_DAS4_COMMAND "module load prun; if ! qstat -k $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"rm -rf $HOST_DAS4_LOCALTEMPDIRECTORY\""
+        $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"rm -rf $HOST_DAS4_LOCALTEMPDIRECTORY\""
         echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     fi
 
@@ -569,6 +598,10 @@ function hostCleanup() {
             echo "HOST_DAS4_TEMPFOLDER=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
         fi
     fi
+
+    removeCleanupScript $HOST_CLEANUPIDX
+    HOST_CLEANUPIDX=""
+    echo "HOST_CLEANUPIDX=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
 }
 
 ##

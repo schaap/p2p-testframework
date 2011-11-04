@@ -148,6 +148,14 @@ function clientKill() {
 }
 
 ##
+# Does client specific preparation at the beginning of a scenario's run.
+##
+function clientPrepare() {
+    # The default implementation creates the cleanup
+    clientPrepare__default
+}
+
+##
 # Does client/host specific preparation on the host as well as copying the files of the client to the host.
 # Use the host API for sending files and executing commands.
 ##

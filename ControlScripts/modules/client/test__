@@ -108,10 +108,18 @@ function clientRunning() {
 # Ends the execution of the client on the loaded host.
 # Use the host API to execute commands to kill the client.
 # Use the execution API to find information about the specific run, such as an execution specific number.
-##
+#
 function clientKill() {
     # The default implementation relies on the pid file in `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`
     clientKill__default
+}
+
+##
+# Does client specific preparation at the beginning of a scenario's run.
+##
+function clientPrepare() {
+    # The default implementation creates the cleanup
+    clientPrepare__default
 }
 
 ##

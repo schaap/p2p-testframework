@@ -61,7 +61,8 @@ function sourcePrepareRemote__default() {
     addCleanupScript
     local cleanupidx=$?
     addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
-    local logfile=`hostSendCommand "mktemp"`
+    local tmpdir="`hostGetPersistentTestDir`"
+    local logfile=`hostSendCommand "mktemp --tmpdir=$tmpdir"`
     addCleanupCommand "hostSendCommand \"rm -f \\\"$logfile\\\"\"" $cleanupidx
     local remotedir="`hostGetTestDir`/clients/${CLIENT_NAME}/source"
     local ans=`hostSendCommand "( mkdir -p \"$remotedir/\"; cd \"$remotedir/\"; ( $cmd ) 1>&2 && echo -n \"OK\" ) 2> \"$logfile\""`

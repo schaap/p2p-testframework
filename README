@@ -5,6 +5,8 @@ This document is the work-in-progress documentation of the P2P testing framework
 1.0.1
     + Added hostGetPersistentTestDir
             hosts need updating to include this function, clients need updating to use this function for storing logs
+    + Added clientPrepare
+            clients need updating to include this function
 
 = Stages =
 

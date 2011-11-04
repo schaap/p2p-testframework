@@ -310,6 +310,13 @@ function runScenario() {
         fi
     done
 
+    # Prepare all clients
+    local client
+    for client in $CLIENTS; do
+        clientLoadSettings "$client"
+        clientPrepare
+    done
+
     # Collect all used hostnames (for traffic control purposes)
     local hostnames=( )
     for host in $HOSTS; do
@@ -581,7 +588,7 @@ function runScenario() {
 
         # Final cleanup of all clients
         for client in $CLIENTS; do
-            clientLoadSettings $client
+            clientLoadSettings "$client"
             clientCleanupFinal
         done
 
@@ -809,7 +816,7 @@ function runScenario() {
 
     # Final cleanup of all clients
     for client in $CLIENTS; do
-        clientLoadSettings $client
+        clientLoadSettings "$client"
         clientCleanupFinal
     done
 

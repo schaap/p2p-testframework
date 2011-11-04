@@ -21,11 +21,6 @@ function clientAPIVersion__default() {
 # This default implementation just writes all the default parameters to "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 ##
 function clientReadSettings__default() {
-    # Setup a cleanup file for this client
-    addCleanupScript
-    CLIENT_CLEANUPIDX=$?
-    addCleanupCommand ". \"${TEST_ENV_DIR}/modules/client/$CLIENT_SUBTYPE\"" $CLIENT_CLEANUPIDX
-
     mkdir -p "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/"
     echo -n "$CLIENT_SUBTYPE" > "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/modulename"
         
@@ -41,8 +36,6 @@ function clientReadSettings__default() {
     echo "CLIENT_REMOTECLIENT=\"$CLIENT_REMOTECLIENT\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_BUILDER=\"$CLIENT_BUILDER\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_SOURCE=\"$CLIENT_SOURCE\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
-
-    addCleanupCommand "clientLoadSettings \"$CLIENT_NAME\"" $CLIENT_CLEANUPIDX
 
     loadModule "source/_defaults_"
     loadModule "source/$CLIENT_SOURCE"
@@ -175,6 +168,19 @@ function clientKill__default() {
 wait
 EOF`
     hostSendCommand "$killScript"
+}
+
+##
+# Does client specific preparation at the beginning of a scenario's run.
+# The default implementation just creates the cleanup.
+##
+function clientPrepare__default() {
+    # Setup a cleanup file for this client
+    addCleanupScript
+    CLIENT_CLEANUPIDX=$?
+    echo "CLIENT_CLEANUPIDX=\"$CLIENT_CLEANUPIDX\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
+    addCleanupCommand ". \"${TEST_ENV_DIR}/modules/client/$CLIENT_SUBTYPE\"" $CLIENT_CLEANUPIDX
+    addCleanupCommand "clientLoadSettings \"$CLIENT_NAME\"" $CLIENT_CLEANUPIDX
 }
 
 ##
