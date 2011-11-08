@@ -27,3 +27,18 @@ function createTempFile() {
 function createTempDir() {
     mktemp -d --tmpdir="${LOCAL_TEST_DIR}/tmp"
 }
+
+##
+# Quotes a string by adding slashes in front of `, $, \ and "
+#
+# @param    The string to be quoted
+#
+# @output   The quoted string
+##
+function quote() {
+    local s="${1//\\/\\\\}"
+    s="${s//\`/\\\`}"
+    s="${s//\"/\\\"}"
+    s="${s//\$/\\\$}"
+    echo "$s"
+}

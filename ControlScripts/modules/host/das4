@@ -319,7 +319,7 @@ function hostLoadSettings() {
 # @output   The output of the command on the host.
 ##
 function hostSendCommand() {
-    $HOST_DAS4_COMMAND "module load prun; SCRIPTFILE=\`mktemp --tmpdir=`hostGetPersistentTestDir`\`; OUTFILE=\`mktemp --tmpdir=`hostGetPersistentTestDir`\`; echo \"#!/bin/bash\" > \$SCRIPTFILE; echo \"if [ ! -f `hostGetTestDir`/host_das4_nodenumber ]; then exit 0; fi; if [ \"\\\`cat `hostGetTestDir`/host_das4_nodenumber\\\`\" != \"$HOST_DAS4_NODENUMBER\" ]; then exit 0; fi\" >> \$SCRIPTFILE; echo \"( $1 ) > \$OUTFILE\" >> \$SCRIPTFILE; chmod +x \$SCRIPTFILE; prun -1 -reserve $HOST_DAS4_RESERVATIONID \$SCRIPTFILE $HOST_DAS4_NNODES >> `hostGetPersistentTestDir`/das4_prun_debug; cat \$OUTFILE"
+    $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; SCRIPTFILE=\`mktemp --tmpdir=`hostGetPersistentTestDir`\`; OUTFILE=\`mktemp --tmpdir=`hostGetPersistentTestDir`\`; echo \"#!/bin/bash\" > \$SCRIPTFILE; echo \"if [ ! -f `hostGetTestDir`/host_das4_nodenumber ]; then exit 0; fi; if [ \"\\\`cat `hostGetTestDir`/host_das4_nodenumber\\\`\" != \"$HOST_DAS4_NODENUMBER\" ]; then exit 0; fi\" >> \$SCRIPTFILE; echo \"( `quote "$1"` ) > \$OUTFILE\">> \$SCRIPTFILE; chmod +x \$SCRIPTFILE; prun -1 -reserve $HOST_DAS4_RESERVATIONID \$SCRIPTFILE $HOST_DAS4_NNODES >> `hostGetPersistentTestDir`/das4_prun_debug; cat \$OUTFILE"
     
     # Send the command to a file on the das4 headnode
     # Call prun with the appropriate parameters to run the script on only the node associated with this host
@@ -335,13 +335,13 @@ function hostSendCommand() {
 function hostSendFile() {
     local ans=""
     if [ "$3" = "1" ]; then
-        ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; echo -n \"OK\""`
+        ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; echo -n \"OK\""`
         if [ "$ans" != "OK" ]; then
             logError "host:das4 :: Can't send file anymore: reservation has passed."
             fail
         fi
     else
-        ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; [ ! -e \"$2\" ] && echo -n \"OK\""`
+        ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; [ ! -e \"$2\" ] && echo -n \"OK\""`
         if [ "$ans" != "OK" ]; then
             logError "host:das4 :: Can't send file: either the reservation has passed or destination \"$2\" already exists."
             fail
@@ -373,7 +373,7 @@ function hostSendFile() {
 # @param    The path on the remote host to the directory where the contents are to be stored.
 ##
 function hostSendFiles() {
-    local ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; echo -n \"OK\""`
+    local ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:das4 :: Can't send files anymore: reservation has passed."
         fail
@@ -433,7 +433,9 @@ function hostPrepare() {
     echo "HOST_DAS4_RESERVATIONID=\"$HOST_DAS4_RESERVATIONID\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     ( echo "Waiting for DAS4 nodes to become available" >&2 ) > /dev/null
     # FIXME FIXME There are some statusses that will result in bogus data!
-    local ans=`$HOST_DAS4_COMMAND "module load prun; while ! qstat -j $HOST_DAS4_RESERVATIONID | grep \"usage\" >/dev/null; do if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit 1; fi; sleep 1; done; echo -n \"OK\""`
+    # Example result of nodes:
+    # Nodes available, but unreachable: 8698  tschaap         11/08   13:59   11/08   14:01   t       2       -
+    local ans=`$HOST_DAS4_COMMAND "module load prun; while ! qstat -j $HOST_DAS4_RESERVATIONID | grep \"usage\" >/dev/null 2>/dev/null; do if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit 1; fi; sleep 1; done; while ! preserve -llist | grep -E \"^$HOST_DAS4_RESERVATIONID[[:space:]]\" | sed -e \"s/^[[:digit:]][[:digit:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*[^[:space:]][^[:space:]]*[[:space:]][[:space:]]*r[[:space:]][[:space:]]*[[:digit:]][[:digit:]]*[[:space:]][[:space:]]*\\(.*\\)$/\\1/\" | grep -v -E \"^$HOST_DAS4_RESERVATIONID[[:space:]]\" > /dev/null; do if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit 1; fi; sleep 1; done; echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:das4 :: Nodes never became available and the reservation seems to be gone as well. Output follows."
         logError $ans
@@ -456,7 +458,7 @@ function hostPrepare() {
     for node in $nodes; do
         checkcmd="$checkcmd ssh -n -T -o BatchMode=yes $node && "
     done
-    ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; $checkcmd echo -n \"OK\""`
+    ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; $checkcmd echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:das4 :: Nodes found, but not all could be reached from the headnode. List of nodes and output follows."
         logError "$nodes"
@@ -491,20 +493,20 @@ function hostPrepare() {
     done
     echo "HOST_DAS4_NODENUMBER=\"$HOST_DAS4_NODENUMBER\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     echo "HOST_DAS4_NODENAME=\"$HOST_DAS4_NODENAME\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
-    ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"echo -n OK\""`
+    ans=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"echo -n OK\""`
     if [ "$ans" != "OK" ]; then
         logError "host:das4 :: It seems accessing a node without the requirement for a password is not possible. This is required for host:das4 to function."
         rm "$confcopy"
         fail
     fi
-    HOST_DAS4_LOCALTEMPDIRECTORY=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"mkdir -p /local/$HOST_DAS4_USER; mktemp -d --tmpdir=/local/$HOST_DAS4_USER\""`
+    HOST_DAS4_LOCALTEMPDIRECTORY=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"mkdir -p /local/$HOST_DAS4_USER; mktemp -d --tmpdir=/local/$HOST_DAS4_USER\""`
     if [ -z "$HOST_DAS4_LOCALTEMPDIRECTORY" ]; then
         logError "host:das4 :: Could not create a node-specific temporary directory on node $HOST_DAS4_NODENAME of host $HOST_NAME."
         rm "$confcopy"
         fail
     fi
     echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"$HOST_DAS4_LOCALTEMPDIRECTORY\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
-    $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"echo -n $HOST_DAS4_NODENUMBER > $HOST_DAS4_LOCALTEMPDIRECTORY/host_das4_nodenumber\""
+    $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"echo -n $HOST_DAS4_NODENUMBER > $HOST_DAS4_LOCALTEMPDIRECTORY/host_das4_nodenumber\""
 
     # Be sure to setup cleanup stuff so reservations get cancelled!
 
@@ -538,9 +540,9 @@ function hostPrepare() {
         addCleanupCommand "hostLoadSettings \"$HOST_NAME!$hostcount\"" $idx
         addCleanupCommand "hostCleanup" $idx
         # The new hosts should have a temporary directory created on the node and it should be made sure they can be used.
-        local thislocaltempdir=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"mkdir -p /local/$HOST_DAS4_USER; mktemp -d --tmpdir=/local/$HOST_DAS4_USER\""`
+        local thislocaltempdir=`$HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"mkdir -p /local/$HOST_DAS4_USER; mktemp -d --tmpdir=/local/$HOST_DAS4_USER\""`
         echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"$thislocaltempdir\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
-        $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"echo -n $hostcount > $thislocaltempdir/host_das4_nodenumber\""
+        $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $thisnodename \"echo -n $hostcount > $thislocaltempdir/host_das4_nodenumber\""
         HOSTS="$HOSTS $HOST_NAME!$hostcount"
         hostcount=$(($hostcount + 1))
     done
@@ -584,7 +586,7 @@ function hostPrepare() {
 function hostCleanup() {
     # Remove the temp dir. (Will this be needed? Can't we just tell the nodes we don't want the local storage preserved?)
     if [ ! -z "$HOST_DAS4_LOCALTEMPDIRECTORY" ]; then
-        $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"rm -rf $HOST_DAS4_LOCALTEMPDIRECTORY\""
+        $HOST_DAS4_COMMAND "module load prun; if ! qstat -j $HOST_DAS4_RESERVATIONID > /dev/null 2>/dev/null; then exit -1; fi; ssh -n -T -o BatchMode=yes $HOST_DAS4_NODENAME \"rm -rf $HOST_DAS4_LOCALTEMPDIRECTORY\""
         echo "HOST_DAS4_LOCALTEMPDIRECTORY=\"\"" >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME/conf"
     fi
 

@@ -40,7 +40,7 @@ function builderBuildLocal() {
 # @return   True (0) iff the build command seems to have succeeded succesfully.
 ##
 function builderBuildRemote() {
-    ans=`sendHostCommand "[ -d \"$CLIENT_LOCATION\" ] && echo -n \"OK\""`
+    ans=`hostSendCommand "[ -d \"$CLIENT_LOCATION\" ] && echo -n \"OK\""`
     if [ "$ans" != "OK" ]; then
         logError "builder:none :: Remote client directory \"$CLIENT_LOCATION\" does not exist on host $HOST_NAME for client $CLIENT_NAME."
         return 1
