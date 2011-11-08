@@ -46,11 +46,11 @@ function parseSettings() {
                     failScenarioFile "$6"
                 fi
                 if [ ! -z "$PARSER_NAME" ]; then
-                    logError "parser:_parser_.sh :: File defined at line $3 of scenario $5 already has a name (line $LINE_NUMBER)."
+                    logError "parser:_parser_.sh :: Parser defined at line $3 of scenario $5 already has a name (line $LINE_NUMBER)."
                     failScenarioFile "$6"
                 fi
                 if [ -e "${LOCAL_TEST_DIR}/parsers/$parameterValue" ]; then
-                    logError "parser:_parser_.sh :: File $parameterValue already exists, redefined on line $3 of scenario $5 (line $LINE_NUMBER)."
+                    logError "parser:_parser_.sh :: Parser $parameterValue already exists, redefined on line $3 of scenario $5 (line $LINE_NUMBER)."
                     failScenarioFile "$6"
                 fi
                 PARSER_NAME="$parameterValue"
@@ -62,8 +62,12 @@ function parseSettings() {
     done < "$4";
 
     if [ -z "$PARSER_NAME" ]; then
-        logError "parser:_parser_.sh :: File defined at line $3 of scenario $5 has no name specified."
-        failScenarioFile "$6"
+        if [ ! -e "${LOCAL_TEST_DIR}/parsers/$PARSER_SUBTYPE" ]; then
+            PARSER_NAME="$PARSER_SUBTYPE"
+        else
+            logError "parser:_parser_.sh :: Parser defined at line $3 of scenario $5 has no name specified and the default name for this parser type ($PARSER_SUBTYPE) is already used."
+            failScenarioFile "$6"
+        fi
     fi
 
     # = Load the parser subtype module =
