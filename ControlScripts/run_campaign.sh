@@ -85,16 +85,19 @@ TEST_BASE_DIR=`pwd`
 function trapHandlerHup() {
     cd "${TEST_BASE_DIR}"
     logError "Received signal SIGHUP"
+    ( echo "Received signal SIGHUP, cleaning up" >&2 ) > /dev/null
     fail
 }
 function trapHandlerTerm() {
     cd "${TEST_BASE_DIR}"
     logError "Received signal SIGTERM"
+    ( echo "Received signal SIGTERM, cleaning up" >&2 ) > /dev/null
     fail
 }
 function trapHandlerInt() {
     cd "${TEST_BASE_DIR}"
     logError "Received signal SIGINT"
+    ( echo "Received signal SIGINT, cleaning up" >&2 ) > /dev/null
     fail
 }
 trap trapHandlerHup SIGHUP
@@ -304,7 +307,8 @@ function run_campaign() {
                     fi
                     scenarioFiles[${#scenarioFiles[@]}]="${file}"
                     ;;
-                timelimit)
+                # I keep calling it timeout, so I'm guessing that is also/more natural
+                timelimit|timeout)
                     # Time limit for the execution of a scenario, in seconds
                     if echo "$parameterValue" | grep -E "[^[:digit:]]" >/dev/null; then
                         logError "The time limit for the scenario defined on line $scenarioLine should be given in seconds, which is a positive integer value, unlike \"$parameterValue\"."
@@ -316,8 +320,9 @@ function run_campaign() {
                     fi
                     SCENARIO_TIMELIMIT="$parameterValue"
                     ;;
-                default)
-                    logError "Unsupported parameter $parameterName found on line $LINE_NUMBER, ignoring"
+                *)
+                    logError "Unsupported parameter $parameterName found on line $LINE_NUMBER"
+                    fail
                     ;;
             esac
         fi

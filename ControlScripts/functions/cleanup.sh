@@ -144,7 +144,14 @@ function addCleanupCommand() {
         index=$2
         scriptFile=${CLEANUP_TMP_FILES[index]}
         if [ ! -e "$scriptFile" ]; then
-            logError "Warning: cleanup file index $2 does not exist. Ignoring command." 1>&2
+            logError "Warning: cleanup file index $2 does not exist. Ignoring command. Stack trace follows." 1>&2
+            local frame=0
+            local trace=""
+            while trace=`caller $frame`; do
+                frame=$(($frame + 1))
+                logError "trace: $trace"
+            done
+            logError "/trace"
             return;
         fi
     fi
