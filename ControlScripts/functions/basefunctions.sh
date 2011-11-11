@@ -14,7 +14,11 @@
 # @output   The full filename of the temporary file on the local system.
 ##
 function createTempFile() {
-    mktemp --tmpdir="${LOCAL_TEST_DIR}/tmp"
+    if mktemp --version 2>/dev/null | grep \"GNU coreutils\" > /dev/null 2>/dev/null; then
+        mktemp --tmpdir="${LOCAL_TEST_DIR}/tmp"
+    else
+        mktemp -p "${LOCAL_TEST_DIR}/tmp"
+    fi
 }
 
 ##
@@ -25,7 +29,43 @@ function createTempFile() {
 # @output   The full path to the directory on the local system.
 ##
 function createTempDir() {
-    mktemp -d --tmpdir="${LOCAL_TEST_DIR}/tmp"
+    if mktemp --version 2>/dev/null | grep \"GNU coreutils\" > /dev/null 2>/dev/null; then
+        mktemp -d --tmpdir="${LOCAL_TEST_DIR}/tmp"
+    else
+        mktemp -d -p "${LOCAL_TEST_DIR}/tmp"
+    fi
+}
+
+##
+# Creates a temporary file on the currently loaded remote system.
+# This file will NOT be cleaned up automatically: it is up to the caller to ensure this.
+#
+# @param    The basepath of the temporary file, if any.
+#
+# @output   The full path to the file on the remote host.
+##
+function createRemoteTempFile() {
+    if [ ! -z "$1" ]; then
+        hostSendCommand "if mktemp --version 2>/dev/null | grep \\\"GNU coreutils\\\" >/dev/null 2>/dev/null; then mktemp --tmpdir=\\\"$1\\\"; else mktemp -p \\\"$1\\\"; fi"
+    else
+        hostSendCommand "mktemp"
+    fi
+}
+
+##
+# Creates a temporary directory on the currently loaded remote system.
+# This directory will NOT be cleaned up automatically: it is up to the caller to ensure this.
+#
+# @param    The basepath of the temporary directory, if any.
+#
+# @output   The full path to the directory on the remote host.
+##
+function createRemoteTempDir() {
+    if [ ! -z "$1" ]; then
+        hostSendCommand "if mktemp --version 2>/dev/null | grep \\\"GNU coreutils\\\" >/dev/null 2>/dev/null; then mktemp -d --tmpdir=\\\"$1\\\"; else mktemp -d -p \\\"$1\\\"; fi"
+    else
+        hostSendCommand "mktemp -d"
+    fi
 }
 
 ##

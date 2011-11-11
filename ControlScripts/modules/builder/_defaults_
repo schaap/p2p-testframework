@@ -65,7 +65,7 @@ function builderBuildRemote__default() {
     local cleanupidx=$?
     addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
     local tmpdir="`hostGetPersistentTestDir`"
-    local logfile=`hostSendCommand "mktemp --tmpdir=$tmpdir"`
+    local logfile="`createRemoteTempFile \"$tmpdir\"`"
     addCleanupCommand "hostSendCommand \"rm -f \\\"$logfile\\\"\"" $cleanupidx
     local ans=`hostSendCommand "( cd \"$1\"; ( $cmd ) 1>&2 && echo -n \"OK\" ) 2> \"$logfile\""`
     if [ "$ans" != "OK" ]; then

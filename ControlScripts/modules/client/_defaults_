@@ -253,7 +253,7 @@ function clientPrepareExecution__default() {
     cat > "$clientRunnerScript" <<EOF
 set -o monitor
 cd "$remoteClientDir"
-$1 &
+( $1 ) &
 echo -n \$! > `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`
 %1
 wait
