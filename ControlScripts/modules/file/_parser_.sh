@@ -6,7 +6,7 @@
 # @output   The version of this parser.
 ##
 function parseAPIVersion() {
-    echo "1.0.1"
+    echo "1.0.2"
 }
 
 ##
@@ -32,6 +32,7 @@ function parseSettings() {
     FILE_NAME=""
     FILE_SUBTYPE="$2"
     FILE_ROOTHASH=""
+    FILE_METAFILE=""
     while IFS="" read LINE; do
         if [ "$LINE" = "" ]; then
             LINE_NUMBER=$(($LINE_NUMBER + 1))
@@ -66,6 +67,17 @@ function parseSettings() {
                     failScenarioFile "$6"
                 fi
                 FILE_ROOTHASH="$parameterValue"
+                ;;
+            metaFile)
+                if [ ! -f "$parameterValue" ]; then
+                    logError "file:_parser_.sh :: File defined at line $3 of scenario $5 is given meta file \"$parameterValue\", but that file does not exist locally."
+                    failScenarioFile "$6"
+                fi
+                if [ ! -z "$FILE_METAFILE" ]; then
+                    logError "file:_parser_.sh :: File defined at line $3 of scenario $5 already has a meta file associated (line $LINE_NUMBER)."
+                    failScenarioFile "$6"
+                fi
+                FILE_METAFILE="$parameterValue"
                 ;;
             *)
                 ;;

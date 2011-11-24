@@ -1,0 +1,207 @@
+#!/bin/bash
+
+#
+# A file implementation for generated, fake data.
+# This module uses Utils/fakedata
+#
+# Extra parameters that are also understood by this module:
+# - size        A positive integer, divisible by 4, that denotes the size of the generated file in bytes. Required.
+# - binary      The path to the remote binary to use. This might be needed when g++ does not work on one the hosts this file is used on. Optional, defaults to "", which will have the binary compiled on the fly.
+#
+# A data file such as this will almost always be used together with some meta data, sich as a torrent file or a root hash.
+# To generate those the actual fake data file is needed. Creating that file can be done by compiling the utility in Utils/fakedata:
+#   cd Utils/fakedata
+#   g++ -o genfakedata *.cpp
+#   cd ../..
+# The this utility can be used to generate the fake data. For example, to generate the fake data file of size 100 megabyte:
+#   Utils/fakedata/genfakedata file_with_size_100M 104857600
+# This will write the file named file_with_size_100M and fill it with 100 megabytes worth of bogus data.
+# Note that although the data is very bogus (it's a word-counter) it is also non-trivial and deterministic. This makes it ideal for testing
+# purposes: easily generated, always the same and real enough to get actual results. Note that intelligent compression algorithms MIGHT be
+# able to compress it, because of the simplistic and rigid structure of the data.
+#
+
+##
+# Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/files/$FILE_NAME .
+# Please return false (non-0) when an error occurs, instead of calling fail.
+# The way the settings are saved into ${LOCAL_TEST_DIR}/files/$FILE_NAME/ does not matter, but make sure it exists and that ${LOCAL_TEST_DIR}/files/$FILE_NAME/modulename contains the module subtype and nothing else.
+#
+# @param    The settings file to read from.
+# @param    The line number at which this file object was defined. The first line in the settings file is at line $(($2 + 1))
+#
+# @return   True (0) iff the settings were parsed and saves succesfully.
+##
+function fileReadSettings() {
+    local parameterName=""
+    local parameterValue=""
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        FILE_FAKEDATA_SIZE=""
+        FILE_FAKEDATA_BINARY=""
+        # Handle this parameter appropiately
+        case $parameterName in
+            name|rootHash|metaFile)
+                # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            size)
+                if [ ! -z "$FILE_FAKEDATA_SIZE" ]; then
+                    logError "file:fakedata :: File $FILE_NAME has already been given a size."
+                    return 1
+                fi
+                if echo "$parameterValue" | grep -E "[^[:digit:]]" > /dev/null; then
+                    logError "file:fakedata :: The size of file $FILE_NAME must be a positive integer, divisible by 4."
+                    return 1
+                fi
+                if [ $parameterValue -le 0 -o $((($parameterValue / 4) * 4)) -ne $parameterValue ]; then
+                    logError "file:fakedata :: The size of file $FILE_NAME must be a positive integer, divisible by 4."
+                    return 1
+                fi
+                FILE_FAKEDATA_SIZE="$parameterValue"
+                ;;
+            binary)
+                if [ ! -z "$FILE_FAKEDATA_BINARY" ]; then
+                    logError "file:fakedata :: File $FILE_NAME has already been given a binary."
+                    return 1
+                fi
+                FILE_FAKEDATA_BINARY="$parameterValue"
+                ;;
+            *)
+                logError "file:fakedata :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    if [ -z "$FILE_FAKEDATA_SIZE" ]; then
+        logError "The parameter size to file $FILE_NAME is required."
+        return 1
+    fi
+
+    # Delegate the rest to the default implementation
+    fileReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+    echo "FILE_FAKEDATA_SIZE=\"$FILE_FAKEDATA_SIZE\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+    echo "FILE_FAKEDATA_BINARY=\"$FILE_FAKEDATA_BINARY\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+
+    # Finally, register our file with the environment
+    FILES="$FILES $FILE_NAME"
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not.
+#
+# @param    The name of the file object to be loaded.
+##
+function fileLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for fileReadSettings is used
+    fileLoadSettings__default "$1" "fakedata"
+}
+
+##
+# Send any required files to the host.
+# This function will be called for each host.
+# Use the host API to do the actual sending of the files.
+##
+function fileSendToHost() {
+    # Default implemenation upload the meta file, if given, to `hostGetTestDir`/files/$FILE_NAME/meta/
+    fileSendToHost__default
+}
+
+##
+# Send any files required for seeding to the host.
+# This function will be called for each host on which seeding of the file is needed.
+# Note that fileSendToHost will also be called, before this function is called.
+# Use the host API to do the actual sending of the files.
+##
+function fileSendToSeedingHost() {
+    local testdir="`hostGetTestDir`"
+    local tempdir=""
+    local thebinary=""
+    if [ -z "$FILE_FAKEDATA_BINARY" ]; then
+        # On the fly compilation required
+        tempdir="`createRemoteTempDir \"$testdir\"`"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/compat.h" "$tmpdir/compat.h"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.h" "$tmpdir/fakedata.h"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.cpp" "$tmpdir/fakedata.cpp"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/genfakedata.cpp" "$tmpdir/genfakedata.cpp"
+        local ans=`hostSendCommand "cd \"$tempdir\"; g++ *.cpp -o genfakedata && echo -n \"OK\""`
+        if [ "$ans" != "OK" ]; then
+            hostSendCommand "rm -rf \"$tempdir\""
+            logError "file:fakedata :: Could not compile genfakedata remotely on host $HOST_NAME. Please copy and compile the files in Utils/fakedata yourself and use the 'binary' parameter to point to the resulting executable."
+            fail
+        fi
+        thebinary="$tempdir/genfakedata"
+    else
+        # Remote binary specified, see if it's executable
+        local ans=`hostSendCommand "if [ -x \"$FILE_FAKEDATA_BINARY\" -a -f \"$FILE_FAKEDATA_BINARY\" ]; then echo -n \"OK\"; fi"`
+        if [ "$ans" != "OK" ]; then
+            logError "file:fakedata :: Binary \"$FILE_FAKEDATA_BINARY\" on host $HOST_NAME could not be found remotely or is not executable."
+            fail
+        fi
+        thebinary="$FILE_FAKEDATA_BINARY"
+    fi
+
+    # Try and generate the file
+    local ans=`hostSendCommand "mkdir -p \"$testdir/files/$FILE_NAME/\" && $thebinary \"$testdir/files/$FILE_NAME/fakedata/\" $FILE_FAKEDATA_SIZE > /dev/null && echo -n \"OK\""`
+    # Cleanup the temporary directory with the compiled binary, if needed
+    if [ "$tempdir" != "" ]; then
+        hostSendCommand "rm -rf \"$tempdir\""
+    fi
+    # Check whether generation was succesful
+    if [ "$ans" != "OK" ]; then
+        logError "file:fakedata :: Generating $FILE_FAKEDATA_SIZE bytes remotely on host $HOST_NAME has failed."
+        fail
+    fi
+}
+
+##
+# Output the path to the file, or the root directory of a set of files, on the currently loaded host.
+# This assumes that fileSendToHost has already been called.
+# This file is only available for seeding hosts, use the execution API to verify this, if needed.
+# Use the host API for host specific queries, if needed.
+##
+function fileGetName() {
+    echo "`hostGetTestDir`/files/$FILE_NAME"
+}
+
+##
+# Output the path to the file containing metadata on the currently loaded host.
+# If no such file is available, output "".
+# An example of a metadata file is a .torrent file.
+# Use the host API for host specific queries, if needed.
+##
+function fileGetMetaName() {
+    # Default implementation just uses FILE_METAFILE
+}
+
+##
+# Output the Merkle root hash of the file.
+# If no such root hash is known, output "".
+##
+function fileGetRootHash() {
+    # Default implementation just uses FILE_ROOTHASH
+    fileGetRootHash__default
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function fileAPIVersion() {
+    echo "1.0.2"
+}

@@ -89,5 +89,5 @@ function sourceRemoteLocation() {
 # @output   The API version number.
 ##
 function sourceAPIVersion() {
-    echo "1.0.1"
+    echo "1.0.2"
 }

@@ -2,6 +2,10 @@ This document is the work-in-progress documentation of the P2P testing framework
 
 = API Version History =
 
+1.0.2
+    + Added fileSendToHost__default and fileGetMetaName implementations
+            file modules need updating to call the new default functions in order to support the new metaFile parameter
+            the switch on $parameterName in fileReadSettings also needs updating in each file module to include metaFile as valid
 1.0.1
     + Added hostGetPersistentTestDir
             hosts need updating to include this function, clients need updating to use this function for storing logs
@@ -200,12 +204,13 @@ parameters:
 parameters:
 - name              -> required, the file can be referred to by its name, no two files with the same name allowed
 - rootHash          -> optional, the Merkle root hash of the file (40 hexadecimal digits)
+- metaFile          -> optional, the path to a local file containing meta data, such as a torrent file
 
 ==== file:local ====
 parameters:
-- path              -> required, path to the file on the local machine
-- torrent           -> optional, set to yes to enable automated generation of a torrent file for this file
-- generateRootHash  -> optional, set to yes to enable automated generation of the SHA1 root hash for this file
+- path              -> required, path to the file or directory on the local machine
+- torrent           -> optional, set to yes to enable automated generation of a torrent file for this file (do not set metaFile as well)
+- generateRootHash  -> optional, set to yes to enable automated generation of the SHA1 root hash for this file (do not set rootHash as well, make sure path points to a single file)
 
 ==== file:test__ ====
 fake file

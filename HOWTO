@@ -1,0 +1,128 @@
+This HOWTO will introduce you into the usage of the P2P testing framework. Topics covered are building tests, running tests, reviewing results and extending the framework. Throughout this HOWTO commands and files will be assumed to be run in the root of the P2P test framework, which is the directory that contains the ControlScripts directory. This is the working directory that is assumed throughout all documentation of the framework.
+
+=== BUILDING TESTS ===
+To run a test you first have to build the scenario and campaign files. In the scenario files you define which hosts will run which clients to send which files. As an example we will build a test that sends a single file from host1 to host2, both accessable over ssh, using the swift client. We will use one scenario file to define the file object, one file to define the hosts and one to define the clients and put it all together. The separation into multiple files is just an example: you could just as well use one file or a different separation.
+
+One thing we will not explicitly do here, but what you should do when writing your own scenarios (and what I did when writing this), is referring to the documentation. The base entry point is the README file, which documents the parameters to all the generic objects. Apart from that you should always open the file of every module you use: module specific documentation is placed at the beginning of the module file. Finding these files is simple: as an example module file:local is located in ControlScripts/modules/file/local . This is actually the very reason the module is called file:local. This is, by the way, also the way that is used throughout the framework to refer to specific files.
+
+= file: TestSpecs/files/my_file =
+
+    [file:local]
+    name=myfile
+    path=/home/me/someNiceFileToTransfer
+    rootHash=0123456789012345678901234567890123456789
+
+This creates a single file object named 'myfile'. It points to the local file given by path=. Since we'll be transferring this file using swift it is useful to also give the rootHash. Of course the root hash here is bogus ;).
+
+= file: TestSpecs/hosts/my_hosts =
+
+    [host:ssh]
+    name=my_seeder
+    hostname=myseederhost.foo.bar
+
+    [host:ssh]
+    name=my_leecher
+    hostname=myleecherhost.foo.bar
+    user=my_alter_ego
+
+This creates two host objects named 'my_seeder' and 'my_leecher'. They instruct the framework to use SSH to connect to the hosts under the given hostnames (this can also be an IP). In case of the leecher a different username than the logged in user is to be used.
+
+= file: TestSpecs/scenarios/my_scenario =
+
+    [client:swift]
+    name=seedingswift
+    location=git://github.com/gritzko/swift.git
+    source=git
+    builder=make
+    remoteClient=yes
+    listenPort=15000
+    wait=300
+
+    [client:swift]
+    name=leechingswift
+    location=/home/me/prebuilt_swift_dir
+    tracker=myseederhost.foo.bar:15000
+
+    [execution]
+    host=my_seeder
+    file=myfile
+    client=seedingswift
+    seeder=yes
+
+    [execution]
+    host=my_leecher
+    file=myfile
+    client=leechingswift
+
+    [processor:gnuplot]
+    script=TestSpecs/processors/simple_log_gnuplot
+    [processor:savehostname]
+
+    [viewer:htmlcollection]
+
+This first creates two client objects named 'seedingswift' and 'leechingswift'. The seedingswift client is instructed to have its source pulled using git (source=git) from the given repository (location=). It is to be built remotely (remoteClient=yes) using make (builder=make). Two swift specific parameters for the seedingswift client are given to instruct the client to listen on port 15000 and to wait for 300 seconds before terminating. The leechingswift client uses a locally prebuilt binary swift located in /home/me/prebuilt_swift_dir/. This client will be uploaded to the leeching host and executed. It is instructed to use myseederhost.foo.bar:15000 as its tracker.
+
+Then the file proceeds with declaring two executions. Executions are the combination of host, client and file. The first execution instructs the framework to run the seedingswift client on the my_seeder host to transfer myfile and it tells the framework that that host will be a seeder (seeder=yes). The latter is important to do correct: only seeding executions will have the actual files needed to seed uploaded, non-seeding executions will only upload the meta data. The second execution runs the leechingswift client on the my_leecher host to transfer myfile again.
+
+The last lines instruct the framework to run two postprocessors: gnuplot and savehostname. The former runs gnuplot on the gathered data with a supplied script, the simple_log_gnuplot script in this case, and the latter just saves the hostname as given above in single files. The output of both of these will be used by the htmlcollection viewer which will be run in the end. That viewer will generate an HTML overview of what has been going on.
+
+= file: TestSpecs/my_campaign =
+
+    [scenario]
+    name=scenario1
+    file=TestSpecs/files/my_file
+    file=TestSpecs/hosts/my_hosts
+    file=TestSpecs/scenarios/my_scenario
+    timelimit=60
+
+    [scenario]
+    name=scenario2
+    file=TestSpecs/hosts/my_hosts
+    file=TestSpecs/files/my_file
+    file=TestSpecs/scenarios/my_scenario
+
+This is the campaign file. The campaign file is the complete description of the campaign, using indirections into the scenario files. It can't contain other objects than scenario objects and just instructs the framework which files to concatenate in order to create a full scenario file. It also gives the scenarios a name and optionally a time limit (in seconds). Note that the order of the file parameters is important: the files are simply concatenated in the order they are given and if an object is declared before it is used, the framework will simply complain. For example, if we would specify the my_file scenario file after the my_scenario scenario file, the framework will complain after parsing the first execution: it can't find file object myfile.
+
+
+=== RUNNING TESTS ===
+Now that your very interesting and elaborate test suite has been built, it is time to run it. The most easy way is:
+
+    ./ControlScripts/run_campaign.sh TestSpecs/my_campaign
+
+This will run the scenarios in your campaign file, first checking both (syntax check and simple sanity checks) and then they will be run for real. You can separate these steps as follows:
+    
+    ./ControlScripts/run_campaign.sh --check TestSpecs/my_campaign
+    ./ControlScripts/run_campaign.sh --nocheck TestSpecs/my_campaign
+
+Note that the syntax and sanity checks will be run during the actual run as well: a check run simply stops before any uploading and executing is done. The one can go without the other, but when developing campaigns it is advisable to do a check run first, for example to establish whether your hosts are reachable without user interaction.
+
+And that's all there is to it. Just run it.
+
+= Access to hosts =
+One important note on access to hosts: this needs to be done without user interaction! This goes for everything in the framework, but accessing hosts is the most important example. Usually you will access some hosts over SSH. Make sure you can access those hosts without having to type anything! Create a key for your own identity and use ssh-agent to make sure you don't need to enter the passwords for your private keys. (You do have passwords on your private keys, right?)
+
+A typical session for me goes like this:
+    ssh-agent bash
+    ssh-add
+        [Type password to private key]
+    ./ControlScript/run_campaign.sh TestSpecs/my_campaign
+    exit
+
+The host:ssh module will check whether your hosts are reachable, but you can do so by hand yourself:
+    ssh yourhost "date"
+This should connect to the host, print the date, and fall back to your local prompt. If anything happens in between, such as extra output or user interaction, the framework will not work. Of course, you should add those parameters you also give to the framework, such as a different username or extra parameters.
+
+=== REVIEWING RESULTS ===
+After your tests have run, or failed, you should always review some results. The results can by default be found in the Results/ directory. Say you have just ran the above campaign my_campaign, and it was 17:00:00 on the 24th of November 2011. The results will then be in Results/my_campaign-2011.11.24-17.00.00/. In this directory you will first find err.log. Always review this: it is extra output from the scenarios. This file is especially important when something failed (the output of the framework will direct you here, as well).
+
+Apart from the err.log file there is the scenarios directory which holds one directory for each scenario. Inside each scenario's directory are all the logs and results of that scenario. Firstly there is the scenarioFile file, which is the concatenation of scenario files used to initialize the scenario. This is useful for debugging and also automatically documents the setup of your tests. Note that when line numbers are mentioned in error lines, they always refer to this file.
+
+The executions directory contains one directory for each execution, numbered exec_0, exec_1, etc. Inside these you will find the logs and parsedLogs directories, which contains the raw logs from the clients and the interpreted logs after a parser has been run on them (for using other parsers than the default ones: consult the full documentation). You can of course use these logs to do your own extended analyses.
+
+Next to the executions directory are the processed and views directories, which respectively contain post-processed data, such as graphs or formatted logs, and views, such as the HTML overview.
+
+When everything from your my_campaign campaign went well, you should usually first check the actual output. The htmlcollection view was defined, which takes together all processed data and puts it into an HTML page. To view this, you could run:
+    firefox Results/my_campaign-2011.11.24-17.00.00/scenarios/scenario1/views/collection.html
+
+=== EXTENDING THE FRAMEWORK ===
+TODO

@@ -83,5 +83,5 @@ function executionRunParsers() {
 # @output   The API version this module was written for.
 ##
 function executionAPIVersion() {
-    echo "1.0.1"
+    echo "1.0.2"
 }

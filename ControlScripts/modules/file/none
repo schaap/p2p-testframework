@@ -1,10 +1,16 @@
 #!/bin/bash
 
 #
-# A test implementation for the file API.
-# This implementation uses the file testseedingfile, which contains "abcdef" as data. A testfile is also sent to each hosts, but never used.
-# Metadata is not supported. Root hash of testseedingfile is hardcoded.
-# Use file:fake for more elaborate testing.
+# An extremely empty implementation for the file API.
+# This file module allows one to specify no file at all.
+# Including
+#   [file:none]
+#   name=none
+# is enough to be able to use file=none in an execution.
+# With this module one can also just specify a meta file or root hash for a leecher.
+#
+# This should be spurious, but: this module uploads NO files whatsoever for seeders.
+# As such, it should never be used for a seeder, unless you really know what you're doing.
 #
 
 ##
@@ -37,16 +43,11 @@ function fileReadSettings() {
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
             *)
-                logError "file:test__ :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
+                logError "file:none :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
                 ;;
         esac
         LINE_NUMBER=$(($LINE_NUMBER + 1))
     done < "$1";
-
-    if [ -z "$FILE_ROOTHASH" ]; then
-        # Hardcoded Merkle Root Hash for the file generated in fileSendToHost
-        FILE_ROOTHASH="97bb2117ad9bc68bc8bec3cca3a113ef30aebc37"
-    fi
 
     # Delegate the rest to the default implementation
     fileReadSettings__default
@@ -66,7 +67,7 @@ function fileReadSettings() {
 ##
 function fileLoadSettings() {
     # By default delegated to the default implementation, which works fine if the default implementation for fileReadSettings is used
-    fileLoadSettings__default "$1" "test__"
+    fileLoadSettings__default "$1" "none"
 }
 
 ##
@@ -75,18 +76,7 @@ function fileLoadSettings() {
 # Use the host API to do the actual sending of the files.
 ##
 function fileSendToHost() {
-    local file=`createTempFile`
-    local counter=0
-    echo -n > "$file"
-    while [ $counter -lt 1024 ]; do
-        echo -n "hijklmn" >> "$file"
-        counter=$(($counter + 1))
-    done
-    echo >> "$file"
-    hostSendFile "$file" "`hostGetTestDir`/testfile"
-    rm -f "$file"
-
-    # Default sends the meta file, if given, to the directory `hostGetTestDir`/files/$FILE_NAME/meta/
+    # Default implementation send the meta file, if given, to the directory `hostGetTestDir`/files/$FILE_NAME/meta/
     fileSendToHost__default
 }
 
@@ -97,16 +87,7 @@ function fileSendToHost() {
 # Use the host API to do the actual sending of the files.
 ##
 function fileSendToSeedingHost() {
-    local file=`createTempFile`
-    local counter=0
-    echo -n "" > "$file"
-    while [ $counter -lt 1024 ]; do
-        echo -n "abcdefg" >> "$file"
-        counter=$(($counter + 1))
-    done
-    echo >> "$file"
-    hostSendFile "$file" "`hostGetTestDir`/testseedingfile"
-    rm -f "$file"
+    return
 }
 
 ##
@@ -116,7 +97,7 @@ function fileSendToSeedingHost() {
 # Use the host API for host specific queries, if needed.
 ##
 function fileGetName() {
-    echo "`hostGetTestDir`/testseedingfile"
+    echo ""
 }
 
 ##

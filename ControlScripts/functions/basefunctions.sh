@@ -3,7 +3,7 @@
 #
 #
 # Requires:
-# Provides: createTempFile
+# Provides: createTempFile, createTempDir, createRemoteTempFile, createRemoteTempDir
 #
 
 ##

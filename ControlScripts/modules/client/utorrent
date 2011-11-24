@@ -1,10 +1,12 @@
 #!/bin/bash
 
 #
-# A skeleton implementation (i.e. interface description) for the client API.
-# The interface described in this file should be implemented by each client module.
-# Module implementors can copy this file and modify it as they see fit.
-# Minimal implementation that have no further parameters than the generic parameters need only implement clientRetrieveLogs, and extend clientPrepare to upload the client to the host. Do not forget to update the module name in clientLoadSettings!
+# utorrent implementation for the client API
+#
+# This client requires the ClientWrappers/utorrent scripts.
+#
+# NOTE: Do not try to run multiple utorrent instances on the same host!
+# utorrent will ban instances on the same host, leading to no connectivity between the two
 #
 
 ##
@@ -37,11 +39,17 @@ function clientReadSettings() {
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
             *)
-                logError "client:_skeleton_ :: Unknown parameter name \"$parameterName\" in client $CLIENT_NAME on line $LINE_NUMBER. Ignoring."
+                logError "client:utorrent :: Unknown parameter name \"$parameterName\" in client $CLIENT_NAME on line $LINE_NUMBER. Ignoring."
                 ;;
         esac
         LINE_NUMBER=$(($LINE_NUMBER + 1))
     done < "$1";
+
+    # Sanity check: do we have the extra script?
+    if [ ! -f "${TEST_ENV_DIR}/../ClientWrappers/utorrent/ut_server_logging" ]; then
+        logError "client:utorrent :: The wrapper script doesn't seem to be available. This script is required for this client."
+        return 1
+    fi
 
     # Delegate the rest to the default implementation
     clientReadSettings__default
@@ -61,8 +69,7 @@ function clientReadSettings() {
 ##
 function clientLoadSettings() {
     # By default delegated to the default implementation, which works fine if the default implementation for clientReadSettings is used
-    # TODO: CHANGE MODULE NAME BELOW
-    clientLoadSettings__default "$1" "MODULE_SUBTYPE"
+    clientLoadSettings__default "$1" "utorrent"
 }
 
 ##
@@ -124,11 +131,16 @@ function clientPrepareHost() {
     # Add extra preparation, such as sending the binaries of your client, here
     # As long as you place everything in the directories mentioned above, everything will be cleaned up
 
+    hostSendFile "${TEST_ENV_DIR}/../ClientWrappers/utorrent/ut_server_logging" "`hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging" 1
+
     # TODO
     if [ -z "$CLIENT_REMOTECLIENT" ]; then
         # Send your client files here
         # Note that a binary client only needs to be sent when it is not assumed to be available (or have been built) remotely
         # This also means that, even when building the client locally, the uploading of the resulting binary is still to be done here
+
+        hostSendFile "${CLIENT_LOCATION}/utserver" "`hostGetTestDir`/clients/$CLIENT_NAME/utserver" 1
+        hostSendFile "${CLIENT_LOCATION}/webui.zip" "`hostGetTestDir`/clients/$CLIENT_NAME/webui.zip" 1
     fi
 }
 
@@ -154,13 +166,21 @@ function clientPrepareExecution() {
     # Apart from creating the runner script, the default implementation creates a number of remote directories:
     # `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` and `hostGetTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`
     # `hostGetPersistentTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` and `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`
-    # TODO
-    clientPrepareExecution__default "YOUR COMMAND LINE HERE"
+    local SEEDFILE=""
+    if [ ! -z "$EXECUTION_SEEDER" ]; then
+        SEEDFILE="`fileGetName`"
+    fi
+
+    local TORRENTFILE="`fileGetMetaName`"
+    if [ -z "$TORRENTFILE" ]; then
+        logError "client:utorrent :: Client $CLIENT_NAME is supposed to be seeding file $FILE_NAME, but the latter won't give a torrent file."
+        fail
+    fi
+
+    clientPrepareExecution__default "LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:~/lib `hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging `hostGetTestDir`/clients/$CLIENT_NAME `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` $TORRENTFILE $SEEDFILE > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
 
     # The default implementation can be used to build the runner script. Do any extra execution specific preparation for your client here.
     # As long as you place thing in the directories mentioned above, everything will be cleaned up.
-
-    # TODO
 }
 
 ##
@@ -203,9 +223,7 @@ function clientCleanupFinal() {
 # @param    The local directory in which the logs are to be saved.
 ##
 function clientRetrieveLogs() {
-    # TODO
-
-    echo "TO BE IMPLEMENTED"
+    hostGetFile "`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log" "$1/log.log"
 }
 
 ##

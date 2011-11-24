@@ -1,11 +1,11 @@
 #!/bin/bash
 
 #
-# Implementation of the file API for a single local file.
+# Implementation of the file API for a local file or directory.
 # This file module supports these extra parameters:
-# - path                The path to the actual file on the local machine
-# - torrent             Set this to "yes" to have a torrent file automatically generated from the file; the torrent file will be uploaded and its location available through fileGetMetaName
-# - generateRootHash    Set this to "yes" to have the SHA1 root hash automatically generated from the file; the rootHash parameter must not be set in this case
+# - path                The path to the actual file or directory on the local machine
+# - torrent             Set this to "yes" to have a torrent file automatically generated from the file; the torrent file will be uploaded and its location available through fileGetMetaName. The metaFile parameter must not be set in this case.
+# - generateRootHash    Set this to "yes" to have the SHA1 root hash automatically generated from the file; the rootHash parameter must not be set in this case. path must refer to a file for a root hash to be calculated.
 #
 
 ##
@@ -36,13 +36,15 @@ function fileReadSettings() {
         parameterValue=`getParameterValue "$LINE"`
         # Handle this parameter appropiately
         case $parameterName in
-            name|rootHash)
+            name|rootHash|metaFile)
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
             path)
                 if [ ! -f "$parameterValue" ]; then
-                    logError "file:local :: Path to a file was given to file $FILE_NAME, but no such file exists: \"$parameterValue\" (line $LINE_NUMBER)."
-                    return 1
+                    if [ ! -d "$parameterValue" ]; then
+                        logError "file:local :: Path to a file was given to file $FILE_NAME, but no such file exists: \"$parameterValue\" (line $LINE_NUMBER)."
+                        return 1
+                    fi
                 fi
                 if [ ! -z "$FILE_LOCAL_PATH" ]; then
                     logError "file:local :: File $FILE_NAME already has a path associated with it (line $LINE_NUMBER)."
@@ -52,6 +54,10 @@ function fileReadSettings() {
                 ;;
             torrent)
                 if [ "$parameterValue" = "yes" ]; then
+                    if [ ! -z "$FILE_METAFILE" ]; then
+                        logError "file:local :: Automated generation of a torrent file was requested, but a meta file was already given to the file in general: \"$FILE_METAFILE\". Multiple meta file are not supported."
+                        return 1
+                    fi
                     file_local_torrent_requested=1
                 fi
                 ;;
@@ -97,6 +103,10 @@ function fileReadSettings() {
 
     # Try and calculate the roor hash for this single file.
     if [ $file_local_roothash_requested -eq 1 ]; then
+        if [ -d "$FILE_LOCAL_PATH" ]; then
+            logError "file:local :: Automated generation of a root hash was requested for file $FILE_NAME, but \"$FILE_PATH\" refers to a directory. Root hashes are only valid for single files."
+            return 1
+        fi
         loadFunctionsScript merkle.sh
         if ! merkleCanCalculate; then
             logError "file:local :: Could not generate the root hash from local file \"$FILE_LOCAL_PATH\". Perhaps the file is too large?"
@@ -140,6 +150,9 @@ function fileSendToHost() {
     if [ ! -z "$FILE_LOCAL_TORRENT" ]; then
         hostSendFile "$FILE_LOCAL_TORRENT" "`hostGetTestDir`/files/$FILE_NAME/torrent.torrent"
     fi
+
+    # Default sends the meta file, if given, to `hostGetTestDir`/files/$FILE_NAME/meta/
+    fileSendToHost__default
 }
 
 ##
@@ -149,7 +162,13 @@ function fileSendToHost() {
 # Use the host API to do the actual sending of the files.
 ##
 function fileSendToSeedingHost() {
-    hostSendFile "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/outputFile"
+    if [ -d "$FILE_LOCAL_PATH" ]; then
+        hostSendCommand "mkdir -p \"`hostGetTestDir`/files/$FILE_NAME/outputDir\""
+        hostSendFiles "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/outputDir"
+    else
+        local filename=`basename "$FILE_LOCAL_PATH"`
+        hostSendFile "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/outputFile"
+    fi
 }
 
 ##
@@ -163,7 +182,12 @@ function fileSendToSeedingHost() {
 ##
 function fileGetName() {
     if executionIsSeeder; then
-        echo "`hostGetTestDir`/files/$FILE_NAME/outputFile"
+        local filename=`basename "$FILE_LOCAL_PATH"`
+        if [ -d "$FILE_LOCAL_PATH" ]; then
+            echo "`hostGetTestDir`/files/$FILE_NAME/outputDir/$filename"
+        else
+            echo "`hostGetTestDir`/files/$FILE_NAME/$filename"
+        fi
     else
         echo ""
     fi
@@ -177,7 +201,8 @@ function fileGetName() {
 ##
 function fileGetMetaName() {
     if [ -z "$FILE_LOCAL_TORRENT" ]; then
-        echo ''
+        # Default just uses FILE_METAFILE
+        fileGetMetaName__default
     else
         echo "`hostGetTestDir`files/$FILE_NAME/torrent.torrent"
     fi
@@ -200,5 +225,5 @@ function fileGetRootHash() {
 # @output   The API version number.
 ##
 function fileAPIVersion() {
-    echo "1.0.1"
+    echo "1.0.2"
 }

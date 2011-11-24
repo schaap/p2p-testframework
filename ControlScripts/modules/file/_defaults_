@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function fileAPIVersion__default() {
-    echo "1.0.1"
+    echo "1.0.2"
 }
 
 ##
@@ -30,6 +30,7 @@ function fileReadSettings__default() {
     echo "FILE_NAME=\"$FILE_NAME\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
     echo "FILE_SUBTYPE=\"$FILE_SUBTYPE\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
     echo "FILE_ROOTHASH=\"$FILE_ROOTHASH\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+    echo "FILE_METAFILE=\"$FILE_METAFILE\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 }
 
 ##
@@ -66,10 +67,19 @@ function fileLoadSettings__default() {
 # This function will be called for each host.
 # Use the host API to do the actual sending of the files.
 #
-# No default implementation
+# Default implementation uploads the metafile, if given, to the `hostGetTestDir`/files/$FILE_NAME/meta/ directory.
 ##
-#function fileSendToHost() {
-#}
+function fileSendToHost__default() {
+    if [ ! -z "$FILE_METAFILE" ]; then
+        local postfix=`echo "$FILE_METAFILE" | sed -e "s/^.*$/\\0./" | sed -e "s/^[^.]*\(\..*\)$/\\1/" | sed -e "s/^.*\(\.[^.]*\)\.$/\\1/" | sed -e "s/\.\(.*\)/\\1/"`
+        local filename="`hostGetTestDir`/files/$FILE_NAME/meta/meta_file"
+        if [ ! -z "$postfix" ]; then
+            filename="${filename}.$postfix"
+        fi
+        hostSendCommand "mkdir -p \"`hostGetTestDir`/files/$FILE_NAME/meta/\""
+        hostSendFile "$FILE_METAFILE" "$filename"
+    fi
+}
 
 ##
 # Send any files required for seeding to the host.
@@ -99,10 +109,18 @@ function fileLoadSettings__default() {
 # An example of a metadata file is a .torrent file.
 # Use the host API for host specific queries, if needed.
 #
-# No default implementation
+# Default implementation returns the default meta file, if any was given.
 ##
-#function fileGetMetaName() {
-#}
+function fileGetMetaName__default() {
+    if [ ! -z "$FILE_METAFILE" ]; then
+        local postfix=`echo "$FILE_METAFILE" | sed -e "s/^.*$/\\0./" | sed -e "s/^[^.]*\(\..*\)$/\\1/" | sed -e "s/^.*\(\.[^.]*\)\.$/\\1/" | sed -e "s/\.\(.*\)/\\1/"`
+        local filename="`hostGetTestDir`/files/$FILE_NAME/meta/meta_file"
+        if [ ! -z "$postfix" ]; then
+            filename="${filename}.$postfix"
+        fi
+        echo "$filename"
+    fi
+}
 
 ##
 # Output the Merkle root hash of the file.

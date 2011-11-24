@@ -308,5 +308,5 @@ EOF
 # @output   The API version number.
 ##
 function viewerAPIVersion() {
-    echo "1.0.1"
+    echo "1.0.2"
 }

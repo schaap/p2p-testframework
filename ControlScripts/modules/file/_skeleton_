@@ -33,7 +33,7 @@ function fileReadSettings() {
         parameterValue=`getParameterValue "$LINE"`
         # Handle this parameter appropiately
         case $parameterName in
-            name|rootHash)
+            name|rootHash|metaFile)
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
             *)
@@ -72,7 +72,9 @@ function fileLoadSettings() {
 ##
 function fileSendToHost() {
     # TODO
-    echo "TO BE IMPLEMENTED"
+
+    # Default implementation send the meta file, if given, to the directory `hostGetTestDir`/files/$FILE_NAME/meta/
+    fileSendToHost__default
 }
 
 ##
@@ -104,8 +106,8 @@ function fileGetName() {
 # Use the host API for host specific queries, if needed.
 ##
 function fileGetMetaName() {
-    # TODO
-    echo "TO BE IMPLEMENTED"
+    # Default implementation just uses FILE_METAFILE
+    fileGetMetaName__default
 }
 
 ##
@@ -125,5 +127,5 @@ function fileGetRootHash() {
 # @output   The API version number.
 ##
 function fileAPIVersion() {
-    echo "1.0.1"
+    echo "1.0.2"
 }
