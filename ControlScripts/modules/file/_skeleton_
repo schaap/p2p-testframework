@@ -4,7 +4,7 @@
 # A skeleton implementation (i.e. interface description) for the file API.
 # The interface described in this file should be implemented by each file module.
 # Module implementors can copy this file and modify it as they see fit.
-# Minimal implementation that have no further parameters than the generic parameters need only implement fileSendToHost, fileSendToSeedingHost, fileGetName and fileGetMetaName. Do not forget to update the module name in fileLoadSettings!
+# Minimal implementation that have no further parameters than the generic parameters need only implement fileSendToHost, fileSendToSeedingHost, and fileGetName. Do not forget to update the module name in fileLoadSettings!
 #
 
 ##

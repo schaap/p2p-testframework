@@ -180,7 +180,7 @@ function run_campaign() {
 
     # Set some local variables specific for the campaign
     local CAMPAIGN_ID=$(date +%Y.%m.%d-%H.%M.%S)
-    local CAMPAIGN_NAME="`basename ${CAMPAIGN_FILE%\.*}`-$CAMPAIGN_ID" # Clean up campaign file to reduce it to the name and add the ID
+    local CAMPAIGN_NAME="`basename ${CAMPAIGN_FILE%\.[^/]*}`-$CAMPAIGN_ID" # Clean up campaign file to reduce it to the name and add the ID
 
     ## points to the local directory where results for the current campaign will be stored under; will be set to ${RESULTS_DIR}/${CAMPAIGN_NAME} for each campaign
     CAMPAIGN_RESULTS_DIR="${RESULTS_DIR}/${CAMPAIGN_NAME}"

@@ -1,5 +1,9 @@
 This HOWTO will introduce you into the usage of the P2P testing framework. Topics covered are building tests, running tests, reviewing results and extending the framework. Throughout this HOWTO commands and files will be assumed to be run in the root of the P2P test framework, which is the directory that contains the ControlScripts directory. This is the working directory that is assumed throughout all documentation of the framework.
 
+During the first parts of this HOWTO an example will be cosntructed that will instruct the framework to connect to some hosts using SSH, run the swift client to transfer a file, to plot some statistics on that and finally to present the results in HTML.
+
+The last part of this HOWTO will demonstrate how to develop a new module for the framework by example of the development of the file:fakedata module.
+
 === BUILDING TESTS ===
 To run a test you first have to build the scenario and campaign files. In the scenario files you define which hosts will run which clients to send which files. As an example we will build a test that sends a single file from host1 to host2, both accessable over ssh, using the swift client. We will use one scenario file to define the file object, one file to define the hosts and one to define the clients and put it all together. The separation into multiple files is just an example: you could just as well use one file or a different separation.
 
@@ -125,4 +129,344 @@ When everything from your my_campaign campaign went well, you should usually fir
     firefox Results/my_campaign-2011.11.24-17.00.00/scenarios/scenario1/views/collection.html
 
 === EXTENDING THE FRAMEWORK ===
-TODO
+The framework is built with extensions in mind. There are several categories of extensions you can make:
+    - host modules
+    - file modules
+    - client modules
+    - parser modules
+    - processor modules
+    - viewer modules
+    - tc modules
+    - builder modules
+    - source modules
+Those are quite some extension points. This HOWTO doesn't even use all of them and no effort will be made to discuss each extension in detail. For a particular extension's details, please refer to the README and other documentation.
+
+The general process of creating a new module is this:
+    1) Read up on the API the module should implement;
+    2) Copy the skeleton file to your own module;
+    3) Read your new module (which is just the skeleton) and read up on any mentioned APIs you can use, as well as the global API;
+    4) Write your implementation in the skeleton that is currently your module, be sure to document and check all places where it says TODO;
+    5) Thoroughly test your implementation and adjust as needed.
+That looks a lot like generic software development and in fact it is. But due to the use of the skeleton a lot of the hard labor is taken out of it. There is also a default implementation for almost each module that already does a lot of the administratives and implements the generic parameters and functionality. This also takes away a lot of the burden from the implementor of a module. One could regard the default implementation for a module, found in the file _default_ in that module's directory, as a base class and all implementations of the modules as subclasses (keep in mind though, that classes don't actually exist in bash and this is just trickery).
+
+As an example of this process the development of file:fakedata is documented below.
+
+= 1) Read up on the API the module should implement =
+Below is the API description of a generic file object, copied from the README:
+
+    - fileReadSettings settings ln          -> reads the settings for this file from settings, storing them in ${LOCAL_TEST_DIR}/files/name
+    - fileLoadSettings name                 -> reads the settings back from ${LOCAL_TEST_DIR}/files/name and ensures they are loaded
+    - fileSendToHost                        -> sends the required files to the host (requires host to be loaded, may use Hosts API)
+    - fileSendToSeedingHost                 -> sends the files required for seeding to the host (requires host to be loaded, may use Hosts API)
+    - fileGetName                           -> returns the filename, this is the path to (the root directory of) the actual data on the currently loaded host; this file will only be available for seeding executions (requires host and execution to be loaded, may use Hosts API and Executions API)
+    - fileGetMetaName                       -> returns the filename of the metadata file, if any, on the currently loaded host (requires host to be loaded, may use Hosts API)
+    - fileGetRootHash                       -> returns the Merkle root hash of the file, if any is known
+
+So we'll need to initialize some settings and be able to load them. Then we need to be able to send our files to hosts and seeding hosts, for which we'll require some actual files. Finally we need to be able to return some information about those files.
+
+From this one could try and build something, but it so happens that the skeleton will give me some more information on what needs to be done exactly, so let's continue with steps 2 and 3.
+
+= 2) Copy the skeleton file to your own module =
+    cp ControlScripts/modules/file/_skeleton_ ControlScripts/modules/file/fakedata
+
+Check.
+
+= 3) Read your new module and read up on any mentioned APIs and the global API =
+The documentation at the top already reminds the reader which functions really need implementing (fileSendToHost, fileSendToSeedingHost and fileGetName) and not to forget to update fileLoadSettings as instructed. For file:fakedata we actually need to have some extra parameters (size and binary), so we'll have to do some work on fileReadSettings as well.
+
+Going through the file we learn more about what we need to implement:
+    - fileReadSettings          The new parameters size and binary should be added to the switch, their values read and validated, and then saved.
+    - fileLoadSettings          The module's subtype ('fakedata') needs to be put in place of 'MODULE_SUBTYPE'
+    - fileSendToHost            Files needed on any host, so both seeders and leechers, need to be sent here. However, all that file:fakedata would need to send is any meta files, which are already handled by the default implementation. So there is no need to touch this function.
+    - fileSendToSeedingHost     Files needed on seeding hosts need to be uploaded here. Now this is where it becomes interesting: in this function the generator needs to be shipped to the remote machine and needs to be called to generate the file. Make a mental note that this involves a) uploading the source of the generator, b) compiling the generator remotely and c) calling the generator remotely.
+    - fileGetName               This should return the path to the file(s) on a seeding host. This means the path to the generated file.
+    - fileGetMetaName           This should return the path to any meta files that are uploaded, if any. Luckily for us this is already handled by the default implementation.
+    - fileGetRootHash           This should return the root hash of the file, if any. Luckily for us this is already handled by the default implementation.
+
+As observed above the only things we really need to do, apart from a small administrative step, is adding the parameters and writing the fileSendToSeedingHost and fileGetName functions. The latter will be very easy, since it's just a static filename, so the focus will be on adding the parameters and generating the fake file on the seeding host.
+
+While reading the skeleton the host API was mentioned several times with regard to uploading files, knowing details about the host's file structure and calling commands on the host. So we should clearly check out the host API. Copied below is the API description for a generic host object, again from the README:
+
+    - hostReadSettings settings ln          -> reads the settings for this host from settings, storing them in ${LOCAL_TEST_DIR}/hosts/$HOST_NAME; return false for failure; be sure to set HOST_NAME if it is "" at start of function
+    - hostLoadSettings name                 -> reads the settings back from ${LOCAL_TEST_DIR}/hosts/name and ensures they are loaded
+    - hostSendCommand command               -> sends the command to be executed on the host and echoes the output
+    - hostSendFile file remote_path unsafe  -> sends the local file to the host, storing it in the (remote) directory pointed to by remote_path
+    - hostSendFiles directory remote_path   -> sends the local directory to the host, storing it in the (remote) directory pointed to by remote_path; always unsafe, does no checking for succes
+    - hostGetFile remote_file path unsafe   -> retrieves the (remote) file or directory from the host, storing it in the local directory pointed to by path
+    - hostPrepare                           -> send the commands to the host to do the host specific preparation, also makes sure a temporary directory is created if needed
+    - hostCleanup                           -> send the commands to the host to do the host specific cleanup, also removes a temporary directory if needed
+    - hostGetTestDir                        -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment; valid between hostPrepare and the end of the execution of the client (i.e. as soon as the client stops executing this may be gone)
+    - hostGetPersistentTestDir              -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment that will remain available until hostCleanup
+    - hostGetSubnet                         -> outputs the external address(es) of the host(s) in the form of a subnet (either as a hostname or as an IP address); this is used for traffic control; "127.0.0.1" always is to be used for localhost and signifies that no traffic control should be done on that host
+
+So most of this is worthless to file:fakedata, but a few look useful at first sight: hostSendCommand, hostSendFile, hostSendFiles, hostGetTestDir and hostGetPersistentTestDir. The global API is a bit longer, look it up in the README again. The interesting lines are:
+
+    - TEST_ENV_DIR                          -> points to the local directory containing the testing environment's main script (i.e. the ControlScripts directory)
+    - logError                              -> logs a single line (the first argument) to the most appropriate place given the context (achieved by overwriting the logError function)
+    - fail                                  -> when something fails critically¸ call this function. cleanup will be run and the script will exit with -1 or, if given, the specified error code
+    - createRemoteTempDir basedir           -> create a remote temporary directory, potentially under a given base directory, in a portable way
+
+Now that we've read up on our supporting code and have an idea of what to do, we can get to implemting the module.
+
+= 4) Write the implementation of your module =
+When implementing a module there are two important points to take into account, next to building your complete implementation:
+    - Go over all places where it says 'TODO' (search for it)
+    - Document what you're doing and how your module works
+The TODOs are there to make sure you touch all points you should, either because they need some administrative touches, or you should carefully consider whether to implement and/or extend the function. The documentation is obviously needed to make sure others can use your module. The most important documentation comes at the top of the file: there it should say what the module does, how to use it, and other important things about it.
+
+A full contextual diff will be placed at the end of this file, so the exact implementation won't be discussed here, just a number of specific ways of getting there. As such, the documentation and administrative changes can be reviewed in the diff.
+
+In fileReadSettings a few parameters were to be added. In order to have parameters for your module around you should first create variables for them and then read the parameters and save those variables. Note that the saving is very important, even if the parameters were never given: saving the empty variable ensures that when an object is loaded again it does in fact not have that parameter set. Variables that are specific to a module should be named TYPE_SUBTYPE_param, where TYPE and SUBTYPE are the module's type and subtype (in this case: file and fakedata) and param is the parameter to save. For example: FILE_FAKEDATA_SIZE. Variables named following this naming scheme are reserved for those modules. Adding the parameters is a matter of adding their names to the switch statement, reading the value from $parameterValue, validating that and then saving it to the variable. The actual code is just a little bash scripting, usually combined with some tests on variables, the file system or some grep to force a specific formatting. See the diff for the actual implementation of the size and binary parameters.
+
+fileSendToSeedingHost, as mentioned, is where the really interesting stuff happens. Note that the binary parameter tells us to use an already existing binary on the remote host (and which binary), so we should check whether it is set before trying to compile the binary remotely. This is just bash scripting. Uploading and compiling the files involves some interaction with the rest of the framework and for that reason its development is be detailed below. The following thoughts are relevant:
+    - The fakedata utility is in Utils/fakedata/ and consists of all .cpp and .h files there;
+    - On the remote host the source should its own (temporary) directory;
+    - There are many compilers out there and we can't easily take all of them into account;
+    - Errors might occur and we should handle those.
+
+The first thought touches on finding those files locally. In the global API the variable TEST_ENV_DIR is documented. From there we can get to the fakedata utility: ${TEST_ENV_DIR}/../Utils/fakedata/ should be the directory holding the files.
+
+The second thought has to do with making sure we don't overwrite other files and at the same time don't pollute the remote host with our stuff. A remote temporary directory would be ideal for that, as long as it is removed again when we stop. The use of createRemoteTempDir, found in the global API, is ideal for this. It creates a remote temporary directory and outputs the full path to it. As for the basedir argument it optionally takes: is there a good way to place this temporary directory? In fact you'll find there is: whenever a host is initialized a temporary directory is made available on it where temporary files for the testing framework can be placed. hostGetTestDir and hostGetPersistentTestDir hint at this. The question is which to use. Will these files be needed after cleanup? Certainly not, only log files and similar output is needed after cleanup and this utility can be thrown away again. So hostGetTestDir is the right function to call.
+
+Many compilers are available and we could write some very complex code trying to find out which compiler is supported, etc, etc. We might as well go for autoconf for that. Or we could just choose one. g++ is often available and for if it isn't: just let the user specify a manually compiled binary. This is a tradeoff between usability and complexity. In this case the complexity will grow far too much if we'd try and support many compilers. Those hosts lacking the g++ compiler are covered by the binary parameter.
+
+The last thought, the occurence of errors, becomes more important with the choice for just one compiler. It's also a though that fall into two parts: finding problems and acting on them. Any problems that could occur in this case are during calls to remote commands. Luckily the hostSendCommand function, which we'll use for running commands remotely, will echo the output of the command. As such it is possible to just include some simple bash to always output, say, "OK" when everything went fine. Catch the output in a variable, test for it, and problems can be found. What to do, then, when a problem occurs? Using the logError and fail functions we can notify the user (logError) and stop execution of the framework (fail).
+
+Having thought about these things we can write most of the code for compiling the utility remotely. For running it one important question still arises: where to store the file? A convention that is used throughout the framework is that each module claims its own directory in a temporary directory's substructure: module_type/module_subtype/ . Or in this case: files/$FILE_NAME/ . Note that $FILE_NAME is another reserved variable that contains the name of the currently lodaed file object and is as such unique throughout a test run among file objects. With this information it becomes a matter of filling in the blanks and just writing the code. See the diff for the results.
+
+= 5) Test and adjust =
+Testing your module should be done using your usual software testing techniques: cover all code, test corner cases, special parameters, etc. Make sure it works. It is usually easiest to write a small campaign in which to test a module you develop. I have a few around, for example, in which I can just plug a new client and have that client run on a few machines to send some files around. It is this one I also changed to use file:fakedata in order to test that.
+
+When first developed the file:fakedata was not implemented correctly. Some typos, some small mistakes, the usual. The reason you test. More interestingly it turned out that no files were transmitted at all when using file:fakedata, even though the files were created as intended. An error in the design was found: torrents (which were used for its testing) name specific files, but file:fakedata chooses its own name. This led to the file being generated, but never being recognized by the seeder. The filename parameter was introduced because of this.
+
+= Diff =
+Below is the full contextual diff from file:_skeleton_ to file:fakedata. Note that the final version might be slightly different. It can be seen that there's a number of very small changes (mainly: remove the #TODO tag) and three major changes: the documentation at the top, the parameters in fileReadSettings and the implementation of fileSendToSeedingHost. This also shows a nice characteristic of the framework: when extending it you don't need many extra changes apart from your actual functional code.
+
+
+*** ControlScripts/modules/file/_skeleton_	2011-11-24 15:55:48.000000000 +0100
+--- ControlScripts/modules/file/fakedata	2011-11-25 17:21:43.042827678 +0100
+***************
+*** 1,10 ****
+  #!/bin/bash
+  
+  #
+! # A skeleton implementation (i.e. interface description) for the file API.
+! # The interface described in this file should be implemented by each file module.
+! # Module implementors can copy this file and modify it as they see fit.
+! # Minimal implementation that have no further parameters than the generic parameters need only implement fileSendToHost, fileSendToSeedingHost, fileGetName and fileGetMetaName. Do not forget to update the module name in fileLoadSettings!
+  #
+  
+  ##
+--- 1,24 ----
+  #!/bin/bash
+  
+  #
+! # A file implementation for generated, fake data.
+! # This module uses Utils/fakedata
+! #
+! # Extra parameters that are also understood by this module:
+! # - size        A positive integer, divisible by 4, that denotes the size of the generated file in bytes. Required.
+! # - binary      The path to the remote binary to use. This might be needed when g++ does not work on one the hosts this file is used on. Optional, defaults to "", which will have the binary compiled on the fly.
+! #
+! # A data file such as this will almost always be used together with some meta data, sich as a torrent file or a root hash.
+! # To generate those the actual fake data file is needed. Creating that file can be done by compiling the utility in Utils/fakedata:
+! #   cd Utils/fakedata
+! #   g++ -o genfakedata *.cpp
+! #   cd ../..
+! # The this utility can be used to generate the fake data. For example, to generate the fake data file of size 100 megabyte:
+! #   Utils/fakedata/genfakedata file_with_size_100M 104857600
+! # This will write the file named file_with_size_100M and fill it with 100 megabytes worth of bogus data.
+! # Note that although the data is very bogus (it's a word-counter) it is also non-trivial and deterministic. This makes it ideal for testing
+! # purposes: easily generated, always the same and real enough to get actual results. Note that intelligent compression algorithms MIGHT be
+! # able to compress it, because of the simplistic and rigid structure of the data.
+  #
+  
+  ##
+***************
+*** 31,52 ****
+          parameterName=`getParameterName "$LINE"`
+          checkFailScenarioFile "$6"
+          parameterValue=`getParameterValue "$LINE"`
+          # Handle this parameter appropiately
+          case $parameterName in
+              name|rootHash|metaFile)
+                  # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                  ;;
+              *)
+!                 logError "file:_skeleton_ :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
+                  ;;
+          esac
+          LINE_NUMBER=$(($LINE_NUMBER + 1))
+      done < "$1";
+  
+      # Delegate the rest to the default implementation
+      fileReadSettings__default
+      # Any variables set up above should be saved like this:
+      # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+  
+      # Finally, register our file with the environment
+      FILES="$FILES $FILE_NAME"
+--- 45,97 ----
+          parameterName=`getParameterName "$LINE"`
+          checkFailScenarioFile "$6"
+          parameterValue=`getParameterValue "$LINE"`
++         FILE_FAKEDATA_SIZE=""
++         FILE_FAKEDATA_BINARY=""
+          # Handle this parameter appropiately
+          case $parameterName in
+              name|rootHash|metaFile)
+                  # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                  ;;
++             size)
++                 if [ ! -z "$FILE_FAKEDATA_SIZE" ]; then
++                     logError "file:fakedata :: File $FILE_NAME has already been given a size."
++                     return 1
++                 fi
++                 if echo "$parameterValue" | grep -E "[^[:digit:]]" > /dev/null; then
++                     logError "file:fakedata :: The size of file $FILE_NAME must be a positive integer, divisible by 4."
++                     return 1
++                 fi
++                 if [ $parameterValue -le 0 -o $((($parameterValue / 4) * 4)) -ne $parameterValue ]; then
++                     logError "file:fakedata :: The size of file $FILE_NAME must be a positive integer, divisible by 4."
++                     return 1
++                 fi
++                 FILE_FAKEDATA_SIZE="$parameterValue"
++                 ;;
++             binary)
++                 if [ ! -z "$FILE_FAKEDATA_BINARY" ]; then
++                     logError "file:fakedata :: File $FILE_NAME has already been given a binary."
++                     return 1
++                 fi
++                 FILE_FAKEDATA_BINARY="$parameterValue"
++                 ;;
+              *)
+!                 logError "file:fakedata :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
+                  ;;
+          esac
+          LINE_NUMBER=$(($LINE_NUMBER + 1))
+      done < "$1";
+  
++     if [ -z "$FILE_FAKEDATA_SIZE" ]; then
++         logError "The parameter size to file $FILE_NAME is required."
++         return 1
++     fi
++ 
+      # Delegate the rest to the default implementation
+      fileReadSettings__default
+      # Any variables set up above should be saved like this:
+      # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
++     echo "FILE_FAKEDATA_SIZE=\"$FILE_FAKEDATA_SIZE\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
++     echo "FILE_FAKEDATA_BINARY=\"$FILE_FAKEDATA_BINARY\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+  
+      # Finally, register our file with the environment
+      FILES="$FILES $FILE_NAME"
+***************
+*** 61,68 ****
+  ##
+  function fileLoadSettings() {
+      # By default delegated to the default implementation, which works fine if the default implementation for fileReadSettings is used
+!     # TODO: CHANGE MODULE NAME BELOW
+!     fileLoadSettings__default "$1" "MODULE_SUBTYPE"
+  }
+  
+  ##
+--- 106,112 ----
+  ##
+  function fileLoadSettings() {
+      # By default delegated to the default implementation, which works fine if the default implementation for fileReadSettings is used
+!     fileLoadSettings__default "$1" "fakedata"
+  }
+  
+  ##
+***************
+*** 71,79 ****
+  # Use the host API to do the actual sending of the files.
+  ##
+  function fileSendToHost() {
+!     # TODO
+! 
+!     # Default implementation send the meta file, if given, to the directory `hostGetTestDir`/files/$FILE_NAME/meta/
+      fileSendToHost__default
+  }
+  
+--- 115,121 ----
+  # Use the host API to do the actual sending of the files.
+  ##
+  function fileSendToHost() {
+!     # Default implemenation upload the meta file, if given, to `hostGetTestDir`/files/$FILE_NAME/meta/
+      fileSendToHost__default
+  }
+  
+***************
+*** 84,91 ****
+  # Use the host API to do the actual sending of the files.
+  ##
+  function fileSendToSeedingHost() {
+!     # TODO
+!     echo "TO BE IMPLEMENTED"
+  }
+  
+  ##
+--- 126,169 ----
+  # Use the host API to do the actual sending of the files.
+  ##
+  function fileSendToSeedingHost() {
+!     local testdir="`hostGetTestDir`"
+!     local tempdir=""
+!     local thebinary=""
+!     if [ -z "$FILE_FAKEDATA_BINARY" ]; then
+!         # On the fly compilation required
+!         tempdir="`createRemoteTempDir \"$testdir\"`"
+!         hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/compat.h" "$tempdir/compat.h"
+!         hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.h" "$tempdir/fakedata.h"
+!         hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.cpp" "$tempdir/fakedata.cpp"
+!         hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/genfakedata.cpp" "$tempdir/genfakedata.cpp"
+!         local ans=`hostSendCommand "cd \"$tempdir\"; g++ *.cpp -o genfakedata && echo -n \"OK\""`
+!         if [ "$ans" != "OK" ]; then
+!             hostSendCommand "rm -rf \"$tempdir\""
+!             logError "file:fakedata :: Could not compile genfakedata remotely on host $HOST_NAME. Please copy and compile the files in Utils/fakedata yourself and use the 'binary' parameter to point to the resulting executable."
+!             fail
+!         fi
+!         thebinary="$tempdir/genfakedata"
+!     else
+!         # Remote binary specified, see if it's executable
+!         local ans=`hostSendCommand "if [ -x \"$FILE_FAKEDATA_BINARY\" -a -f \"$FILE_FAKEDATA_BINARY\" ]; then echo -n \"OK\"; fi"`
+!         if [ "$ans" != "OK" ]; then
+!             logError "file:fakedata :: Binary \"$FILE_FAKEDATA_BINARY\" on host $HOST_NAME could not be found remotely or is not executable."
+!             fail
+!         fi
+!         thebinary="$FILE_FAKEDATA_BINARY"
+!     fi
+! 
+!     # Try and generate the file
+!     local ans=`hostSendCommand "mkdir -p \"$testdir/files/$FILE_NAME/\" && $thebinary \"$testdir/files/$FILE_NAME/fakedata\" $FILE_FAKEDATA_SIZE > /dev/null && echo -n \"OK\""`
+!     # Cleanup the temporary directory with the compiled binary, if needed
+!     if [ "$tempdir" != "" ]; then
+!         hostSendCommand "rm -rf \"$tempdir\""
+!     fi
+!     # Check whether generation was succesful
+!     if [ "$ans" != "OK" ]; then
+!         logError "file:fakedata :: Generating $FILE_FAKEDATA_SIZE bytes remotely on host $HOST_NAME has failed."
+!         fail
+!     fi
+  }
+  
+  ##
+***************
+*** 95,102 ****
+  # Use the host API for host specific queries, if needed.
+  ##
+  function fileGetName() {
+!     # TODO
+!     echo "TO BE IMPLEMENTED"
+  }
+  
+  ##
+--- 173,179 ----
+  # Use the host API for host specific queries, if needed.
+  ##
+  function fileGetName() {
+!     echo "`hostGetTestDir`/files/$FILE_NAME/fakedata"
+  }
+  
+  ##

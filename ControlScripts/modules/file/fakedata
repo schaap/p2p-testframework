@@ -132,10 +132,10 @@ function fileSendToSeedingHost() {
     if [ -z "$FILE_FAKEDATA_BINARY" ]; then
         # On the fly compilation required
         tempdir="`createRemoteTempDir \"$testdir\"`"
-        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/compat.h" "$tmpdir/compat.h"
-        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.h" "$tmpdir/fakedata.h"
-        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.cpp" "$tmpdir/fakedata.cpp"
-        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/genfakedata.cpp" "$tmpdir/genfakedata.cpp"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/compat.h" "$tempdir/compat.h"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.h" "$tempdir/fakedata.h"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/fakedata.cpp" "$tempdir/fakedata.cpp"
+        hostSendFile "${TEST_ENV_DIR}/../Utils/fakedata/genfakedata.cpp" "$tempdir/genfakedata.cpp"
         local ans=`hostSendCommand "cd \"$tempdir\"; g++ *.cpp -o genfakedata && echo -n \"OK\""`
         if [ "$ans" != "OK" ]; then
             hostSendCommand "rm -rf \"$tempdir\""
@@ -154,7 +154,7 @@ function fileSendToSeedingHost() {
     fi
 
     # Try and generate the file
-    local ans=`hostSendCommand "mkdir -p \"$testdir/files/$FILE_NAME/\" && $thebinary \"$testdir/files/$FILE_NAME/fakedata/\" $FILE_FAKEDATA_SIZE > /dev/null && echo -n \"OK\""`
+    local ans=`hostSendCommand "mkdir -p \"$testdir/files/$FILE_NAME/\" && $thebinary \"$testdir/files/$FILE_NAME/fakedata\" $FILE_FAKEDATA_SIZE > /dev/null && echo -n \"OK\""`
     # Cleanup the temporary directory with the compiled binary, if needed
     if [ "$tempdir" != "" ]; then
         hostSendCommand "rm -rf \"$tempdir\""
@@ -173,7 +173,7 @@ function fileSendToSeedingHost() {
 # Use the host API for host specific queries, if needed.
 ##
 function fileGetName() {
-    echo "`hostGetTestDir`/files/$FILE_NAME"
+    echo "`hostGetTestDir`/files/$FILE_NAME/fakedata"
 }
 
 ##
@@ -184,6 +184,7 @@ function fileGetName() {
 ##
 function fileGetMetaName() {
     # Default implementation just uses FILE_METAFILE
+    fileGetMetaName__default
 }
 
 ##
