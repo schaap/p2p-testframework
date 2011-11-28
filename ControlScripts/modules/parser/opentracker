@@ -3,7 +3,7 @@
 #
 # A dummy implementation (i.e. interface description) for the parser API.
 # This parser will simply ignore the log of the client.
-# Very useful for clients of which you don't want any output parsed.
+# This is a copy of parser:none as default tracker for client:opentracker.
 #
 # Raw logs expected by this module:
 # - any
@@ -42,7 +42,7 @@ function parserReadSettings() {
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
             *)
-                logError "parser:none :: Unknown parameter name \"$parameterName\" in parser $PARSER_NAME. Ignoring."
+                logError "parser:opentracker :: Unknown parameter name \"$parameterName\" in parser $PARSER_NAME. Ignoring."
                 ;;
         esac
         LINE_NUMBER=$(($LINE_NUMBER + 1))

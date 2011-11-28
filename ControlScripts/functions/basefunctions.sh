@@ -15,9 +15,9 @@
 ##
 function createTempFile() {
     if mktemp --version 2>/dev/null | grep \"GNU coreutils\" > /dev/null 2>/dev/null; then
-        mktemp --tmpdir="${LOCAL_TEST_DIR}/tmp"
+        mktemp --tmpdir=${LOCAL_TEST_DIR}/tmp
     else
-        mktemp -p "${LOCAL_TEST_DIR}/tmp"
+        mktemp -p ${LOCAL_TEST_DIR}/tmp
     fi
 }
 
@@ -30,9 +30,9 @@ function createTempFile() {
 ##
 function createTempDir() {
     if mktemp --version 2>/dev/null | grep \"GNU coreutils\" > /dev/null 2>/dev/null; then
-        mktemp -d --tmpdir="${LOCAL_TEST_DIR}/tmp"
+        mktemp -d --tmpdir=${LOCAL_TEST_DIR}/tmp
     else
-        mktemp -d -p "${LOCAL_TEST_DIR}/tmp"
+        mktemp -d -p ${LOCAL_TEST_DIR}/tmp
     fi
 }
 
@@ -46,7 +46,7 @@ function createTempDir() {
 ##
 function createRemoteTempFile() {
     if [ ! -z "$1" ]; then
-        hostSendCommand "if mktemp --version 2>/dev/null | grep \\\"GNU coreutils\\\" >/dev/null 2>/dev/null; then mktemp --tmpdir=\\\"$1\\\"; else mktemp -p \\\"$1\\\"; fi"
+        hostSendCommand "if mktemp --version 2>/dev/null | grep \\\"GNU coreutils\\\" >/dev/null 2>/dev/null; then mktemp --tmpdir=$1; else mktemp -p $1; fi"
     else
         hostSendCommand "mktemp"
     fi
@@ -62,7 +62,7 @@ function createRemoteTempFile() {
 ##
 function createRemoteTempDir() {
     if [ ! -z "$1" ]; then
-        hostSendCommand "if mktemp --version 2>/dev/null | grep \\\"GNU coreutils\\\" >/dev/null 2>/dev/null; then mktemp -d --tmpdir=\\\"$1\\\"; else mktemp -d -p \\\"$1\\\"; fi"
+        hostSendCommand "if mktemp --version 2>/dev/null | grep \\\"GNU coreutils\\\" >/dev/null 2>/dev/null; then mktemp -d --tmpdir=$1; else mktemp -d -p $1; fi"
     else
         hostSendCommand "mktemp -d"
     fi
