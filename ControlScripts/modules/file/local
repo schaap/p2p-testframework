@@ -6,6 +6,7 @@
 # - path                The path to the actual file or directory on the local machine
 # - torrent             Set this to "yes" to have a torrent file automatically generated from the file; the torrent file will be uploaded and its location available through fileGetMetaName. The metaFile parameter must not be set in this case.
 # - generateRootHash    Set this to "yes" to have the SHA1 root hash automatically generated from the file; the rootHash parameter must not be set in this case. path must refer to a file for a root hash to be calculated.
+# - renameFile          Set this to "yes" to have the file renamed when uploaded to an automatically generated name. This is forbidden when automated torrent generation is requested. Not valid if path points to a directory.
 #
 
 ##
@@ -23,6 +24,7 @@ function fileReadSettings() {
     local parameterValue=""
     LINE_NUMBER=$(($2 + 1))
     FILE_LOCAL_PATH=""
+    FILE_LOCAL_RENAME=""
     local file_local_torrent_requested=0
     local file_local_roothash_requested=0
     # Parse all parameters
@@ -70,6 +72,11 @@ function fileReadSettings() {
                     file_local_roothash_requested=1
                 fi
                 ;;
+            renameFile)
+                if [ "$parameterValue" = "yes" ]; then
+                    FILE_LOCAL_RENAME="yes"
+                fi
+                ;;
             *)
                 logError "file:local :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
                 ;;
@@ -82,6 +89,11 @@ function fileReadSettings() {
         return 1
     fi
 
+    if [ -d "$FILE_LOCAL_PATH" -a "$FILE_LOCAL_RENAME" = "yes" ]; then
+        logError "file:local :: File $FILE_NAME has renameFile set to \"yes\", but refers to a directory. renameFile=yes is only valid for single files."
+        return 1
+    fi
+
     # Delegate standard saving to the default implementation
     fileReadSettings__default
     # Any variables set up above should be saved like this:
@@ -91,6 +103,10 @@ function fileReadSettings() {
     # Try and create a torrent file for this single file.
     FILE_LOCAL_TORRENT=''
     if [ $file_local_torrent_requested -eq 1 ]; then
+        if [ ! -z "$FILE_LOCAL_RENAME" ]; then
+            logError "file:local :: Automated generation of a torrent file is requested for file $FILE_NAME, but renaming of the file is also requested. This would most likely lead to an unusable torrent file and is hence not supported."
+            return 1
+        fi
         loadFunctionsScript torrent.sh
         if torrentCreateFromSingleFile "$FILE_LOCAL_PATH" "${LOCAL_TEST_DIR}/files/$FILE_NAME/torrent.torrent"; then
             FILE_LOCAL_TORRENT="${LOCAL_TEST_DIR}/files/$FILE_NAME/torrent.torrent"
@@ -166,8 +182,13 @@ function fileSendToSeedingHost() {
         hostSendCommand "mkdir -p \"`hostGetTestDir`/files/$FILE_NAME/outputDir\""
         hostSendFiles "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/outputDir"
     else
-        local filename=`basename "$FILE_LOCAL_PATH"`
-        hostSendFile "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/outputFile"
+        if [ -z "$FILE_LOCAL_RENAME" ]; then
+            local filename=`basename "$FILE_LOCAL_PATH"`
+            hostSendCommand "mkdir -p \"`hostGetTestDir`/files/$FILE_NAME/data/\""
+            hostSendFile "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/data/$filename"
+        else
+            hostSendFile "$FILE_LOCAL_PATH" "`hostGetTestDir`/files/$FILE_NAME/outputFile"
+        fi
     fi
 }
 
@@ -186,7 +207,11 @@ function fileGetName() {
         if [ -d "$FILE_LOCAL_PATH" ]; then
             echo "`hostGetTestDir`/files/$FILE_NAME/outputDir/$filename"
         else
-            echo "`hostGetTestDir`/files/$FILE_NAME/$filename"
+            if [ -z "$FILE_LOCAL_RENAME" ]; then
+                echo "`hostGetTestDir`/files/$FILE_NAME/data/$filename"
+            else
+                echo "`hostGetTestDir`/files/$FILE_NAME/outputFile"
+            fi
         fi
     else
         echo ""

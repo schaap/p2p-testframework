@@ -7,6 +7,7 @@
 # Extra parameters that are also understood by this module:
 # - size        A positive integer, divisible by 4, that denotes the size of the generated file in bytes. Required.
 # - binary      The path to the remote binary to use. This might be needed when g++ does not work on one the hosts this file is used on. Optional, defaults to "", which will have the binary compiled on the fly.
+# - fileName    The name of the file that will be created. Optional, defaults to "fakedata".
 #
 # A data file such as this will almost always be used together with some meta data, sich as a torrent file or a root hash.
 # To generate those the actual fake data file is needed. Creating that file can be done by compiling the utility in Utils/fakedata:
@@ -35,6 +36,9 @@ function fileReadSettings() {
     local parameterName=""
     local parameterValue=""
     LINE_NUMBER=$(($2 + 1))
+    FILE_FAKEDATA_SIZE=""
+    FILE_FAKEDATA_BINARY=""
+    FILE_FAKEDATA_FILENAME=""
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -45,8 +49,6 @@ function fileReadSettings() {
         parameterName=`getParameterName "$LINE"`
         checkFailScenarioFile "$6"
         parameterValue=`getParameterValue "$LINE"`
-        FILE_FAKEDATA_SIZE=""
-        FILE_FAKEDATA_BINARY=""
         # Handle this parameter appropiately
         case $parameterName in
             name|rootHash|metaFile)
@@ -74,6 +76,17 @@ function fileReadSettings() {
                 fi
                 FILE_FAKEDATA_BINARY="$parameterValue"
                 ;;
+            fileName)
+                if [ ! -z "$FILE_FAKEDATA_FILENAME" ]; then
+                    logError "file:fakedata :: File $FILE_NAME has already been given a fileName parameter."
+                    return 1
+                fi
+                if [ "`basename \"$parameterValue\"`" != "$parameterValue" ]; then
+                    logError "file:fakedata :: The name \"$parameterValue\" seems not to be a valid file name for file $FILE_NAME."
+                    return 1
+                fi
+                FILE_FAKEDATA_FILENAME="$parameterValue"
+                ;;
             *)
                 logError "file:fakedata :: Unknown parameter name \"$parameterName\" in file $FILE_NAME. Ignoring."
                 ;;
@@ -86,12 +99,17 @@ function fileReadSettings() {
         return 1
     fi
 
+    if [ -z "$FILE_FAKEDATA_FILENAME" ]; then
+        FILE_FAKEDATA_FILENAME="fakedata"
+    fi
+
     # Delegate the rest to the default implementation
     fileReadSettings__default
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
     echo "FILE_FAKEDATA_SIZE=\"$FILE_FAKEDATA_SIZE\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
     echo "FILE_FAKEDATA_BINARY=\"$FILE_FAKEDATA_BINARY\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
+    echo "FILE_FAKEDATA_FILENAME=\"$FILE_FAKEDATA_FILENAME\"" >> "${LOCAL_TEST_DIR}/files/$FILE_NAME/conf"
 
     # Finally, register our file with the environment
     FILES="$FILES $FILE_NAME"
@@ -154,14 +172,14 @@ function fileSendToSeedingHost() {
     fi
 
     # Try and generate the file
-    local ans=`hostSendCommand "mkdir -p \"$testdir/files/$FILE_NAME/\" && $thebinary \"$testdir/files/$FILE_NAME/fakedata\" $FILE_FAKEDATA_SIZE > /dev/null && echo -n \"OK\""`
+    local ans=`hostSendCommand "mkdir -p \"$testdir/files/$FILE_NAME/\" && $thebinary \"$testdir/files/$FILE_NAME/$FILE_FAKEDATA_FILENAME\" $FILE_FAKEDATA_SIZE > /dev/null && echo -n \"OK\""`
     # Cleanup the temporary directory with the compiled binary, if needed
     if [ "$tempdir" != "" ]; then
         hostSendCommand "rm -rf \"$tempdir\""
     fi
     # Check whether generation was succesful
     if [ "$ans" != "OK" ]; then
-        logError "file:fakedata :: Generating $FILE_FAKEDATA_SIZE bytes remotely on host $HOST_NAME has failed."
+        logError "file:fakedata :: Remotely generating $FILE_FAKEDATA_SIZE bytes into file \"$testdir/files/$FILE_NAME/$FILE_FAKEDATA_FILENAME\" on host $HOST_NAME has failed."
         fail
     fi
 }
@@ -173,7 +191,7 @@ function fileSendToSeedingHost() {
 # Use the host API for host specific queries, if needed.
 ##
 function fileGetName() {
-    echo "`hostGetTestDir`/files/$FILE_NAME/fakedata"
+    echo "`hostGetTestDir`/files/$FILE_NAME/$FILE_FAKEDATA_FILENAME"
 }
 
 ##

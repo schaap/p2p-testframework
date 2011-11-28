@@ -207,13 +207,22 @@ parameters:
 - metaFile          -> optional, the path to a local file containing meta data, such as a torrent file
 
 ==== file:local ====
+a locally available file or directory, to be uploaded to any seeders
 parameters:
 - path              -> required, path to the file or directory on the local machine
 - torrent           -> optional, set to yes to enable automated generation of a torrent file for this file (do not set metaFile as well)
 - generateRootHash  -> optional, set to yes to enable automated generation of the SHA1 root hash for this file (do not set rootHash as well, make sure path points to a single file)
+- renameFile        -> optional, set to yes to enable forced renaming of the single file pointed to by path (do not set torrent as well)
+
+==== file:fakedata ====
+a generated file of fake data, generation will be done on the seeders themselves resulting in very low upload times (namely: only the generator)
+parameters:
+- size              -> required, size of the fake data file in bytes, must be a positive integer and a multiple of 4
+- fileName          -> optional, the name of the generated fake data file, defaults to "fakedata"
+- binary            -> optional, the path to the remote precompiled binary of the Utils/fakedata/ utility (use this if automatic compilation doesn't work)
 
 ==== file:test__ ====
-fake file
+small fake file for testing purposes
 
 === objecttype execution ===
 All executions that are defined in a scenario are automatically used.
