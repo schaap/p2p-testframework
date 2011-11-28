@@ -21,7 +21,7 @@ if [ -z "$2" ]; then
 fi
 
 if [ -z "$3" ]; then
-    echo "No \$2"
+    echo "No \$3"
     exit -1
 fi
 
@@ -31,23 +31,23 @@ if [ ! -d "$1" ]; then
 fi
 
 if [ ! -d "$2" ]; then  
-    echo "Not a dir: \$1"
+    echo "Not a dir: \$2"
     exit -1
 fi
 
 if [ ! -f "$3" ]; then
-    echo "Not a file: \$2"
+    echo "Not a file: \$3"
     exit -1
 fi
 
 if [ ! -z "$4" ]; then
     if [ ! -f "$4" ]; then
-        echo "Not a file: \$3"
+        echo "Not a file: \$4"
         exit -1
     fi
 fi
 
-rm -f "$2"/*
+rm -f "$2"/* 2>/dev/null
 rm -f "$2/torrents"/*
 
 cp webui.zip "$2/"
@@ -57,7 +57,6 @@ if [ ! -z "$4" ]; then
 fi
 
 mkdir -p "$2/torrents"
-cp "$3" "$2/torrents/"
 
 PORT=6881
 WEBPORT=8080
@@ -83,8 +82,8 @@ if [ $PORT -gt 7000 ]; then
 fi
 
 echo "token_auth_enable: 0" >> "$2/utserver.conf"
-echo "dir_active: $2" >> "$2/utserver.conf"
-echo "dir_autoload: $2/torrents" >> "$2/utserver.conf"
+echo "dir_active: $2/" >> "$2/utserver.conf"
+echo "dir_autoload: $2/torrents/" >> "$2/utserver.conf"
 echo "auto_bandwidth_management: 0" >> "$2/utserver.conf"
 echo "bind_port: $PORT" >> "$2/utserver.conf"
 echo "ut_webui_port: $WEBPORT" >> "$2/utserver.conf"
@@ -96,6 +95,7 @@ date +"%s.%09N"
 sleep 1
 pid=`cat "$2/utserver.pid"`
 going=1
+torrentloaded=0
 # Get the loaded torrents
 while [ $going -eq 1 ]; do
     ( wget -O "$2/wget.out" --load-cookies "$2/wget.cookies" --save-cookies "$2/wget.cookies" --keep-session-cookies http://admin:@localhost:$WEBPORT/gui/?list=1 2>/dev/null ) >&2 >/dev/null
@@ -144,6 +144,13 @@ while [ $going -eq 1 ]; do
     #       "torrentc": CACHE ID** (string integer)
     # }
     if [ ! -z "`cat \"$2/wget.out\"`" ]; then
+        # Lazy loading of the torrent using the dir_autoload functionality:
+        # utorrent is unreliable in loading torrents that already exist when the client is started
+        # so we only copy the torrent file in once the first response has been seen
+        if [ $torrentloaded = 0 ]; then
+            cp "$3" "$2/torrents/"
+            torrentloaded=1
+        fi
         date +"%s.%09N"
         cat "$2/wget.out"
     fi

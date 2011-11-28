@@ -186,7 +186,7 @@ EOF
                     fi
                     continue
                 fi
-                if ! echo "$f" | grep -E "..*_$execNum(\..*)?" > /dev/null; then
+                if ! echo "$f" | grep -E "^..*_$execNum(\..*)?$" > /dev/null; then
                     continue
                 fi
                 local pre=`echo "$f" | sed -e "s/\(..*\)_$execNum\(\..*\)\?/\\1/"`
@@ -233,21 +233,6 @@ EOF
                     # Nope, empty cell
                     echo "                    <td></td>" >> "$out"
                 else
-                    # Write the cell (use file to determine if it should be an image, if possible)
-                    if [ $useFile -eq 1 ]; then
-                        if file --mime-type -b "$f" | grep -E "^image/" > /dev/null; then
-                            if [ -z "$VIEWER_CONVERT" ]; then
-                                echo "                    <td><a href='$relPath/$f'><img src='$relPath/$f' alt='$f' /></a></td>" >> "$out"
-                            else
-                                convert -thumbnail 200x150 "$f" "$2/thumbs/$f"
-                                echo "                    <td><a href='$relPath/$f'><img src='thumbs/$f' alt='$f' /></a></td>" >> "$out"
-                            fi
-                        else
-                            echo "                    <td><a href='$relPath/$f'>$f</a></td>" >> "$out"
-                        fi
-                    else
-                        echo "                    <td><a href='$relPath/$f'>$f</a></td>" >> "$out"
-                    fi
                     # Remove the file from the allFiles list
                     if [ ${#allFiles[@]} -gt 0 ]; then
                         for index in `seq 0 $((${#allFiles[@]} - 1))`; do
@@ -256,6 +241,32 @@ EOF
                                 break
                             fi
                         done
+                    fi
+                    # Check that the file for this column is not empty
+                    if [ "`stat -c %s \"$f\"`" = "0" ]; then
+                        # Empty file, empty cell
+                        echo "                    <td></td>" >> "$out"
+                    else
+                        if [ "$f" = "isSeeder_$execNum" ]; then
+                            # Special support for isSeeder_$execNum
+                            echo "                    <td>`cat \"$f\"`</td>" >> "$out"
+                        else
+                            # Write the cell (use file to determine if it should be an image, if possible)
+                            if [ $useFile -eq 1 ]; then
+                                if file --mime-type -b "$f" | grep -E "^image/" > /dev/null; then
+                                    if [ -z "$VIEWER_CONVERT" ]; then
+                                        echo "                    <td><a href='$relPath/$f'><img src='$relPath/$f' alt='$f' /></a></td>" >> "$out"
+                                    else
+                                        convert -thumbnail 200x150 "$f" "$2/thumbs/$f"
+                                        echo "                    <td><a href='$relPath/$f'><img src='thumbs/$f' alt='$f' /></a></td>" >> "$out"
+                                    fi
+                                else
+                                    echo "                    <td><a href='$relPath/$f'>$f</a></td>" >> "$out"
+                                fi
+                            else
+                                echo "                    <td><a href='$relPath/$f'>$f</a></td>" >> "$out"
+                            fi
+                        fi
                     fi
                 fi
             done
@@ -274,20 +285,22 @@ EOF
             continue
         fi
         local f="${allFiles[index]}"
-        # Show the file (use file to determine if it should be an image, if possible)
-        if [ $useFile -eq 1 ]; then
-            if file --mime-type -b "$f" | grep -E "^image/" > /dev/null; then
-                if [ -z "$VIEWER_CONVERT" ]; then
-                    echo "            <li>$f<br /><a href='$relPath/$f'><img src='$relPath/$f' alt='$f' /></a></li>" >> "$out"
+        # Show the file if it's not empty (use file to determine if it should be an image, if possible)
+        if [ ! "`stat -c %s \"$f\"`" = "0" ]; then
+            if [ $useFile -eq 1 ]; then
+                if file --mime-type -b "$f" | grep -E "^image/" > /dev/null; then
+                    if [ -z "$VIEWER_CONVERT" ]; then
+                        echo "            <li>$f<br /><a href='$relPath/$f'><img src='$relPath/$f' alt='$f' /></a></li>" >> "$out"
+                    else
+                        convert -thumbnail 200x150 "$f" "$2/thumbs/$f"
+                        echo "            <li>$f<br /><a href='$relPath/$f'><img src='thumbs/$f' alt='$f' /></a></li>" >> "$out"
+                    fi
                 else
-                    convert -thumbnail 200x150 "$f" "$2/thumbs/$f"
-                    echo "            <li>$f<br /><a href='$relPath/$f'><img src='thumbs/$f' alt='$f' /></a></li>" >> "$out"
+                    echo "            <li><a href='$relPath/$f'>$f</a></li>" >> "$out"
                 fi
             else
                 echo "            <li><a href='$relPath/$f'>$f</a></li>" >> "$out"
             fi
-        else
-            echo "            <li><a href='$relPath/$f'>$f</a></li>" >> "$out"
         fi
     done
     echo "        </ul>" >> "$out"
