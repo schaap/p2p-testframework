@@ -724,6 +724,15 @@ function hostGetSubnet() {
 }
 
 ##
+# Outputs the single address (IP or hostname) of the host, if any.
+#
+# @output   The address of the host, or "" if no such address can be given.
+##
+function hostGetAddress() {
+    echo "$HOST_DAS4_NODENAME"
+}
+
+##
 # Sets the list of outbound ports to be used for restricted outbound traffic control.
 # This is an internal function that should never be used by others.
 #
@@ -778,5 +787,5 @@ function hostTCSaveProtocol() {
 # @output   The API version number.
 ##
 function hostAPIVersion() {
-    echo "1.0.2"
+    echo "1.0.3"
 }

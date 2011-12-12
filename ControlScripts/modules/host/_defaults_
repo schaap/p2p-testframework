@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function hostAPIVersion__default() {
-    echo "1.0.2"
+    echo "1.0.3"
 }
 
 ##
@@ -68,6 +68,10 @@ function hostReadSettings__default() {
 # @param    The name of this module subtype
 ##
 function hostLoadSettings__default() {
+    if [ -z "$1" ]; then
+        logError "host:_defaults_ :: Can't load settings for host \"\""
+        fail
+    fi
     if [ ! -d "${LOCAL_TEST_DIR}/hosts/$1" ]; then
         logError "host:_defaults_ :: Can't load settings for host $1"
         fail
@@ -233,6 +237,16 @@ function hostGetPersistentTestDir__default() {
 # @output   The subnet of the host(s).
 ##
 #function hostGetSubnet() {
+#}
+
+##
+# Outputs the single address (IP or hostname) of the host, if any.
+#
+# No default implementation.
+#
+# @output   The address of the host, or "" if no such address can be given.
+##
+#function hostGetAddress() {
 #}
 
 ##

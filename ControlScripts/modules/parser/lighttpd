@@ -1,0 +1,165 @@
+#!/bin/bash
+
+#
+# Parser implementation for lighttpd upload logs.
+#
+# Raw logs expected by this module:
+# - log.log
+#
+# Parsed log files created by this module:
+# - log.data
+# -- relative time (seconds)
+# -- % done
+# -- upload speed (kB/s)
+# -- download speed (kB/s)
+#
+
+##
+# Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/parsers/$PARSER_NAME .
+# Please return false (non-0) when an error occurs, instead of calling fail.
+# The way the settings are saved into ${LOCAL_TEST_DIR}/parsers/$PARSER_NAME/ does not matter, but make sure it exists and that ${LOCAL_TEST_DIR}/parsers/$PARSER_NAME/modulename contains the module subtype and nothing else.
+#
+# @param    The settings file to read from.
+# @param    The line number at which this parser object was defined. The first line in the settings file is at line $(($2 + 1))
+#
+# @return   True (0) iff the settings were parsed and saves succesfully.
+##
+function parserReadSettings() {
+    local parameterName=""
+    local parameterValue=""
+    LINE_NUMBER=$(($2 + 1))
+    # Parse all parameters
+    while IFS="" read LINE; do
+        if [ "" = "$LINE" ]; then
+            LINE_NUMBER=$(($LINE_NUMBER + 1))
+            continue
+        fi
+
+        parameterName=`getParameterName "$LINE"`
+        checkFailScenarioFile "$6"
+        parameterValue=`getParameterValue "$LINE"`
+        # Handle this parameter appropiately
+        case $parameterName in
+            name)
+                # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            *)
+                logError "parser:_skeleton_ :: Unknown parameter name \"$parameterName\" in parser $PARSER_NAME. Ignoring."
+                ;;
+        esac
+        LINE_NUMBER=$(($LINE_NUMBER + 1))
+    done < "$1";
+
+    # Delegate the rest to the default implementation
+    parserReadSettings__default
+    # Any variables set up above should be saved like this:
+    # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/parsers/$PARSER_NAME/conf"
+
+    return 0
+}
+
+##
+# Loads previously saved settings into memory.
+# Be sure to override all relevant variables, whether they're saved or not.
+#
+# @param    The name of the file object to be loaded.
+##
+function parserLoadSettings() {
+    # By default delegated to the default implementation, which works fine if the default implementation for parserReadSettings is used
+    parserLoadSettings__default "$1" "lighttpd"
+}
+
+##
+# Loads the default settings for this parser.
+# Be sure to override all relevant variables, whether they have a default or not (in which case: override them with "").
+##
+function parserLoadDefaultSettings() {
+    PARSER_NAME=""
+    PARSER_SUBTYPE="lighttpd"
+}
+
+##
+# Parse the logs for the current execution.
+# Use the execution API to find out data about this particular execution.
+#
+# Be sure to document in the header of your module file which logs you expect to be present and with which filename.
+#
+# @param    logDir      The directory on the local machine where the log files are stored.
+# @param    outputDir   The directory on the local machine where parsed logs are to be stored.
+##
+function parserParseLogs() {
+    if [ ! -f "$1/log.log" ]; then
+        logError "parser:lighttpd :: Parser $PARSER_NAME expected log file \"$1/log.log\", but it's not there."
+        fail
+    fi
+
+    if [ -f "$2/log.data" ]; then
+        logError "parser:lighttpd :: Data file \"$2/log.data\" should be created by parser $PARSER_NAME, but it already exists."
+        fail
+    fi
+
+    touch "$2/log.data"
+
+    if [ ! -f "$2/log.data" ]; then
+        logError "parser:lighttpd :: Could not touch output file $2/log.data."
+        return
+    fi
+
+    echo "time percent upspeed dlspeed" > "$2/log.data"
+    echo "0 100.0 0 0" >> "$2/log.data"
+
+    local firstTime=-1
+    local relTime=-1
+    local up_bytes=0
+    local down_bytes=0
+    local percentDone=""
+    local lastUploaded=0
+    local newUploaded=""
+    while IFS="\n" read LINE; do
+        if [ "$firstTime" = "-1" ]; then
+            # This happens only the first time: an extra absolute timestamp is printed at the top
+            if ! echo "$LINE" | grep -E "^[[:digit:]]*\.[[:digit:]]*$" > /dev/null; then
+                continue
+            fi
+            firstTime=$LINE
+            continue
+        fi
+
+        if echo "$LINE" | grep -E "^[[:digit:]]*\.[[:digit:]]*$" > /dev/null; then
+            # Creates a relative timestamp
+            relTime=`echo "scale=6; ($LINE - $firstTime)" | bc`
+            continue
+        fi
+
+        if [ "$relTime" = "-1" ]; then
+            # Previous timestamp used, not using it again
+            continue
+        fi
+
+        # Granted, I'm not 100% sure that's a torrent line. There should be no other lines like this, though
+        if echo "$LINE" | grep -E "^Total kBytes:" > /dev/null; then
+            percentDone="100.0"
+
+            newUploaded=`echo "$LINE" | sed -e "s/^Total kBytes: \([0-9]*\)$/\\1/"`
+            upspeed=`echo "scale=4; $newUploaded - $lastUploaded" | bc`
+            lastUploaded=$newUploaded
+            downspeed="0"
+
+            echo "$relTime $percentDone $upspeed $downspeed" >> "$2/log.data"
+
+            # Consume timestamp
+            relTime=-1
+        fi
+    done < "$1/log.log"
+}
+
+##
+# This function returns the API version implemented in this object.
+# You should always leave this number in tact, unless you have upgraded the module to another version.
+# This version number is used to check compatibilities with the core.
+#
+# @output   The API version number.
+##
+function parserAPIVersion() {
+    echo "1.0.3"
+}

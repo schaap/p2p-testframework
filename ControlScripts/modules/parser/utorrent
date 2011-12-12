@@ -114,6 +114,8 @@ function parserParseLogs() {
     local up_bytes=0
     local down_bytes=0
     local percentDone=""
+    local prevDown=0
+    local prevUp=0
     while IFS="\n" read LINE; do
         if [ "$firstTime" = "-1" ]; then
             # This happens only the first time: an extra absolute timestamp is printed at the top
@@ -137,16 +139,30 @@ function parserParseLogs() {
 
         # Granted, I'm not 100% sure that's a torrent line. There should be no other lines like this, though
         if echo "$LINE" | grep -E "^\[\".*\",.*,.*,.*,.*,.*,.*,.*,.*" > /dev/null; then
-            # 5, 9, 10
-            # %, upspeed, downspeed
+            # 5, 6, 7, 9, 10
+            # %, downloaded, uploaded, upspeed, downspeed
 
             percentDone=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\\1/"`
-            percentDone=`echo "scale=1; ($percentDone / 10.0)" | bc`
+            percentDone=`echo "scale=4; ($percentDone / 10.0)" | bc`
 
-            upspeed=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\1/"`
-            upspeed=`echo "scale=4; ($upspeed / 1024.0)" | bc`
-            downspeed=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\1/"`
-            downspeed=`echo "scale=4; ($downspeed / 1024.0)" | bc`
+            # Reported speeds by uTorrent are too unreliable to use
+           # upspeed=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\1/"`
+           # upspeed=`echo "scale=4; ($upspeed / 1024.0)" | bc`
+           # downspeed=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\1/"`
+           # downspeed=`echo "scale=4; ($downspeed / 1024.0)" | bc`
+            down=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\\1/"`
+            up=`echo "$LINE" | sed -e "s/^[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,\([^,]*\),.*$/\\1/"`
+            # Decreasing number of bytes transmitted have been observed: ignore that
+            if [ $up -lt $prevUp ]; then
+                up=$prevUp
+            fi
+            if [ $down -lt $prevDown ]; then
+                down=$prevDown
+            fi
+            downspeed=`echo "scale=4; $(($down - $prevDown))/1024.0" | bc`
+            upspeed=`echo "scale=4; $(($up - $prevUp))/1024.0" | bc`
+            prevDown=$down
+            prevUp=$up
 
             echo "$relTime $percentDone $upspeed $downspeed" >> "$2/log.data"
 
@@ -164,5 +180,5 @@ function parserParseLogs() {
 # @output   The API version number.
 ##
 function parserAPIVersion() {
-    echo "1.0.2"
+    echo "1.0.3"
 }

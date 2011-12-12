@@ -129,6 +129,28 @@ function clientPrepareHost() {
         # Send your client files here
         # Note that a binary client only needs to be sent when it is not assumed to be available (or have been built) remotely
         # This also means that, even when building the client locally, the uploading of the resulting binary is still to be done here
+
+        # The following would usually be enough for a single-binary client:
+        # hostSendFile "`sourceLocalLocation`/your_client_binary" "`hostGetTestDir`/clients/$CLIENT_NAME/your_client_binary" 1
+
+        # A more complicated version that looks at whether this is a prebuilt binary or a source directory:
+        # if [ -d "`sourceLocalLocation`/src ]; then
+        #     hostSendFile "`sourceLocalLocation`/src/your_client_binary" "`hostGetTestDir`/clients/$CLIENT_NAME/your_client_binary" 1
+        # else
+        #     hostSendFile "`sourceLocalLocation`/your_client_binary" "`hostGetTestDir`/clients/$CLIENT_NAME/your_client_binary" 1
+        # fi
+
+    else
+        # Before execution, the default implementation will cd to your `remoteSourceLocation`
+        # If you need to do some moving around with files before you can use them equally to above, do so here. E.g. when you use the complicated version above:
+        #
+        # local ans=""
+        # local remotedir="`remoteSourceLocation`"
+        # ans=`hostSendCommand "[ -d \"$remoteDir/src\" ] && echo -n \"OK\""`
+        # if [ "$ans" = "OK" ]; then
+        #     # Remote directory is source directory, move the file
+        #     hostSendCommand "mv \"$remoteDir/src/your_client_binary\" \"$remoteDir/your_client_binary\""
+        # fi
     fi
 }
 
@@ -147,7 +169,12 @@ function clientPrepareExecution() {
     # - clientPrepare__default  "./runMyClient"
     # - clientPrepare__default  "( ./clientPart1; ./clientPart2; ./clientCleanup )"
     #
-    # Please make sure to take $CLIENT_REMOTECLIENT into account in your command line.
+    # In principle the default script will first change directory to the expected location of your binary:
+    # - `hostGetTestDir`/clients/$CLIENT_NAME/ if [ -z "$CLIENT_REMOTECLIENT" ]
+    # - the directory supplied by the location argument if [ ! -z "$CLIENT_REMOTECLIENT" ]
+    # Take into account that these two situation may need different handling (e.g. if an uploaded client has a non-standard directory layout).
+    #
+    # Just like you may need to take the difference between remote and uploaded clients into account, you might also need to look at whether the remote client was compiled from source or a prebuilt binary.
     #
     # When redirecting logs, please make sure you place them in hostGetPersistentTestDir, or you might not be able to download them after the client has finished executing.
     #
@@ -158,7 +185,7 @@ function clientPrepareExecution() {
     clientPrepareExecution__default "YOUR COMMAND LINE HERE"
 
     # The default implementation can be used to build the runner script. Do any extra execution specific preparation for your client here.
-    # As long as you place thing in the directories mentioned above, everything will be cleaned up.
+    # As long as you place everything in the directories mentioned above, everything will be cleaned up.
 
     # TODO
 }
@@ -205,12 +232,16 @@ function clientCleanupFinal() {
 function clientRetrieveLogs() {
     # TODO
 
+    # Quite common is to retrieve one or more log files from your execution log directory:
+    # hostGetFile "`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log" "$1/log.log"
+
     echo "TO BE IMPLEMENTED"
 }
 
 ##
 # Loads the default parser object for this client.
 # This will load either the parser as defined by CLIENT_PARSER or parser:$CLIENT_SUBTYPE if the former is not defined.
+# Use the execution API to find information about the specific run, such as whether this was a seeder or not.
 ##
 function clientLoadDefaultParser() {
     # There really isn't any reason not to use the defaul here
@@ -270,5 +301,5 @@ function clientTrafficOutboundPorts() {
 # @output   The API version number.
 ##
 function clientAPIVersion() {
-    echo "1.0.2"
+    echo "1.0.3"
 }

@@ -85,5 +85,5 @@ function viewerCreateView() {
 # @output   The API version number.
 ##
 function viewerAPIVersion() {
-    echo "1.0.2"
+    echo "1.0.3"
 }

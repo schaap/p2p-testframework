@@ -113,7 +113,7 @@ function runScenario() {
         testOnly=1
     fi
 
-    local APIVersion=`echo "1.0.2"`
+    local APIVersion=`echo "1.0.3"`
 
     mkdir -p "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/"
     cp "$scenarioFile" "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/scenarioFile"

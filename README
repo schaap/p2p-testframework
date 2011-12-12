@@ -1,7 +1,9 @@
 This document is the work-in-progress documentation of the P2P testing framework.
 
 = API Version History =
-
+1.0.3
+    + Added hostGetAddress
+            hosts need updating to include this function, implementation where possible is encouraged
 1.0.2
     + Added fileSendToHost__default and fileGetMetaName implementations
             file modules need updating to call the new default functions in order to support the new metaFile parameter
@@ -353,7 +355,7 @@ Clients are handled completely by the module. The module, after being loaded, ex
 - clientCleanupHost                     -> removes the client from the host and runs client specific cleanup on the host (requires host to be loaded, may use Hosts API)
 - clientCleanupFinal                    -> does the final cleanup for the client; called only once after all other cleanup has been done
 - clientRetrieveLogs logdir             -> retrieves client specific logs from the host, storing them in the local directory pointed to be logdir (requires host and execution to be loaded, may use Hosts API and Executions API)
-- clientLoadDefaultParser               -> loads the default parser for this client; this is either the parser named in ${CLIENT_DEFAULTPARSER} or parser:$CLIENT_SUBTYPE
+- clientLoadDefaultParser               -> loads the default parser for this client; this is either the parser named in ${CLIENT_DEFAULTPARSER} or parser:$CLIENT_SUBTYPE (only called from execution, may use Executions API)
 - clientTrafficProtocol                 -> returns the name of the protocol used for actual data traffic (this value is used for setting up traffic control); usual values are 'UDP', 'TCP', etc
 - clientTrafficInboundPorts             -> returns a space separated list of inbound ports on which *all* traffic is received (this is used to set up traffic controle); valid values depend on clientTrafficProtocol(); return "" if no such list can be given (e.g. when inbound ports are dynamically added)
 - clientTrafficOutboundPorts            -> returns a space separated list of outbound ports through which *all* traffic is sent (this is used to set up traffic control); valid values depend on clientTrafficProtocol(); return "" if no such list can be given (e.g. when outbound ports are dynamically added)

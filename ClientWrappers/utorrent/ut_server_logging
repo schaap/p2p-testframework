@@ -8,6 +8,7 @@
 # torrentFile will be loaded and downloaded
 # if dataFile is given, it will be copied to workingDir
 
+going=1
 trap "going=0" SIGINT SIGTERM
 
 if [ -z "$1" ]; then
@@ -94,7 +95,6 @@ date +"%s.%09N"
 
 sleep 1
 pid=`cat "$2/utserver.pid"`
-going=1
 torrentloaded=0
 # Get the loaded torrents
 while [ $going -eq 1 ]; do

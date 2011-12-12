@@ -122,6 +122,7 @@ function processorProcessLogs() {
             logError "processor:gnuplot :: execution $execNum :: $A"
         fi
     done
+    rm $scriptFile
 }
 
 ##
@@ -132,5 +133,5 @@ function processorProcessLogs() {
 # @output   The API version number.
 ##
 function processorAPIVersion() {
-    echo "1.0.2"
+    echo "1.0.3"
 }

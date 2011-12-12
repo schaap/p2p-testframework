@@ -6,10 +6,23 @@
 # The swift client supports these extra parameters:
 # - listenAddress   Which address to listen on (i.e. --listen to swift, together with listenPort)
 # - listenPort      Which port to list on (i.e. --listen on swift, together with listenAddress)
-# - tracker         Specifies a tracker address (i.e. --tracker to swift)
+# - tracker         Specifies a tracker address (i.e. --tracker to swift); the tracker may be specified as @name or @name:port to load host hostname inside the testing framework after all hosts have been prepared, and use that host's address.
 # - wait            Specifies the number of seconds to wait (i.e. --wait to swift in seconds)
 #
 # The libswift client will require --wait for seeders. By default it is set to 900s for seeders.
+#
+# Example using dynamic tracker addressing:
+#
+#   [host:ssh]
+#   name=yourSeeder
+#   hostname=seeder.host.org
+#
+#   [client:swift]
+#   name=leeching_swift_client
+#   tracker=@yourSeeder:2000
+#
+# This will have all instances of leeching_swift_client use yourSeeder as its tracker, whatever the used address for that host may be.
+# This function is extremely useful in combination with hosts like das4, for which the address of the host isn't known ahead.
 #
 
 ##
@@ -203,7 +216,25 @@ function clientPrepareExecution() {
         args="$args --listen $CLIENT_SWIFT_LISTEN"
     fi
     if [ "$CLIENT_SWIFT_TRACKER" != "" ]; then
-        args="$args --tracker $CLIENT_SWIFT_TRACKER"
+        local theTracker="$CLIENT_SWIFT_TRACKER"
+        if echo "$CLIENT_SWIFT_TRACKER" | grep -E "^@" > /dev/null; then
+            local myhost="$HOST_NAME"
+            local indirecthost=`echo "$CLIENT_SWIFT_TRACKER" | sed -e "s/^@\([^:]*\)\(:.*\)\?$/\\1/"`
+            local thePort=`echo "$CLIENT_SWIFT_TRACKER" | sed -e "s/^@\([^:]*\)\(:.*\)\?$/\\2/"`
+            echo "Tracker: $CLIENT_SWIFT_TRACKER; indirecthost: $indirecthost; thePort: $thePort; myhost: $myhost" >&2
+            hostLoadSettings "$indirecthost"
+            if [ "$HOST_NAME" != "$indirecthost" ]; then
+                logError "client:swift :: Host $indirecthost was specified as indirect tracker host for client $CLIENT_NAME, but can't be loaded."
+                fail
+            fi
+            if [ -z "`hostGetAddress`" ]; then
+                logError "client:swift :: Host $indirecthost was specified as indirect tracker host for client $CLIENT_NAME, but can't specify its address."
+                fail
+            fi
+            theTracker="`hostGetAddress`$thePort"
+            hostLoadSettings "$myhost"
+        fi
+        args="$args --tracker $theTracker"
     fi
     if [ "$CLIENT_PARAMS" != "" ]; then
         args="$args $CLIENT_PARAMS"
@@ -222,7 +253,7 @@ function clientPrepareExecution() {
     # Apart from creating the runner script, the default implementationcreates a number of remote directories:
     # `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` and `hostGetTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`
     # `hostGetPersistentTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` and `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`
-    clientPrepareExecution__default "./swift --progress $args 2> \"`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log\""
+    clientPrepareExecution__default "LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:. ./swift --progress $args 2> \"`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log\""
 
     # The default implementation can be used to build the runner script. Do any extra execution specific preparation for your client here.
     # As long as you place thing in the directories mentioned above, everything will be cleaned up.
@@ -332,5 +363,5 @@ function clientTrafficOutboundPorts() {
 # @output   The API version number.
 ##
 function clientAPIVersion() {
-    echo "1.0.2"
+    echo "1.0.3"
 }

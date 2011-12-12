@@ -1,0 +1,15 @@
+Changetracker.py script found on the internet.
+http://libtorrent.rakshasa.no/wiki/changeTracker
+
+BitTorrent bencode library, copied pretty much verbatim from BitTorrent, found on http://pypi.python.org/pypi/BitTorrent-bencode/5.0.8
+
+After placing both in this directory the current situation was created using:
+tar xf BitTorrent-bencode-5.0.8.tar.gz
+cp -r BitTorrent-bencode-5.0.8 BitTorrent
+
+Call the utility as follows:
+python changetracker.py
+
+
+changetracker.py was posted without any license at all
+BitTorrent is under BitTorrent Open Source License, see BitTorrent/LICENSE.txt
