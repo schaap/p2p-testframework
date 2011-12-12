@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# USAGE:
+# $0 clientDir workingDir dataFile
+#
+# clientDir will contain the lock files for sockets, this should be a shared directory for all clients on the same machine
+# workingDir will be cleaned out (rm -rf *), the file to served will be copied in
+# dataFile will be copied to workingDir
+
+going=1
+trap "going=0" SIGINT SIGTERM
+
+if [ -z "$1" ]; then
+    echo "No \$1"
+    exit -1
+fi
+
+if [ -z "$2" ]; then
+    echo "No \$2"
+    exit -1
+fi
+
+if [ -z "$3" ]; then
+    echo "No \$3"
+    exit -1
+fi
+
+if [ ! -d "$1" ]; then  
+    echo "Not a dir: \$1"
+    exit -1
+fi
+
+if [ ! -d "$2" ]; then  
+    echo "Not a dir: \$2"
+    exit -1
+fi
+
+if [ ! -f "$3" ]; then
+    echo "Not a file: \$3"
+    exit -1
+fi
+
+rm -f "$2"/*
+
+cp "$3" "$2/"
+
+PORT=3000
+#while [ $PORT -le 4000 ]; do
+#    (set -C; : > "$1/port_$PORT") 2> /dev/null
+#    # Port already taken by another of my processes?
+#    if [ $? != "0" ]; then
+#        PORT=$(($PORT + 1))
+#        continue
+#    fi
+#    # Port already taken by whomever? (this is a less safer check, which DOES include a race-condition, theoretically, hence the former check)
+#    if netstat -tan | grep -E ":$PORT[[:space:]].*[[:space:]]LISTEN" > /dev/null; then
+#        PORT=$(($PORT + 1))
+#        continue
+#    fi
+#    break
+#done
+#if [ $PORT -gt 4000 ]; then
+#    echo "No open port found"
+#    exit -1
+#fi
+
+echo "server.document-root = \"$2\"" >> "$2/lighttpd.conf"
+echo "server.port = $PORT" >> "$2/lighttpd.conf"
+echo "server.modules = ( \"mod_status\" )" >> "$2/lighttpd.conf"
+echo "status.status-url = \"/server-status\"" >> "$2/lighttpd.conf"
+echo "server.pid-file = \"$2/lighttpd.pid\"" >> "$2/lighttpd.conf"
+
+./lighttpd -m . -f "$2/lighttpd.conf"
+
+date +"%s.%09N"
+
+sleep 1
+pid=`cat "$2/lighttpd.pid"`
+while [ $going -eq 1 ]; do
+    ( wget -O "$2/wget.out" http://localhost:$PORT/server-status\?auto 2>/dev/null ) >&2 >/dev/null
+    if [ ! -z "`cat \"$2/wget.out\"`" ]; then
+        date +"%s.%09N"
+        cat "$2/wget.out"
+    fi
+    sleep 1
+done
+
+kill $pid
