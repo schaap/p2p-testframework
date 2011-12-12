@@ -1,6 +1,7 @@
-[file:local]
+[file:fakedata]
 name=file50
-path=./file_50M
+size=52428800
+fileName=file_50M
 rootHash=8d59ad2d06e1f75c0f5cd135d14f557c63cdb055
 # Root hash calculated using libswift
 

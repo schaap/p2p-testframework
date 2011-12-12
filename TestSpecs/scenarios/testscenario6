@@ -1,6 +1,7 @@
-[file:local]
+[file:fakedata]
 name=file50
-path=./file_50M
+size=52428800
+fileName=file_50M
 generateRootHash=yes
 
 [client:swift]
