@@ -403,6 +403,7 @@ The following global variables are available for each file:
 - FILE_NAME                             -> the name of the file object
 - FILE_SUBTYPE                          -> the subtype of the file, as specified in the file module's name
 - FILE_ROOTHASH                         -> the SHA1 Merkle Root Hash for the file, or "" if unknown
+- FILE_METAFILE                         -> path on the local machine to the meta file of the file, or "" if no metaFile was specified
 - FILE_*                                -> reserved for file settings
 - FILE_${FILE_SUBTYPE}_*                -> specifically reserved for settings of files of $FILE_SUBTYPE
 

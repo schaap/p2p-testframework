@@ -6,7 +6,8 @@
 # You can retrieve the Opentracker software from http://erdgeist.org/arts/software/opentracker/
 # 
 # The following parameters are also recognized by client:opentracker:
-# - port    The port on which the tracker will be listening (required, 1023 < positive integer < 65536)
+# - port            The port on which the tracker will be listening (required, 1023 < positive integer < 65536)
+# - changetracker   The name of a file object for which the metaFile parameter has been set and points to a .torrent file; the torrent file will be changed to point to the dynamically retrieved address of the first host running this client; the file objects will be altered to have their metaFile point to the changed torrent file before the files will be uploaded; can be specified multiple times
 #
 
 ##
@@ -24,6 +25,7 @@ function clientReadSettings() {
     local parameterValue=""
     LINE_NUMBER=$(($2 + 1))
     CLIENT_OPENTRACKER_PORT=""
+    CLIENT_OPENTRACKER_CHANGETRACKERS=""
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -58,6 +60,13 @@ function clientReadSettings() {
                 fi
                 CLIENT_OPENTRACKER_PORT="$parameterValue"
                 ;;
+            changetracker)
+                if ! isValidName "$parameterValue"; then
+                    logError "client:opentracker :: Client $CLIENT_NAME can't change the tracker of file \"$parameterValue\", since that isn't a valid name and hence can't refer to a valid file object."
+                    return 1
+                fi
+                CLIENT_OPENTRACKER_CHANGETRACKERS="$CLIENT_OPENTRACKER_CHANGETRACKERS $parameterValue"
+                ;;
             *)
                 logError "client:opentracker :: Unknown parameter name \"$parameterName\" in client $CLIENT_NAME on line $LINE_NUMBER. Ignoring."
                 ;;
@@ -70,11 +79,27 @@ function clientReadSettings() {
         return 1
     fi
 
+    if [ ! -z "$CLIENT_OPENTRACKER_CHANGETRACKERS" ]; then
+        if [ ! -f "${TEST_ENV_DIR}/../Utils/changetracker/changetracker.py" ]; then
+            logError "client:opentracker :: Client $CLIENT_NAME is instructed to change some file's tracker, but the changetracker.py script of the changetracker utility can't be found."
+            return 1
+        fi
+        if ! which python > /dev/null 2> /dev/null; then
+            logError "client:opentracker :: Client $CLIENT_NAME is instructed to change some file's tracker, but the changetracker utility requires python and \"which python\" returned non-zero."
+            return 1
+        fi
+        if ! python "${TEST_ENV_DIR}/../Utils/changetracker/changetracker.py" > /dev/null; then
+            logError "client:opentracker :: Client $CLIENT_NAME is instructed to change some file's tracker, but the changetracker.py script can't be run with python."
+            return 1
+        fi
+    fi
+
     # Delegate the rest to the default implementation
     clientReadSettings__default
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_OPENTRACKER_PORT=\"$CLIENT_OPENTRACKER_PORT\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
+    echo "CLIENT_OPENTRACKER_CHANGETRACKERS=\"$CLIENT_OPENTRACKER_CHANGETRACKERS\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
     # Finally, register our client with the environment
     CLIENTS="$CLIENTS $CLIENT_NAME"
@@ -156,6 +181,49 @@ function clientPrepareHost() {
         # Note that a binary client only needs to be sent when it is not assumed to be available (or have been built) remotely
         # This also means that, even when building the client locally, the uploading of the resulting binary is still to be done here
         hostSendFile "`sourceLocalLocation`/opentracker" "`hostGetTestDir`/clients/$CLIENT_NAME/opentracker" 1
+    fi
+
+    if [ ! -z "$CLIENT_OPENTRACKER_CHANGETRACKERS" ]; then
+        local filename=""
+        local newTracker="`hostGetAddress`"
+        if [ -z "$newTracker" ]; then
+            logError "client:opentracker :: Client $CLIENT_NAME was instructed to update some file's trackers, but for that the address of the first host running the client is required. That host, however, does not return anything from hostGetAddress."
+            fail
+        fi
+        newTracker="http://$newTracker:$CLIENT_OPENTRACKER_PORT/announce"
+        for filename in $CLIENT_OPENTRACKER_CHANGETRACKERS; do
+            if [ -d "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/original_files/$filename" ]; then
+                # Directory already exists: the file has already had its meta file updated
+                continue
+            fi
+            if ! mkdir -p "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/original_files/$filename"; then
+                logError "client:opentracker :: Client $CLIENT_NAME tried to create a directory for original meta files of file $filename, which failed."
+                fail
+            fi
+            if ! mkdir -p "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/updated_files/$filename"; then
+                logError "client:opentracker :: Client $CLIENT_NAME tried to create a directory for updated meta files of file $filename, which failed."
+                fail
+            fi
+            fileLoadSettings "$filename"
+            if ! cp "$FILE_METAFILE" "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/original_files/$filename/"; then
+                logError "client:opentracker :: Client $CLIENT_NAME could not copy the original meta file for file $filename."
+                fail
+            fi
+            python "${TEST_ENV_DIR}/../Utils/changetracker/changetracker.py" -f "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/original_files/$filename" -w "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/updated_files/$filename" -n "$newTracker"
+            local newtorrent=""
+            if [ -z "`ls "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/updated_files/$filename/"*.torrent`" ]; then
+                logError "client:opentracker :: Client $CLIENT_NAME was instructed to update the meta file of file $filename, but no torrent files were found in the output directory after running the changetracker utility. Is the meta file of file $filename a .torrent file?"
+                fail
+            fi
+            for newtorrent in `ls "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/updated_files/$filename/"*.torrent`; do
+                break
+            done
+            if [ ! -f "$newtorrent" ]; then
+                logError "client:opentracker :: Client $CLIENT_NAME was instructed to update the meta file of file $filename. The output file seems to be \"$newtorrent\", but that can't be found."
+                fail
+            fi
+            echo "FILE_METAFILE=\"$newtorrent\"" >> "${LOCAL_TEST_DIR}/files/$filename/conf"
+        done
     fi
 }
 
