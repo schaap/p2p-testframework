@@ -349,7 +349,7 @@ Clients are handled completely by the module. The module, after being loaded, ex
 - clientStart                           -> runs the client (requires host, file and execution to be loaded, may use the Hosts API, Files API and Executions API)
 - clientRunning                         -> returns whether the client is running on the host (requires host and execution to be loaded, may use the Hosts API and Executions API)
 - clientKill                            -> ends execution of the client on the host (requires host and execution to be loaded, may use the Hosts API and Executions API)
-- clientPrepareHost                     -> sends the client to the host and runs the client specific preparation on the host (requires host to be loaded, may use Hosts API)
+- clientPrepareHost                     -> sends the client to the host and runs the client specific preparation on the host; note that the data files are not yet available on the host (requires host to be loaded, may use Hosts API)
 - clientPrepareExecution                -> sends execution specific files of the client to the host and runs the client/execution specific preparation on the host, possibly including runner scripts (requires host, file and execution to be loaded, may use Hosts API, Files API and Executions API)
 - clientCleanupExecution                -> runs the client/execution specific cleanup on the host (requires host, file and execution to be loaded, may use Hosts API, Files API and Executions API)
 - clientCleanupHost                     -> removes the client from the host and runs client specific cleanup on the host (requires host to be loaded, may use Hosts API)

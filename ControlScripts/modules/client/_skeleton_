@@ -114,6 +114,7 @@ function clientPrepare() {
 ##
 # Does client/host specific preparation on the host as well as copying the files of the client to the host.
 # Use the host API for sending files and executing commands.
+# Note that at this point fileSendToHost and fileSendToSeedingHost have not yet been called: the data files are not yet available.
 ##
 function clientPrepareHost() {
     # The default implementation creates client specific directories (`hostGetTestDir`/clients/$CLIENT_NAME/ and

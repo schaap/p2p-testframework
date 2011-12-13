@@ -25,7 +25,6 @@
 #
 # Requirements of the DAS4 module:
 # - You must be able to use SSH from the specified (or selected) headnode to the other nodes without interaction (i.e. passwordless)
-# - DO NOT use the same DAS4 host object for multiple executions. This is explicitly NOT supported. It will be detected and you will be scolded; for your convenience, of course.
 # - It is HIGHLY RECOMMENDED to place SGE_KEEP_TMPFILES="no" in ~/.bashrc : the test framework will try and cleanup nicely, but will first and foremost honor the reservation system.
 #   This means that when the cleanup comes after the reservation has ended, the cleanup will not be done and files in /local would remain behind without this variable set.
 #
@@ -622,33 +621,29 @@ function hostPrepare() {
     # Find the execution in which this host is used
     # If we find more than one: error
     local index=0
-    local theexec=-1
+    local theexecs=( )
     while [ $index -lt $EXECUTION_COUNT ]; do
         executionLoadSettings $index
         if [ "$EXECUTION_HOST" = "$HOST_NAME" ]; then
-            if [ $theexec -ge 0 ]; then
-                logError "host:das4 :: Host $HOST_NAME is used in more than one execution. This is explicitly NOT supported. Please be sure to use the host in exactly 1 execution."
-                fail
-            fi
-            theexec=$index
+            theexecs[${#theexec[@]}]=$index
         fi
         index=$(($index + 1))
     done
-    if [ $theexec -eq -1 ]; then
-        logError "host:das4 :: Host $HOST_NAME is never used in any executions. This is explicitly NOT supported. Please be sure to use the host in exactly 1 execution."
-        fail
-    fi
-    executionLoadSettings $theexec
 
     # Make copies of that execution that use the slave hosts
-    hostcount=1
-    while [ $hostcount -lt $HOST_DAS4_NNODES ]; do
-        local newexecnum=$EXECUTION_COUNT
-        cp "${LOCAL_TEST_DIR}/executions/exec_$theexec" "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
-        echo "EXECUTION_HOST=\"$HOST_NAME!$hostcount\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
-        echo "EXECUTION_NUMBER=\"$newexecnum\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
-        EXECUTION_COUNT=$(($newexecnum + 1))
-        hostcount=$(($hostcount + 1))
+    local execindex=0
+    for execindex in `seq 0 $((${#theexecs[@]} - 1))`; do
+        local theexec=${theexecs[execindex]}
+        executionLoadSettings $theexec
+        hostcount=1
+        while [ $hostcount -lt $HOST_DAS4_NNODES ]; do
+            local newexecnum=$EXECUTION_COUNT
+            cp "${LOCAL_TEST_DIR}/executions/exec_$theexec" "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+            echo "EXECUTION_HOST=\"$HOST_NAME!$hostcount\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+            echo "EXECUTION_NUMBER=\"$newexecnum\"" >> "${LOCAL_TEST_DIR}/executions/exec_$newexecnum"
+            EXECUTION_COUNT=$(($newexecnum + 1))
+            hostcount=$(($hostcount + 1))
+        done
     done
 }
 
