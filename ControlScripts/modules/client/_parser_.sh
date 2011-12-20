@@ -40,6 +40,7 @@ function parseSettings() {
     CLIENT_REMOTECLIENT=""
     CLIENT_BUILDER=""
     CLIENT_SOURCE=""
+    CLIENT_CLEANUPCLIENTINSERTPOINT=0
     while IFS="" read LINE; do
         if [ "$LINE" = "" ]; then
             LINE_NUMBER=$(($LINE_NUMBER + 1))

@@ -36,6 +36,7 @@ function clientReadSettings__default() {
     echo "CLIENT_REMOTECLIENT=\"$CLIENT_REMOTECLIENT\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_BUILDER=\"$CLIENT_BUILDER\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     echo "CLIENT_SOURCE=\"$CLIENT_SOURCE\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
+    echo "CLIENT_CLEANUPCLIENTINSERTPOINT=\"$CLIENT_CLEANUPCLIENTINSERTPOINT\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
     loadModule "source/_defaults_"
     loadModule "source/$CLIENT_SOURCE"
@@ -96,7 +97,7 @@ function clientLoadSettings__default() {
 
 ##
 # Run the client on the currently loaded host.
-# The default implementation just calls the client runner script "`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/clientRunnerScript"
+# The default implementation just calls the client runner script "`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/clientRunnerScript" and schedules clientKill for the cleanup phase
 # See clientPrepare for details.
 ##
 function clientStart__default() {
@@ -133,37 +134,63 @@ function clientKill__default() {
     # The first time a simple SIGTERM is used, to tell the process to shut down. The process is given 30 seconds to do so.
     # If that doesn't work, SIGINT is tries twice, giving 5 seconds after each try.
     # If that fails as well SIGKILL is sent.
+    local whichps="\`which ps\`"
+    local findchildren="\`ps --ppid \$1 -o pid --no-headers\`"
+    local proc="\$1"
+    local allprocessesofproc="\${allProcesses[\$1]}"
+    local varproc="\$proc"
+    local fullprocesslist="\$fullProcessList"
     local killScript=`cat <<EOF
     (
-        kill -0 $pidfile 2> /dev/null || exit
-        kill -TERM $pidfile
+        allProcesses=( )
+        fullProcessList=$pidfile
+        if [ ! -z "$whichps" ]; then
+            function findChildren() {
+                # Find child processes of the given process
+                allProcesses[$proc]=$findchildren
+                # Recursively run myself on all the children I found, if any
+                local proc=0
+                if [ ! -z "$allprocessesofproc" ]; then
+                    for proc in $allprocessesofproc; do
+                        fullProcessList="$fullprocesslist $varproc"
+                        findChildren $varproc
+                    done
+                fi
+            }
+            findChildren $pidfile
+        fi
 
-        sleep 1
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 1
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 1
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 2
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
+        for proc in $fullprocesslist; do
+            kill -0 $varproc 2> /dev/null || continue
+            kill -TERM $varproc
 
-        kill -INT $pidfile
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
-        kill -INT $pidfile
-        sleep 5
-        kill -0 $pidfile 2> /dev/null || exit
-        kill -KILL $pidfile
+            sleep 1
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 1
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 1
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 2
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+
+            kill -INT $varproc
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+            kill -INT $varproc
+            sleep 5
+            kill -0 $varproc 2> /dev/null || continue
+            kill -KILL $varproc
+        done
     ) &
 wait
 EOF`
@@ -181,6 +208,8 @@ function clientPrepare__default() {
     echo "CLIENT_CLEANUPIDX=\"$CLIENT_CLEANUPIDX\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     addCleanupCommand ". \"${TEST_ENV_DIR}/modules/client/$CLIENT_SUBTYPE\"" $CLIENT_CLEANUPIDX
     addCleanupCommand "clientLoadSettings \"$CLIENT_NAME\"" $CLIENT_CLEANUPIDX
+    CLIENT_CLEANUPCLIENTINSERTPOINT=`getCleanupLength $CLIENT_CLEANUPIDX`
+    echo "CLIENT_CLEANUPCLIENTINSERTPOINT=\"$CLIENT_CLEANUPCLIENTINSERTPOINT\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 }
 
 ##
@@ -190,9 +219,8 @@ function clientPrepare__default() {
 # Client cleanup is extended with cleanup for this host.
 ##
 function clientPrepareHost__default() {
-    # Make sure the cleanup is called on failure, as well as the running client is killed
+    # Make sure the cleanup is called on failure, prepare for statements to be added later to kill the client
     addCleanupCommand "hostLoadSettings $HOST_NAME" $CLIENT_CLEANUPIDX
-    addCleanupCommand "clientKill" $CLIENT_CLEANUPIDX
     addCleanupCommand "clientCleanupHost" $CLIENT_CLEANUPIDX
 
     # Create client specific directories on host
@@ -255,12 +283,19 @@ set -o monitor
 cd "$remoteClientDir"
 ( $1 ) &
 echo -n \$! > `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`
+echo -n "PID of `executionNumber`: " >&2
+cat `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber` >&2
 %1
 wait
 EOF
     chmod +x "$clientRunnerScript"
     hostSendFile "$clientRunnerScript" "`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/clientRunnerScript"
     rm -f "$clientRunnerScript"
+    
+    insertCleanupCommand "executionLoadSettings `executionNumber`" $CLIENT_CLEANUPIDX $CLIENT_CLEANUPCLIENTINSERTPOINT
+    insertCleanupCommand "executionLoadHost" $CLIENT_CLEANUPIDX $(($CLIENT_CLEANUPCLIENTINSERTPOINT + 1))
+    insertCleanupCommand "clientKill" $CLIENT_CLEANUPIDX $(($CLIENT_CLEANUPCLIENTINSERTPOINT + 2))
+    insertCleanupCommand "clientCleanupExecution" $CLIENT_CLEANUPIDX $(($CLIENT_CLEANUPCLIENTINSERTPOINT + 3))
 }
 
 ##

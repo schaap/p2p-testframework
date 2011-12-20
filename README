@@ -364,6 +364,7 @@ The following global variables are available for each client:
 - CLIENT_NAME                           -> the name of the client object
 - CLIENT_PARAMS                         -> extra parameters to the client
 - CLIENT_CLEANUPIDX                     -> the index of the client's cleanup script
+- CLIENT_CLEANUPCLIENTINSERTPOINT       -> offset into the client's cleanup script where client execution should be killed
 - CLIENT_SUBTYPE                        -> the subtype of the client, as specified in the client module's name
 - CLIENT_LOCATION                       -> when not building: the directory where the client resides; when building: the location of the source code of the client as interpreted by the source module
 - CLIENT_PARSER                         -> the default parser object name for this client, if not set (i.e. "") the default parser for the client is parser:${CLIENT_SUBTYPE}
