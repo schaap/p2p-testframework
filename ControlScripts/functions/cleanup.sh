@@ -125,13 +125,49 @@ function cleanup() {
 }
 
 ##
+# Returns the number of lines currently in the provided cleanup script.
+# This function does not work for unknown cleanup file indices and for 0.
+#
+# This function will also return 0 if `which wc` returns no wc utility. 
+# In that case an error is logged as well.
+#
+# @param    Index of the cleanup file.
+#
+# @output   The number of lines in the cleanup file specified by the index, or 0.
+##
+function getCleanupLength() {
+    if [ $# -eq 0 ]; then
+        echo -n "0"
+        return
+    fi
+    if [ $1 -eq 1 ]; then
+        echo -n "0"
+        return
+    fi
+    local index=$1
+    if [ -z "${CLEANUP_TMP_FILES[index]}" ]; then
+        echo -n "0"
+        return
+    fi
+    if [ ! -f "${CLEANUP_TMP_FILES[index]}" ]; then
+        echo -n "0"
+        return
+    fi
+    if [ -z "`which wc 2>/dev/null`" ]; then
+        echo "0"
+        logError "getCleanupLength called on valid index, but the wc utility wasn't found locally. This probably screwed up some cleanup!" >&2
+        return
+    fi
+    cat "${CLEANUP_TMP_FILES[index]}" | wc -l
+}
+
+##
 # Adds a command to a cleanup script.
 # By default commands are added to the general cleanup script, which will always be executed when cleanup is called.
-# One can specify a different cleanup script using a previously obtained index from addCleanupScript as the first argument.
-# Note that this breaks when a command line would start with a number: in this case specify 0 as the first argument.
+# One can specify a different cleanup script using a previously obtained index from addCleanupScript as the second argument.
 #
 # @param    The command line to add to the cleanup script as a single string
-# @param    Optional index of the cleanup file (assumed to be provided is the first argument is a number, use 0 for the default cleanup)
+# @param    Optional index of the cleanup file
 ##
 function addCleanupCommand() {
     if [ $# -eq 0 ]; then
@@ -152,11 +188,60 @@ function addCleanupCommand() {
                 logError "trace: $trace"
             done
             logError "/trace"
-            return;
+            return
         fi
     fi
 
     echo "$1" >> "$scriptFile"
+}
+
+##
+# Inserts a command in a cleanup script.
+# This will insert the command at the nth line of cleanup script i, moving all current lines from that line on one down.
+# This function does not work for index 0.
+#
+# The utilities head and tail are required for this function. If they can't be found this function behaves equal to addCleanupCommand
+# and an error will be logged.
+#
+# @param    The command line to insert in the cleanup script as a single string
+# @param    The index of the cleanup file (non-zero)
+# @param    The line number at which to add the command line (non-negative, smaller than getCleanupLength)
+##
+function insertCleanupCommand() {
+    if [ $# -ne 3 ]; then
+        return
+    fi
+    if [ $2 -eq 0 ]; then
+        return
+    fi
+    local index=$2
+    local scriptFile=${CLEANUP_TMP_FILES[index]}
+    if [ ! -e "$scriptFile" ]; then
+        logError "Warning: cleanup file index $2 does not exist. Ignoring insertion command. Stack trace follow." 1>&2
+        local frame=0
+        local trace=""
+        while trace=`caller $frame`; do
+            frame=$(($frame + 1))
+            logError "trace: $trace" 1>&2
+        done
+        logError "/trace" 1>&2
+        return
+    fi
+    if [ -z "`which head`" -o -z "`which tail`" ]; then
+        logError "insertCleanupCommand: utilities head and tail not found locally. This probably screwed up some cleanup!" 1>&2
+        return
+    fi
+    local len=`getCleanupLength $2`
+    if [ $3 -gt $len ]; then
+        logError "insertCleanupCommand: asked to insert cleanup command at line $3, but the file is `getCleanupLength $2` lines long."
+        return
+    fi
+    local tmpFile=`createTempFile`
+    cat "$scriptFile" | head -n $3 > "$tmpFile"
+    echo "$1" >> "$tmpFile"
+    cat "$scriptFile" | tail -n $(($len - $3)) >> "$tmpFile"
+    cat "$tmpFile" > "$scriptFile"
+    rm "$tmpFile"
 }
 
 ##
