@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # USAGE:
-# $0 clientDir workingDir dataFile
+# $0 clientDir workingDir dataFile [useSSL]
 #
 # clientDir will contain the lock files for sockets, this should be a shared directory for all clients on the same machine
 # workingDir will be cleaned out (rm -rf *), the file to served will be copied in
 # dataFile will be copied to workingDir
+# useSSL enables HTTPS instead of HTTP, unless it's explicitly "no"
 
 going=1
 trap "going=0" SIGINT SIGTERM
@@ -40,6 +41,13 @@ if [ ! -f "$3" ]; then
     exit -1
 fi
 
+useSSL=0
+if [ ! -z "$4" ]; then
+    if [ "$4" != "no" ]; then
+        useSSL=1
+    fi
+fi
+
 rm -f "$2"/*
 
 cp "$3" "$2/"
@@ -70,14 +78,26 @@ echo "server.modules = ( \"mod_status\" )" >> "$2/lighttpd.conf"
 echo "status.status-url = \"/server-status\"" >> "$2/lighttpd.conf"
 echo "server.pid-file = \"$2/lighttpd.pid\"" >> "$2/lighttpd.conf"
 
+if [ $useSSL -eq 1 ]; then
+    openssl req -new -x509 -keyout "$2/server.pem" -out "$2/server.pem" -days 2 -nodes -batch
+
+    echo "ssl.engine = \"enable\"" >> "$2/lighttpd.conf"
+    echo "ssl.pemfile = \"$2/server.pem\"" >> "$2/lighttpd.conf"
+fi
+
 ./lighttpd -m . -f "$2/lighttpd.conf"
 
 date +"%s.%09N"
 
+protocol="http"
+if [ $useSSL -eq 1 ]; then
+    protocol="https"
+fi
+
 sleep 1
 pid=`cat "$2/lighttpd.pid"`
 while [ $going -eq 1 ]; do
-    ( wget -O "$2/wget.out" http://localhost:$PORT/server-status\?auto 2>/dev/null ) >&2 >/dev/null
+    ( wget -O "$2/wget.out" --no-check-certificate $protocol://localhost:$PORT/server-status\?auto 2>/dev/null ) >&2 >/dev/null
     if [ ! -z "`cat \"$2/wget.out\"`" ]; then
         date +"%s.%09N"
         cat "$2/wget.out"

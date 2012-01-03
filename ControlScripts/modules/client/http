@@ -6,6 +6,11 @@
 #
 # Due to the dual client setup $CLIENT_PARAMS is IGNORED.
 #
+# Extra parameters recognized by client:lighttpd:
+# - useSSL : Set to anything but "no" to enable HTTPS instead of HTTP; may be specified multiple times, last declaration counts
+#
+# When using SSL it is important to note that lighttpd then needs to be compiled with --with-openssl (not default). Also, the openssl utility must be available on the target seeding machines, or the server will fail to start.
+#
 
 ##
 # Read settings from the provided settings file and save them to ${LOCAL_TEST_DIR}/clients/$CLIENT_NAME .
@@ -21,6 +26,7 @@ function clientReadSettings() {
     local parameterName=""
     local parameterValue=""
     LINE_NUMBER=$(($2 + 1))
+    CLIENT_HTTP_HTTPS=""
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -36,6 +42,13 @@ function clientReadSettings() {
             name|params|location|parser|remoteClient|builder|source)
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
                 ;;
+            useSSL)
+                if [ "$parameterValue" != "no" ]; then
+                    CLIENT_HTTP_HTTPS="SSL"
+                else
+                    CLIENT_HTTP_HTTPS=""
+                fi
+                ;;
             *)
                 logError "client:http :: Unknown parameter name \"$parameterName\" in client $CLIENT_NAME on line $LINE_NUMBER. Ignoring."
                 ;;
@@ -47,6 +60,7 @@ function clientReadSettings() {
     clientReadSettings__default
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
+    echo "CLIENT_HTTP_HTTPS=\"$CLIENT_HTTP_HTTPS\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
     # Finally, register our client with the environment
     CLIENTS="$CLIENTS $CLIENT_NAME"
@@ -222,7 +236,11 @@ function clientPrepareExecution() {
                 fail
             fi
 
-            seeders="$seeders \"http://$seederhost:3000/$filename\""
+            if [ -z "$CLIENT_HTTP_HTTPS" ]; then
+                seeders="$seeders \"http://$seederhost:3000/$filename\""
+            else
+                seeders="$seeders \"https://$seederhost:3000/$filename\""
+            fi
             nseeders=$(($nseeders + 1))
         done
         executionLoadSettings $myExecNum
@@ -242,10 +260,20 @@ function clientPrepareExecution() {
         # --max-tries=0                         # don't give up
         # --retry-wait=1                        # wait 1 sec between retries
         # --dir=`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/   # save here
-        clientPrepareExecution__default "./aria2c -j $nseeders -s $nseeders --human-readable=false --summary-interval=1 --no-conf=true --truncate-console-readout=false -n --max-tries=0 --retry-wait=1 --dir=`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/ $seeders > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+        # --check-certificate=false             # don't check our on-the-fly-generated self-signed certificates [SSL]
+        if [ -z "$CLIENT_HTTP_HTTPS" ]; then
+            clientPrepareExecution__default "./aria2c -j $nseeders -s $nseeders --human-readable=false --summary-interval=1 --no-conf=true --truncate-console-readout=false -n --max-tries=0 --retry-wait=1 --dir=`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/ $seeders > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+        else
+            # The sleep 10 is a hack to work around slower setup of lighttpd which would cause aria2 to fail when connection to the server
+            clientPrepareExecution__default "sleep 10; ./aria2c -j $nseeders -s $nseeders --human-readable=false --summary-interval=1 --no-conf=true --truncate-console-readout=false -n --max-tries=0 --retry-wait=1 --dir=`hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber`/ --check-certificate=false $seeders > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+        fi
     else
         # Seeder client: run lighttpd
-        clientPrepareExecution__default "`hostGetTestDir`/clients/$CLIENT_NAME/lighttpd_logging `hostGetTestDir`/clients/$CLIENT_NAME `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` `fileGetName` > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+        if [ -z "$CLIENT_HTTP_HTTPS" ]; then
+            clientPrepareExecution__default "`hostGetTestDir`/clients/$CLIENT_NAME/lighttpd_logging `hostGetTestDir`/clients/$CLIENT_NAME `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` `fileGetName` > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+        else
+            clientPrepareExecution__default "`hostGetTestDir`/clients/$CLIENT_NAME/lighttpd_logging `hostGetTestDir`/clients/$CLIENT_NAME `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` `fileGetName` SSL > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+        fi
     fi
 
     # The default implementation can be used to build the runner script. Do any extra execution specific preparation for your client here.
