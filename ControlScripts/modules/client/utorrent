@@ -3,7 +3,10 @@
 #
 # utorrent implementation for the client API
 #
-# This client requires the ClientWrappers/utorrent scripts.
+# This client requires the ClientWrappers/utorrent and ClientWrappers/utorrent-windows scripts.
+#
+# Supported extra options:
+# - useWine     If set to "yes" this will instruct client:utorrent to use the windows client under wine. Note that this requires the user to make sure wine and xvfb-run function correctly with wine on the target hosts!
 #
 # NOTE: Do not try to run multiple utorrent instances on the same host!
 # utorrent will ban instances on the same host, leading to no connectivity between the two
@@ -23,6 +26,7 @@ function clientReadSettings() {
     local parameterName=""
     local parameterValue=""
     LINE_NUMBER=$(($2 + 1))
+    CLIENT_UTORRENT_WINE=0
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -37,6 +41,11 @@ function clientReadSettings() {
         case $parameterName in
             name|params|location|parser|remoteClient|builder|source)
                 # These are the generic settings that have already been parsed. Usually one can ignore them as such.
+                ;;
+            useWine)
+                if [ "$parameterValue" = "yes" ]; then
+                    CLIENT_UTORRENT_WINE=1
+                fi
                 ;;
             *)
                 logError "client:utorrent :: Unknown parameter name \"$parameterName\" in client $CLIENT_NAME on line $LINE_NUMBER. Ignoring."
@@ -55,6 +64,7 @@ function clientReadSettings() {
     clientReadSettings__default
     # Any variables set up above should be saved like this:
     # echo "YOUR_SETTING=\"$YOUR_SETTING\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
+    echo "CLIENT_UTORRENT_WINE=\"$CLIENT_UTORRENT_WINE\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
 
     # Finally, register our client with the environment
     CLIENTS="$CLIENTS $CLIENT_NAME"
@@ -131,7 +141,11 @@ function clientPrepareHost() {
     # Add extra preparation, such as sending the binaries of your client, here
     # As long as you place everything in the directories mentioned above, everything will be cleaned up
 
-    hostSendFile "${TEST_ENV_DIR}/../ClientWrappers/utorrent/ut_server_logging" "`hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging" 1
+    if [ $CLIENT_UTORRENT_WINE -eq 1 ]; then
+        hostSendFile "${TEST_ENV_DIR}/../ClientWrappers/utorrent-windows/ut_server_logging" "`hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging" 1
+    else
+        hostSendFile "${TEST_ENV_DIR}/../ClientWrappers/utorrent/ut_server_logging" "`hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging" 1
+    fi
 
     # TODO
     if [ -z "$CLIENT_REMOTECLIENT" ]; then
@@ -139,8 +153,13 @@ function clientPrepareHost() {
         # Note that a binary client only needs to be sent when it is not assumed to be available (or have been built) remotely
         # This also means that, even when building the client locally, the uploading of the resulting binary is still to be done here
 
-        hostSendFile "${CLIENT_LOCATION}/utserver" "`hostGetTestDir`/clients/$CLIENT_NAME/utserver" 1
         hostSendFile "${CLIENT_LOCATION}/webui.zip" "`hostGetTestDir`/clients/$CLIENT_NAME/webui.zip" 1
+        if [ $CLIENT_UTORRENT_WINE -eq 1 ]; then
+            hostSendFile "${CLIENT_LOCATION}/utserver" "`hostGetTestDir`/clients/$CLIENT_NAME/utserver" 1
+        else
+            hostSendFile "${CLIENT_LOCATION}/utorrent.exe" "`hostGetTestDir`/clients/$CLIENT_NAME/utorrent.exe" 1
+            hostSendFile "${CLIENT_LOCATION}/settings.dat" "`hostGetTestDir`/clients/$CLIENT_NAME/settings.dat" 1
+        fi
     fi
 }
 

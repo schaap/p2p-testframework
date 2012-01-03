@@ -133,7 +133,6 @@ function runScenario() {
     CLIENTS=""
     FILES=""
     while IFS="" read LINE; do
-        echo "Parsing $LINE" 1>&2
         if [ "${LINE:0:1}" = "#" ]; then
             # Injected comments of which file is being written: these should be removed
             LINE=""
@@ -175,6 +174,7 @@ function runScenario() {
                 LINE_NUMBER=$currLineNumber
             fi
 
+            echo "Parsing $LINE" 1>&2
             # Parse header for next object
             sectionName=`getSectionName $LINE`
             checkFailScenarioFile "$scenarioFile"
@@ -197,6 +197,7 @@ function runScenario() {
                     ;;
             esac
         else
+            echo "Parsing $LINE" 1>&2
             objectParameters[${#objectParameters[@]}]="$LINE"
         fi
         LINE_NUMBER=$((LINE_NUMBER + 1))

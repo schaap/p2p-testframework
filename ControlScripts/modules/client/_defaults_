@@ -283,8 +283,6 @@ set -o monitor
 cd "$remoteClientDir"
 ( $1 ) &
 echo -n \$! > `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber`
-echo -n "PID of `executionNumber`: " >&2
-cat `hostGetTestDir`/clients/$CLIENT_NAME/pid_`executionNumber` >&2
 %1
 wait
 EOF
