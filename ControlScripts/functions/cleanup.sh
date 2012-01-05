@@ -3,7 +3,7 @@
 #
 #
 # Requires: logError
-# Provides: reinitializeCleanup, fail, cleanup, addCleanupCommand, addCleanupScript, removeCleanupScript, signalFail, checkFail, checkFailReturn, cleanFailSignal
+# Provides: reinitializeCleanup, fail, cleanup, addCleanupCommand, addCleanupScript, newCleanupScriptIndex, removeCleanupScript, signalFail, checkFail, checkFailReturn, cleanFailSignal
 #
 
 
@@ -249,19 +249,40 @@ function insertCleanupCommand() {
 # Note that cleanup scripts are executed in reverse order of their creation.
 # Do not call this function in another thread, such as using backticks: it needs to change the environment of the testing framework.
 #
-# @return   The index of the new cleanup script for use with addCleanupCommand and removeCleanupScript.
+# To retrieve the index of the new script, call newCleanupScriptIndex directly after this function returned.
+# This is the only way more than 256 cleanup scripts can be supported.
+#
+# As an example, the usual calling goes:
+#   addCleanupScript
+#   local myCleanupIndex=`newCleanupScriptIndex`
 ##
 function addCleanupScript() {
     local oldIndex=$CLEANUP_MAX_INDEX
     local newIndex=$((CLEANUP_MAX_INDEX + 1))
     CLEANUP_MAX_INDEX=$newIndex
     CLEANUP_TMP_FILES[$newIndex]=`mktemp`
-    if [ -z ${CLEANUP_TMP_FILES[newIndex]} ]; then
+    if [ -z "${CLEANUP_TMP_FILES[newIndex]}" ]; then
         CLEANUP_MAX_INDEX=$oldIndex
         logError "Could not create cleanup script file" 1>&2
         fail
     fi
-    return $newIndex
+    if [ ! -e "${CLEANUP_TMP_FILES[newIndex]}" ]; then
+        CLEANUP_MAX_INDEX=$oldIndex
+        logError "Cleanup script file created according to mktemp, but does not exist" 1>&2
+        fail
+    fi
+    CLEANUP_LAST_ADDED=$newIndex
+}
+
+##
+# The index of the latest added cleanup script.
+#
+# This function is required since it has been observed that the indices run over 256 (out of range for normal return statements).
+#
+# @output   The index of the latest added cleanup script, as created by addCleanupScript.
+##
+function newCleanupScriptIndex() {
+    echo $CLEANUP_LAST_ADDED
 }
 
 ##

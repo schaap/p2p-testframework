@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function clientAPIVersion__default() {
-    echo "1.0.3"
+    echo "1.0.4"
 }
 
 ##
@@ -204,7 +204,7 @@ EOF`
 function clientPrepare__default() {
     # Setup a cleanup file for this client
     addCleanupScript
-    CLIENT_CLEANUPIDX=$?
+    CLIENT_CLEANUPIDX=`newCleanupScriptIndex`
     echo "CLIENT_CLEANUPIDX=\"$CLIENT_CLEANUPIDX\"" >> "${LOCAL_TEST_DIR}/clients/$CLIENT_NAME/conf"
     addCleanupCommand ". \"${TEST_ENV_DIR}/modules/client/$CLIENT_SUBTYPE\"" $CLIENT_CLEANUPIDX
     addCleanupCommand "clientLoadSettings \"$CLIENT_NAME\"" $CLIENT_CLEANUPIDX

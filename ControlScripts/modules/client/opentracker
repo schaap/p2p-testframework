@@ -361,5 +361,5 @@ function clientTrafficOutboundPorts() {
 # @output   The API version number.
 ##
 function clientAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }

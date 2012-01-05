@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function builderAPIVersion__default() {
-    echo "1.0.3"
+    echo "1.0.4"
 }
 
 ##
@@ -62,7 +62,7 @@ function builderBuildLocal__default() {
 function builderBuildRemote__default() {
     local cmd=`builderBuildCommand`
     addCleanupScript
-    local cleanupidx=$?
+    local cleanupidx=`newCleanupScriptIndex`
     addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
     local tmpdir="`hostGetPersistentTestDir`"
     local logfile="`createRemoteTempFile \"$tmpdir\"`"

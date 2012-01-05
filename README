@@ -1,6 +1,10 @@
 This document is the work-in-progress documentation of the P2P testing framework.
 
 = API Version History =
+1.0.4
+    + Added newCleanupScriptIndex / changed addCleanupScript
+            any file requesting a new cleanup script using addCleanupScript should no longer use the return value
+            of the function, but should call newCleanupScriptIndex directly after addCleanupScript returned, instead
 1.0.3
     + Added hostGetAddress
             hosts need updating to include this function, implementation where possible is encouraged
@@ -283,12 +287,14 @@ The following global API is available:
 - CAMPAIGN_ERROR_LOG                    -> points to a file that contains the error log for the current campaign; will be set to ${CAMPAIGN_RESULTS_DIR}/err.log
 - CLEANUP_TMP_FILES                     -> array of filenames which are the cleanup scripts; do not alter this array!
 - CLEANUP_MAX_INDEX                     -> internal tracker of used indices in CLEANUP_TMP_FILES; do not alter!
+- CLEANUP_LATEST_ADDED                  -> internal; do not use!
 - LINE_NUMBER                           -> used by the parsing functions for writing better errors; this should contain the line number of the line currently being parsed
 - reinitializeCleanup                   -> for those strange situation where you use cleanup and do not exit the testing environment, you should call reinitializeCleanup to make sure cleanup works again
 - fail                                  -> when something fails critically¸ call this function. cleanup will be run and the script will exit with -1 or, if given, the specified error code
 - cleanup                               -> does full cleanup based on the cleanup commands added through addCleanupCommand; should really be called before exit
 - addCleanupCommand                     -> adds a single command (first argument, string) to the cleanup string; an optional second argument can specify a the index of a different cleanup script than the general cleanup (see addCleanupScript)
-- addCleanupScript                      -> adds an extra cleanup script and returns the index; cleanup scripts are executed in reverse order from which they are created
+- addCleanupScript                      -> adds an extra cleanup script; cleanup scripts are executed in reverse order from which they are created; call newCleanupScriptIndex for the new index
+- newCleanupScriptIndex                 -> returns the index of the latest cleanup script added using newCleanupScriptIndex
 - removeCleanupScript                   -> removes a previously created cleanup script, which is indicated by the provided index
 - logError                              -> logs a single line (the first argument) to the most appropriate place given the context (achieved by overwriting the logError function)
 - run_campaign                          -> runs the campaign described by the campaign file passed in its first argument; do not call this

@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function hostAPIVersion__default() {
-    echo "1.0.3"
+    echo "1.0.4"
 }
 
 ##
@@ -23,7 +23,7 @@ function hostAPIVersion__default() {
 function hostReadSettings__default() {
     # Setup a cleanup file for this host
     addCleanupScript
-    HOST_CLEANUPIDX=$?
+    HOST_CLEANUPIDX=`newCleanupScriptIndex`
     addCleanupCommand ". \"${TEST_ENV_DIR}/modules/host/$HOST_SUBTYPE\"" $HOST_CLEANUPIDX
     HOST_TEMPFOLDER=""
 

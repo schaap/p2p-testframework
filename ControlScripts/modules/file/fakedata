@@ -222,5 +222,5 @@ function fileGetRootHash() {
 # @output   The API version number.
 ##
 function fileAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }

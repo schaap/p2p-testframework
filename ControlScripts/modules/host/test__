@@ -281,5 +281,5 @@ function hostTCSaveProtocol() {
 # @output   The API version number.
 ##
 function hostAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }

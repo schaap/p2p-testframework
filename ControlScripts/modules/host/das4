@@ -606,7 +606,7 @@ function hostPrepare() {
         # Note that all the new host objects need to have their own cleanup file created and used.
 
         addCleanupScript
-        local idx=$?
+        local idx=`newCleanupScriptIndex`
         echo "HOST_CLEANUPIDX=\"$idx\""  >> "${LOCAL_TEST_DIR}/hosts/$HOST_NAME!$hostcount/conf"
         addCleanupCommand "hostLoadSettings \"$HOST_NAME!$hostcount\"" $idx
         addCleanupCommand "hostCleanup" $idx
@@ -782,5 +782,5 @@ function hostTCSaveProtocol() {
 # @output   The API version number.
 ##
 function hostAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }

@@ -147,5 +147,5 @@ function parserParseLogs() {
 # @output   The API version number.
 ##
 function parserAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }

@@ -13,7 +13,7 @@
 # @output   The API version
 ##
 function sourceAPIVersion__default() {
-    echo "1.0.3"
+    echo "1.0.4"
 }
 
 ##
@@ -59,7 +59,7 @@ function sourcePrepareLocal__default() {
 function sourcePrepareRemote__default() {
     local cmd=`sourcePrepareCommand`
     addCleanupScript
-    local cleanupidx=$?
+    local cleanupidx=`newCleanupScriptIndex`
     addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
     local tmpdir="`hostGetPersistentTestDir`"
     local logfile="`createRemoteTempFile \"$tmpdir\"`"

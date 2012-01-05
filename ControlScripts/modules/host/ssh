@@ -151,7 +151,7 @@ function hostReadSettings() {
     local tmpFile=`createTempFile`
     echo -n "OK" > "$tmpFile"
     addCleanupScript
-    local cleanupidx=$?
+    local cleanupidx=`newCleanupScriptIndex`
     addCleanupCommand "hostLoadSettings $HOST_NAME" $cleanupidx
     local remoteTmpFile=`$HOST_SSH_COMMAND "mktemp"`
     addCleanupCommand "hostSendCommand \"rm -f \\\"$remoteTmpFile\\\"\"" $cleanupidx
@@ -444,5 +444,5 @@ function hostTCSaveProtocol() {
 # @output   The API version number.
 ##
 function hostAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }

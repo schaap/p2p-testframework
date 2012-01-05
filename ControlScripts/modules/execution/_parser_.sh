@@ -6,7 +6,7 @@
 # @output   The version of this parser.
 ##
 function parseAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }
     
 ##

@@ -113,7 +113,7 @@ function runScenario() {
         testOnly=1
     fi
 
-    local APIVersion=`echo "1.0.3"`
+    local APIVersion=`echo "1.0.4"`
 
     mkdir -p "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/"
     cp "$scenarioFile" "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/scenarioFile"
@@ -666,7 +666,7 @@ function runScenario() {
     echo "Setting up traffic control where requested"
 
     addCleanupScript
-    local scenario_cleanup_tc_script_idx=$?
+    local scenario_cleanup_tc_script_idx=`newCleanupScriptIndex`
     # Since traffic control is rather invasive, don't try and load it before all hosts have been checked.
     for index in `seq 0 $((${#executionhosts[@]} - 1))`; do
         local index__internal__saved=$index
