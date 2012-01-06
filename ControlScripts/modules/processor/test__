@@ -132,5 +132,5 @@ function processorProcessLogs() {
 # @output   The API version number.
 ##
 function processorAPIVersion() {
-    echo "1.0.3"
+    echo "1.0.4"
 }
