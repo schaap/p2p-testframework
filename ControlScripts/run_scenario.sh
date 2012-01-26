@@ -704,16 +704,29 @@ function runScenario() {
     echo "Starting all clients"
 
     # For each execution: fork off a process that will run the client
-    for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
-        local currExec__internal__saved=$currExec
-        executionLoadSettings $currExec
-        executionLoadHost
-        executionLoadClient
-        executionLoadFile
+    if [ $SCENARIO_PARALLEL -eq 1 ]; then
+        for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+            local currExec__internal__saved=$currExec
+            executionLoadSettings $currExec
+            executionLoadHost
+            executionLoadClient
+            executionLoadFile
 
-        ( clientStart ) &
-        currExec=$currExec__internal__saved
-    done
+            ( clientStart ) &
+            currExec=$currExec__internal__saved
+        done
+    else
+        for currExec in `seq 0 $(($EXECUTION_COUNT - 1))`; do
+            local currExec__internal__saved=$currExec
+            executionLoadSettings $currExec
+            executionLoadHost
+            executionLoadClient
+            executionLoadFile
+
+            clientStart
+            currExec=$currExec__internal__saved
+        done
+    fi
 
     echo "Running..."
 
@@ -756,7 +769,11 @@ function runScenario() {
         executionLoadClient
 
         if clientRunning; then
-            ( clientKill ) &
+            if [ $SCENARIO_PARALLEL -eq 1 ]; then
+                ( clientKill ) &
+            else
+                clientKill
+            fi
         fi
         currExec=$currExec__internal__saved
     done

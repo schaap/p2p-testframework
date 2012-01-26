@@ -235,6 +235,7 @@ function run_campaign() {
     LINE_NUMBER=1
     local scenarioLine=0
     SCENARIO_TIMELIMIT=300
+    SCENARIO_PARALLEL=1
     while IFS="" read LINE; do
         if [ "$LINE" = "" ]; then
             LINE_NUMBER=$((LINE_NUMBER + 1))
@@ -264,6 +265,7 @@ function run_campaign() {
             scenarioFiles=( )
             scenarioLine=$LINE_NUMBER
             SCENARIO_TIMELIMIT=300
+            SCENARIO_PARELLEL=1
         else
             # Not a section, so should be a parameter
             local parameterName=`getParameterName "$LINE"`
@@ -306,6 +308,14 @@ function run_campaign() {
                         fail
                     fi
                     scenarioFiles[${#scenarioFiles[@]}]="${file}"
+                    ;;
+                parallel)
+                    # disable parallel handling of clients if it gives trouble
+                    if [ "$parametervalue" = "no" ]; then
+                        SCENARIO_PARELLEL=0
+                    else
+                        SCENARIO_PARALLEL=1
+                    fi
                     ;;
                 # I keep calling it timeout, so I'm guessing that is also/more natural
                 timelimit|timeout)
@@ -359,6 +369,8 @@ function run_campaign() {
         fi
         # Reread the campaign file
         local firstScenario=1
+        SCENARIO_TIMELIMIT=300
+        SCENARIO_PARALLEL=1
         while IFS="" read LINE; do
             if [ "$LINE" = "" ]; then
                 continue
@@ -382,6 +394,8 @@ function run_campaign() {
                     logError "Scenario file \"${LOCAL_TEST_DIR}/scenario-file\" could not be created"
                     fail
                 fi
+                SCENARIO_TIMELIMIT=300
+                SCENARIO_PARELLEL=1
             else
                 # Not a section, so should be a parameter
                 local parameterName=`getParameterName "$LINE"`
@@ -400,6 +414,19 @@ function run_campaign() {
                         fi
                         echo "# ${file}" >> "${LOCAL_TEST_DIR}/scenario-file"
                         cat ${file} | sed -e"s/^[\t ]*//" | sed -e"s/[\t ]*$//" | sed -e"s/#.*//" >> "${LOCAL_TEST_DIR}/scenario-file"
+                        ;;
+                    parallel)
+                        # disable parallel handling of clients if it gives trouble
+                        if [ "$parametervalue" = "no" ]; then
+                            SCENARUI_PARALLEL=0
+                        else
+                            SCENARIO_PARALLEL=1
+                        fi
+                        ;;
+                    # I keep calling it timeout, so I'm guessing that is also/more natural
+                    timelimit|timeout)
+                        # Time limit for the execution of a scenario, in seconds
+                        SCENARIO_TIMELIMIT="$parameterValue"
                         ;;
                     *)
                         # Already logged, just ignore

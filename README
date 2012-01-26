@@ -264,7 +264,8 @@ fake viewer, just outputs some bogus HTML
 parameters:
 - name              -> required, used for creating a scenario specific result directory; hence this should be a valid directory name (not path, just a single name)
 - file              -> required, may be specified multiple times, the scenario files are all concatenated to form a single scenario configuration
-- timelimit         -> optional, defaults to 600, the maximum amount of seconds the scenario's executions may run
+- timelimit         -> optional, defaults to 300, the maximum amount of seconds the scenario's executions may run
+- parallel          -> optional, set to 'no' to disallow the parallel management of clients
 
 = The testing environment and API =
 This is the general design for the testing environment. The environment is written completely in bash scripts. A single script, ControlScripts/run_campaign, provides the entry point for executing tests. This script should be provided with a single argument: the campaign file. The campaign specifies a number of scenarios that will be run.
@@ -475,4 +476,5 @@ Scenarios are built in.
 The following global variables are reserved for the scenario:
 - SCENARIO_NAME                         -> the name of the currently loaded scenario
 - SCENARIO_TIMELIMIT                    -> number of seconds the scenario may run
+- SCENARIO_PARALLEL                     -> 0 iff the scenario is NOT allowed to try managing clients in parallel
 - SCENARIO_*                            -> reserved for scenario settings
