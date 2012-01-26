@@ -196,7 +196,7 @@ function clientPrepareExecution() {
         fail
     fi
 
-    clientPrepareExecution__default "LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:~/lib `hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging `hostGetTestDir`/clients/$CLIENT_NAME `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` $TORRENTFILE $SEEDFILE > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log"
+    clientPrepareExecution__default "LD_LIBRARY_PATH=\$LD_LIBRARY_PATH:~/lib `hostGetTestDir`/clients/$CLIENT_NAME/ut_server_logging `hostGetTestDir`/clients/$CLIENT_NAME `hostGetTestDir`/clients/$CLIENT_NAME/exec_`executionNumber` $TORRENTFILE $SEEDFILE > `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log 2> `hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/errlog.log"
 
     # The default implementation can be used to build the runner script. Do any extra execution specific preparation for your client here.
     # As long as you place thing in the directories mentioned above, everything will be cleaned up.
@@ -243,6 +243,7 @@ function clientCleanupFinal() {
 ##
 function clientRetrieveLogs() {
     hostGetFile "`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/log.log" "$1/log.log"
+    hostGetFile "`hostGetPersistentTestDir`/logs/$CLIENT_NAME/exec_`executionNumber`/errlog.log" "$1/errlog.log"
 }
 
 ##

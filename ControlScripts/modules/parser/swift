@@ -89,6 +89,10 @@ function parserLoadDefaultSettings() {
 # @param    outputDir   The directory on the local machine where parsed logs are to be stored.
 ##
 function parserParseLogs() {
+    if callNonBash "$1" "$2"; then
+        return
+    fi
+
     if [ ! -f "$1/log.log" ]; then
         logError "parser:swift :: Log file $1/log.log does not exist, could not parse it (parser:swift)"
         return

@@ -27,23 +27,38 @@ if [ -z "$3" ]; then
 fi
 
 if [ ! -d "$1" ]; then  
-    echo "Not a dir: \$1"
+    echo "Not a dir: $1"
     exit -1
 fi
 
 if [ ! -d "$2" ]; then  
-    echo "Not a dir: \$2"
+    echo "Not a dir: $2"
     exit -1
 fi
 
 if [ ! -f "$3" ]; then
-    echo "Not a file: \$3"
+    echo "Not a file: $3"
+    exit -1
+fi
+
+if [ -z "$4" ]; then
+    echo "No port: \$4"
+    exit -1
+fi
+
+if ! echo "$4" | grep -E "^[0-9][0-9]*$" > /dev/null; then
+    echo "Not a valid port: $4"
+    exit -1
+fi
+
+if [ "$4" -gt 65535 ]; then
+    echo "Not a valid port: $4"
     exit -1
 fi
 
 useSSL=0
-if [ ! -z "$4" ]; then
-    if [ "$4" != "no" ]; then
+if [ ! -z "$5" ]; then
+    if [ "$5" != "no" ]; then
         useSSL=1
     fi
 fi
@@ -52,25 +67,7 @@ rm -f "$2"/*
 
 cp "$3" "$2/"
 
-PORT=3000
-#while [ $PORT -le 4000 ]; do
-#    (set -C; : > "$1/port_$PORT") 2> /dev/null
-#    # Port already taken by another of my processes?
-#    if [ $? != "0" ]; then
-#        PORT=$(($PORT + 1))
-#        continue
-#    fi
-#    # Port already taken by whomever? (this is a less safer check, which DOES include a race-condition, theoretically, hence the former check)
-#    if netstat -tan | grep -E ":$PORT[[:space:]].*[[:space:]]LISTEN" > /dev/null; then
-#        PORT=$(($PORT + 1))
-#        continue
-#    fi
-#    break
-#done
-#if [ $PORT -gt 4000 ]; then
-#    echo "No open port found"
-#    exit -1
-#fi
+PORT=$4
 
 echo "server.document-root = \"$2\"" >> "$2/lighttpd.conf"
 echo "server.port = $PORT" >> "$2/lighttpd.conf"

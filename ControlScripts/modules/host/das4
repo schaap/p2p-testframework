@@ -3,25 +3,29 @@
 #
 # A DAS4 implementation of the host API.
 # Parameters added by this module:
-# - headNode        The hostname of the DAS4 host to SSH to. Optional, if left out the module will try and determine
-#                   which network you're on and use the local entry node. If you're not on one of the networks of
-#                   the institutes hosting DAS4, this will give an error.
-#                   The automated test uses dig -x for a reverse lookup on any inet address found in ifconfig, except
-#                   127.0.0.1, and tries to see if it's in one of the following networks:
-#                       .vu.nl      fs0.das4.cs.vu.nl
-#                       .liacs.nl   fs1.das4.liacs.nl
-#                       .uva.nl     fs4.das4.science.uva.nl         (fs2.das4.science.uva.nl is never chosen here)
-#                       .tudelft.nl fs3.das4.tudelft.nl
-#                       .atron.nl   fs5.das4.astron.nl
-#                   The headnode chosen is also shown here. You can give either of these headnodes as the value of
-#                   the headNode parameter.
-# - nNodes          The number of nodes to request, a positive integer. Optional, defaults to 2.
-# - reserveTime     A positive number of seconds to reserve the nodes; note that you should take into account that
-#                   the nodes will be reserved during setup, so some setup steps can still occur between reservation
-#                   and the actual running of the test scenario. It is recommended to reserve the nodes for a few
-#                   minutes more than the maximum execution time of the scenario. Optional, defaults to 900.
-# - user            The username to use for logging in on the DAS4 system. Required.
-# - params          Extra parameters to pass on to SSH when logging in on the DAS4. Optional.
+# - headNode            The hostname of the DAS4 host to SSH to. Optional, if left out the module will try and determine
+#                       which network you're on and use the local entry node. If you're not on one of the networks of
+#                       the institutes hosting DAS4, this will give an error.
+#                       The automated test uses dig -x for a reverse lookup on any inet address found in ifconfig, except
+#                       127.0.0.1, and tries to see if it's in one of the following networks:
+#                           .vu.nl      fs0.das4.cs.vu.nl
+#                           .liacs.nl   fs1.das4.liacs.nl
+#                           .uva.nl     fs4.das4.science.uva.nl         (fs2.das4.science.uva.nl is never chosen here)
+#                           .tudelft.nl fs3.das4.tudelft.nl
+#                           .atron.nl   fs5.das4.astron.nl
+#                       The headnode chosen is also shown here. You can give either of these headnodes as the value of
+#                       the headNode parameter.
+# - nNodes              The number of nodes to request, a positive integer. Optional, defaults to 2.
+# - reserveTime         A positive number of seconds to reserve the nodes; note that you should take into account that
+#                       the nodes will be reserved during setup, so some setup steps can still occur between reservation
+#                       and the actual running of the test scenario. It is recommended to reserve the nodes for a few
+#                       minutes more than the maximum execution time of the scenario. Optional, defaults to 900.
+# - user                The username to use for logging in on the DAS4 system. Required.
+# - params              Extra parameters to pass on to SSH when logging in on the DAS4. Optional.
+# - headNodeOverride    Set to anything but "" to override the validity checks on the headNode parameter. Set this
+#                       parameter BEFORE setting the headNode parameter to have it go into effect (this parameter is
+#                       not saved and only used during initialization). Use this for custom headNodes or to bypass DNS
+#                       lookups by providing the IP of the headnode. Optional.
 #
 # Requirements of the DAS4 module:
 # - You must be able to use SSH from the specified (or selected) headnode to the other nodes without interaction (i.e. passwordless)
@@ -64,6 +68,7 @@ function hostReadSettings() {
     HOST_DAS4_RESERVETIME=""
     HOST_DAS4_USER=""
     HOST_DAS4_PARAMS=""
+    HOST_DAS4_HEADNODE_OVERRIDE=0
     # Parse all parameters
     while IFS="" read LINE; do
         if [ "" = "$LINE" ]; then
@@ -84,12 +89,23 @@ function hostReadSettings() {
                     logError "host:das4 :: A headnode has already been given for host $HOST_NAME: \"$HOST_DAS4_HEADNODE\" (line $LINE_NUMBER)."
                     return 1
                 fi
-                if [ "$parameterValue" = "fs0.das4.cs.vu.nl" -o "$parameterValue" = "fs1.das4.liacs.nl" -o "$parameterValue" = "fs2.das4.science.uva.nl" -o "$parameterValue" = "fs3.das4.tudelft.nl" -o "$parameterValue" = "fs4.das4.science.uva.nl" -o "$parameterValue" = "fs5.das4.astron.nl" ]; then
-                    HOST_DAS4_HEADNODE="$parameterValue"
+                if [ $HOST_DAS4_HEADNODE_OVERRIDE -eq 0 ]; then
+                    if [ "$parameterValue" = "fs0.das4.cs.vu.nl" -o "$parameterValue" = "fs1.das4.liacs.nl" -o "$parameterValue" = "fs2.das4.science.uva.nl" -o "$parameterValue" = "fs3.das4.tudelft.nl" -o "$parameterValue" = "fs4.das4.science.uva.nl" -o "$parameterValue" = "fs5.das4.astron.nl" ]; then
+                        HOST_DAS4_HEADNODE="$parameterValue"
+                    else
+                        logError "host:das4 :: The host \"$parameterValue\" is not a headnode of DAS4. Please use fs0.das4.cs.vu.nl, fs1.das4.liacs.nl, fs2.das4.science.uva.nl, fs3.das4.tudelft.nl, fs4.das4.science.uva.nl or fs5.das4.astron.nl (line $LINE_NUMBER)."
+                        return 1
+                    fi
                 else
-                    logError "host:das4 :: The host \"$parameterValue\" is not a headnode of DAS4. Please use fs0.das4.cs.vu.nl, fs1.das4.liacs.nl, fs2.das4.science.uva.nl, fs3.das4.tudelft.nl, fs4.das4.science.uva.nl or fs5.das4.astron.nl (line $LINE_NUMBER)."
-                    return 1
+                    HOST_DAS4_HEADNODE="$parameterValue"
                 fi
+                ;;
+            headNodeOverride)
+                if [ ! -z "$parameterValue" ]; then
+                    HOST_DAS4_HEADNODE_OVERRIDE=1
+                else
+                    HOST_DAS4_HEADNODE_OVERRIDE=0
+                fi;
                 ;;
             nNodes)
                 if [ ! -z "$HOST_DAS4_NNODES" ]; then
@@ -625,7 +641,7 @@ function hostPrepare() {
     while [ $index -lt $EXECUTION_COUNT ]; do
         executionLoadSettings $index
         if [ "$EXECUTION_HOST" = "$HOST_NAME" ]; then
-            theexecs[${#theexec[@]}]=$index
+            theexecs[${#theexecs[@]}]=$index
         fi
         index=$(($index + 1))
     done

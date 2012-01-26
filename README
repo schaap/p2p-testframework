@@ -307,6 +307,7 @@ The following global API is available:
 - createTempDir                         -> create a local temporary directory in a way that is safe with regard to signals (such as when the user presses Ctrl+C during a test run)
 - createRemoteTempFile basedir          -> create a remote temporary file, potentially under a given base directory, in a portable way
 - createRemoteTempDir basedir           -> create a remote temporary directory, potentially under a given base directory, in a portable way
+- callNonBash                           -> try and call a non-bash handler for the current function; please read the function's documentation carefully before using
 Some variables in the global API may be specified in the environment in which the test environment is started, in order to override the automated default behaviour:
 - LOCAL_TEST_DIR
 - TEST_ENV_DIR

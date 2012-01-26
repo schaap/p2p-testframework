@@ -115,6 +115,8 @@ function runScenario() {
 
     local APIVersion=`echo "1.0.4"`
 
+    loadFunctionsScript "non-bash.sh"
+
     mkdir -p "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/"
     cp "$scenarioFile" "${CAMPAIGN_RESULTS_DIR}/scenarios/$SCENARIO_NAME/scenarioFile"
 
@@ -127,6 +129,7 @@ function runScenario() {
     local sectionName=""
     local currLineNumer=0
     EXECUTION_COUNT=0
+    EXECUTION_NUMBER=""
     PROCESSOR_COUNT=0
     VIEWER_COUNT=0
     HOSTS=""
@@ -708,7 +711,7 @@ function runScenario() {
         executionLoadClient
         executionLoadFile
 
-        clientStart &
+        ( clientStart ) &
         currExec=$currExec__internal__saved
     done
 
@@ -753,7 +756,7 @@ function runScenario() {
         executionLoadClient
 
         if clientRunning; then
-            clientKill
+            ( clientKill ) &
         fi
         currExec=$currExec__internal__saved
     done

@@ -89,6 +89,10 @@ function parserLoadDefaultSettings() {
 # @param    outputDir   The directory on the local machine where parsed logs are to be stored.
 ##
 function parserParseLogs() {
+    if callNonBash "$1" "$2"; then
+        return
+    fi
+
     if [ ! -f "$1/log.log" ]; then
         logError "parser:utorrent :: Parser $PARSER_NAME expected log file \"$1/log.log\", but it's not there."
         fail

@@ -27,23 +27,23 @@ if [ -z "$3" ]; then
 fi
 
 if [ ! -d "$1" ]; then  
-    echo "Not a dir: \$1"
+    echo "Not a dir: $1"
     exit -1
 fi
 
 if [ ! -d "$2" ]; then  
-    echo "Not a dir: \$2"
+    echo "Not a dir: $2"
     exit -1
 fi
 
 if [ ! -f "$3" ]; then
-    echo "Not a file: \$3"
+    echo "Not a file: $3"
     exit -1
 fi
 
 if [ ! -z "$4" ]; then
     if [ ! -f "$4" ]; then
-        echo "Not a file: \$4"
+        echo "Not a file: $4"
         exit -1
     fi
 fi
@@ -60,6 +60,7 @@ if [ ! -z "$4" ]; then
 fi
 
 mkdir -p "$2/torrents"
+mkdir -p "$2/.wine"
 
 PORT=6881
 WEBPORT=8080
@@ -96,6 +97,7 @@ sed -i -e "s/8090/$WEBPORT/" "$2/settings.dat"
 # echo "dir_active: $2/" >> "$2/utserver.conf"
 full_dir_path=`cd $2; pwd`
 active_dir=`echo "z:$full_dir_path/" | sed -e "s@/@\\\\\\\\\\\\\@g"`
+log_dir="$active_dir"
 active_dir_for_count=`echo "z:$full_dir_path/" | sed -e "s@/@\\\\\\\\@g"`
 sed -i -e "s/14:c:\\\\blabladata\\\\/${#active_dir_for_count}:$active_dir/" "$2/settings.dat"
 # 10:c:\blabla\
@@ -111,9 +113,12 @@ cd $2
 cp $utpath/utorrent.exe .
 HOMEDIR=`cd ~; pwd`
 PATH="$PATH:$HOMEDIR/bin"
-xvfb-run wine utorrent.exe /noinstall &
+WINEPREFIX="$2/.wine" xvfb-run -a wine utorrent.exe /noinstall /logfile "$log_dir\\ut_log.log" &
 pid=$!
 echo $pid > "$2/utserver.pid"
+( echo $pid >&2 ) > /dev/null
+( kill -0 $pid >&2 ) > /dev/null
+( echo "$PORT $WEBPORT" >&2 ) > /dev/null
 
 date +"%s.%09N"
 
@@ -180,5 +185,7 @@ while [ $going -eq 1 ]; do
     fi
     sleep 1
 done
+
+( cat "$2/ut_log.log" >&2 ) > /dev/null
 
 kill $pid

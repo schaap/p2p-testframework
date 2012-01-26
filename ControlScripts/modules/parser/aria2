@@ -89,6 +89,10 @@ function parserLoadDefaultSettings() {
 # @param    outputDir   The directory on the local machine where parsed logs are to be stored.
 ##
 function parserParseLogs() {
+    if callNonBash "$1" "$2"; then
+        return
+    fi
+
     if [ ! -f "$1/log.log" ]; then
         logError "parser:aria2 :: Parser $PARSER_NAME expected log file \"$1/log.log\", but it's not there."
         fail
@@ -197,13 +201,13 @@ function parserParseLogs() {
             continue
         fi
 
-        if echo "$LINE" | grep -E "^\[\#1 SIZE:[0-9]*B/[0-9]*B\([0-9]*%\) CN:[0-9]* SPD:[0-9]*Bs ETA:[0-9]*s\]$" > /dev/null; then
-            currSize=`echo "$LINE" | sed -e "s/^\[\#1 SIZE:\([0-9]*\)B\/[0-9]*B([0-9]*%) CN:[0-9]* SPD:[0-9]*Bs ETA:[0-9]*s\]$/\\1/"`
-            totalSize=`echo "$LINE" | sed -e "s/^\[\#1 SIZE:[0-9]*B\/\([0-9]*\)B([0-9]*%) CN:[0-9]* SPD:[0-9]*Bs ETA:[0-9]*s\]$/\\1/"`
+        if echo "$LINE" | grep -E "^\[\#1 SIZE:[0-9]*B/[0-9]*B\([0-9]*%\) CN:[0-9]* SPD:[0-9]*Bs ETA:.*s\]$" > /dev/null; then
+            currSize=`echo "$LINE" | sed -e "s/^\[\#1 SIZE:\([0-9]*\)B\/[0-9]*B([0-9]*%) CN:[0-9]* SPD:[0-9]*Bs ETA:.*s\]$/\\1/"`
+            totalSize=`echo "$LINE" | sed -e "s/^\[\#1 SIZE:[0-9]*B\/\([0-9]*\)B([0-9]*%) CN:[0-9]* SPD:[0-9]*Bs ETA:.*s\]$/\\1/"`
             percentDone=`echo "scale=4; 100.0*($currSize / $totalSize)" | bc`
 
             upspeed="0"
-            downspeed=`echo "$LINE" | sed -e "s/^\[\#1 SIZE:[0-9]*B\/[0-9]*B([0-9]*%) CN:[0-9]* SPD:\([0-9]*\)Bs ETA:[0-9]*s\]$/\\1/"`
+            downspeed=`echo "$LINE" | sed -e "s/^\[\#1 SIZE:[0-9]*B\/[0-9]*B([0-9]*%) CN:[0-9]* SPD:\([0-9]*\)Bs ETA:.*s\]$/\\1/"`
             downspeed=`echo "scale=4; ($downspeed / 1024.0)" | bc`
 
             echo "$relTime $percentDone $upspeed $downspeed" >> "$2/log.data"
