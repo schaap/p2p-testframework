@@ -25,7 +25,7 @@ def getSectionName( str ):
     if not re.match( "\[.*\].", str ) is None:
         raise Exception( "Found garbage after section header on line {0}".format( Campaign.currentLineNumber ) )
     if not re.match( "\[.*\s.*\]", str ) is None:
-        raise Exception( "Section names are not allowd to have whitespace in them (line {0})".format( Campaign.currentLineNumber )
+        raise Exception( "Section names are not allowd to have whitespace in them (line {0})".format( Campaign.currentLineNumber ) )
     if str == '[]':
         raise Exception( "Empty section name on line {0}".format( Campaign.currentLineNumber ) )
     return str[1:-1]
@@ -44,7 +44,7 @@ def getParameterName( str ):
     if m is None:
         raise Exception( "Malformed parameter on line {0}".format( Campaign.currentLineNumber ) )
     if not re.match( ".*\s.*", m.group(1) ) is None:
-        raise Exception( "Parameter names are not allowed to have whitespace in them (line {0})".format( Campaign.currentLineNumber )
+        raise Exception( "Parameter names are not allowed to have whitespace in them (line {0})".format( Campaign.currentLineNumber ) )
     return m.group(1)
 
 def getParameterValue( str ):

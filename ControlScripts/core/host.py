@@ -84,7 +84,7 @@ class host:
                 parseError( 'Name already set: {0}'.format( self.name ) )
             if not isValidName( value ):
                 parseError( '"{0}" is not a valid name'.format( value ) )
-            if value in self.scenario.getObjectsDict():
+            if value in self.scenario.getObjectsDict('host'):
                 parseError( 'Host object called {0} already exists'.format( value ) )
             self.name = value
         elif key == 'preparation':

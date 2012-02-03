@@ -92,7 +92,7 @@ class BusyExecutionThread(threading.Thread):
             self.doTask()
         except Exception exc:
             self.raisedException = exc
-            logger.log( "Exception while running task in class {3} for execution with client {0} on host {1}: {2}".format( self.execution.client.getName(), self.execution.host.getName(), exc.__str__(), self.__class__.__name__ ) )
+            logger.log( "Exception while running task in class {3} for execution with client {0} on host {1}: {2}".format( self.execution.client.name, self.execution.host.name, exc.__str__(), self.__class__.__name__ ) )
             logger.exceptionTraceback()
         finally:
             self.busy = False
@@ -109,7 +109,7 @@ class BusyExecutionThread(threading.Thread):
         return self.raisedException
 
     def __str__(self):
-        return "Task thread type {2} for execution with client {0} on host {1}".format( self.execution.client.getName(), self.execution.host.getName(), self.__class__.__name__ );
+        return "Task thread type {2} for execution with client {0} on host {1}".format( self.execution.client.name, self.execution.host.name, self.__class__.__name__ );
 
 class ClientRunner(BusyThread):
     """Simple runner for client.start()"""
@@ -231,7 +231,7 @@ class ScenarioRunner:
                 # Create the object and have it parse the settings
                 if obj is not None:
                     obj.checkSettings()
-                    self.objects[obj.moduleType][obj.getName()] = obj
+                    self.objects[obj.moduleType][obj.name] = obj
                 objectLine = Campaign.currentLineNumber
                 objectClass = loadModule( getModuleType( getSectionName( line ) ), getSubModuleType( getSectionName( line ) )
                 obj = objectClass()
@@ -244,7 +244,7 @@ class ScenarioRunner:
         if obj is None:
             raise Exception( "No objects found in scenario {0}".format( self.name ) )
         obj.checkSettings()
-        self.objects[obj.moduleType][obj.getName()] = obj
+        self.objects[obj.moduleType][obj.name] = obj
 
         # Check sanity
         if len( self.getObjects('execution') ) == 0:
@@ -255,14 +255,14 @@ class ScenarioRunner:
         directionstring = ''
         if direction != '':
             directionstring = direction + ' '
-        logger.log( "Host {0} could not initiate restricted {1}traffic control, falling back to unrestricted traffic control.".format( host.getName(), directionstring ) )
+        logger.log( "Host {0} could not initiate restricted {1}traffic control, falling back to unrestricted traffic control.".format( host.name, directionstring ) )
         self.unrestrictedWarning( host, direction )
 
     def unrestrictedTCWarning(self, host, direction):
         """Log a warning about using unrestricted traffic control on the given host in the given direction."""
         if direction != '':
             direction = direction + ' '
-        logger.log( "Warning: using unrestricted traffic control for {1}traffic on host {0}. If the commanding host (i.e. your terminal) is also part of the nodes you configured for testing, then this WILL cause trouble.".format( host.getName(), direction ) )
+        logger.log( "Warning: using unrestricted traffic control for {1}traffic on host {0}. If the commanding host (i.e. your terminal) is also part of the nodes you configured for testing, then this WILL cause trouble.".format( host.name, direction ) )
 
     def setup(self, testRun = False):
         """
@@ -291,7 +291,7 @@ class ScenarioRunner:
             if host.tc != '':
                 # Sanity check: refuse to enable traffic control on the commanding host
                 if host.getSubnet() == '127.0.0.1' or host.getSubnet() == 'localhost':
-                    raise Exception( "Refusing to enable traffic control on local host {0}. This would be a very, very bad idea. Please only use traffic control when commanding a number of remote hosts not including the commanding host.".format( host.getName() ) )
+                    raise Exception( "Refusing to enable traffic control on local host {0}. This would be a very, very bad idea. Please only use traffic control when commanding a number of remote hosts not including the commanding host.".format( host.name ) )
                 # Figure out how to set up TC for this host
                 tcinbound = 1       # 0 = none, 1 = restricted, 2 = full
                 tcoutbound = 1      # 0 = none, 1 = restricted, 2 = full
@@ -310,17 +310,17 @@ class ScenarioRunner:
                         host.tcProtocol = client.trafficProtocol()
                     elif host.tcProtocol != client.trafficProtocol():
                         # TC at this point only supports restricted control on one protocol
-                        logger.log( "Restricted traffic control using multiple protocols is not supported. Falling back to unrestricted traffic control on host {0}.".format( host.getName() ) )
+                        logger.log( "Restricted traffic control using multiple protocols is not supported. Falling back to unrestricted traffic control on host {0}.".format( host.name ) )
                         tcinbound *= 2
                         tcoutbound *= 2
                     if tcinbound == 1:
                         if len(client.trafficInboundPorts()) == 0:
-                            logger.log( "Client {0} can't have restricted inbound traffic control. Falling back to unrestricted inbound traffic control on host {1}.".format( client.getName(), host.getName() ) )
+                            logger.log( "Client {0} can't have restricted inbound traffic control. Falling back to unrestricted inbound traffic control on host {1}.".format( client.name, host.name ) )
                             tcinbound = 2
                         inboundrestrictedlist += client.trafficInboundPorts()
                     if tcoutbound == 1:
                         if len(client.trafficOutboundPorts()) == 0:
-                            logger.log( "Client {0} can't have restricted outbound traffic control. Falling back to unrestricted outbound traffic control on host {1}.".format( client.getName(), host.getName() ) )
+                            logger.log( "Client {0} can't have restricted outbound traffic control. Falling back to unrestricted outbound traffic control on host {1}.".format( client.name, host.name ) )
                             tcoutbound = 2
                         outboundrestrictedlist += client.trafficOutboundPorts()
                     if tcoutbound != 1 and tcinbound != 1:
@@ -356,17 +356,17 @@ class ScenarioRunner:
                                     if host.tcObj.check(host):
                                         self.fallbackWarning( host, '' )
                                     else:
-                                        raise Exception( "Host {0} could not initiate restricted or unrestricted traffic control, but traffic control was requested.".format( host.getName() ) )
+                                        raise Exception( "Host {0} could not initiate restricted or unrestricted traffic control, but traffic control was requested.".format( host.name ) )
                             else:
-                                raise Exception( "Host {0} could not initiate restricted or unrestricted inbound traffic control, but traffic control was requested.".format( host.getName() ) )
+                                raise Exception( "Host {0} could not initiate restricted or unrestricted inbound traffic control, but traffic control was requested.".format( host.name ) )
                     elif host.tcOutboundPortList != -1 and host.tcOutboundPortList != []:
                         host.tcOutboundPortList = -1
                         if host.tcObj.check(host):
                             self.fallbackWarning( host, 'outbound' )
                         else:
-                            raise Exception( "Host {0} could not initiate restricted or unrestricted outbound traffic control, but traffic control was requested.".format( host.getName() ) )
+                            raise Exception( "Host {0} could not initiate restricted or unrestricted outbound traffic control, but traffic control was requested.".format( host.name ) )
                     else:
-                        raise Exception( "Host {0} could not initiate the requested traffic control.".format( host.getName() ) )
+                        raise Exception( "Host {0} could not initiate the requested traffic control.".format( host.name ) )
             # If we've reached this point, then we have a succeeding tc.check(), unless no TC was requested at all
 
             # If we're not just testing: prepare clients for this host
@@ -442,7 +442,7 @@ class ScenarioRunner:
                 if thread.isAlive():
                     thread.join( 60 )
                     if thread.isAlive():
-                        logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.getName(), thread.execution.host.getName() ) )
+                        logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
         else:
             for thread in killThreads:
                 thread.run()
@@ -461,7 +461,7 @@ class ScenarioRunner:
         """
         logThreads = []
         for execution in self.objects['execution']:
-            execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.getName() ) )
+            execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.name ) )
             makedirs( os.path.join( execdir, 'logs' ) )
             makedirs( os.path.join( execdir, 'parsedLogs' ) )
             logThreads = LogProcessor( execution )
@@ -474,7 +474,7 @@ class ScenarioRunner:
                 if thread.isAlive():
                     thread.join( 60 )
                     if thread.isAlive():
-                        logger.log( "Warning! A log processor wasn't done after 60 seconds: {0}".format( thread.execution.client.getName() ) )
+                        logger.log( "Warning! A log processor wasn't done after 60 seconds: {0}".format( thread.execution.client.name ) )
         else:
             for thread in logThreads:
                 thread.run()
