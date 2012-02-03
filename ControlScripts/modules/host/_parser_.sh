@@ -291,7 +291,7 @@ function parseSettings() {
                 failScenarioFile "$6"
             else
                 local RATE="$HOST_TC_DOWN"
-                local BURST="$EXCEUTION_TC_DOWN_BURST"
+                local BURST="$HOST_TC_DOWN_BURST"
                 if echo "$RATE" | grep "kbit"; then
                     RATE=$((`echo "$RATE" | sed -e "s/kbit//"` * 1024))
                 fi
@@ -319,7 +319,7 @@ function parseSettings() {
                 failScenarioFile "$6"
             else
                 local RATE="$HOST_TC_UP"
-                local BURST="$EXCEUTION_TC_UP_BURST"
+                local BURST="$HOST_TC_UP_BURST"
                 if echo "$RATE" | grep "kbit"; then
                     RATE=$((`echo "$RATE" | sed -e "s/kbit//"` * 1024))
                 fi
