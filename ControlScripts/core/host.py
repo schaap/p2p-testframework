@@ -28,10 +28,6 @@ class host:
     Also please note that any attribute starting with tc is reserved for traffic control settings.
     """
 
-    scenario = None             # The ScenarioRunner this object is part of
-    name = ''                   # String containing the name of this object; unique among all hosts
-    declarationLine = -1        # Line number of the declaration of this host object, read during __init__
-
     remoteDirectory = None      # String with the path on the remote host to a directory where test data can be stored
     tempDirectory = None        # String with the path on the remote host to a temporary directory; this should be removed during cleanup
 
@@ -52,15 +48,6 @@ class host:
     tcInboundPortList = []      # The list of incoming ports that will be restricted using TC; [] for no restrictions, -1 for all ports
     tcOutboundPortList = []     # The list of outgoing ports that will be restricted using TC; [] for no restrictions, -1 for all ports
     tcProtocol = ''             # The name of the protocol on which port-based restrictions will be placed, '' for multi-protocol (tcInboundPortList or tcOutboundPortList will be -1 in this case)
-
-    def __init__(self, scenario):
-        """
-        Initialization of a generic host object.
-        
-        @param  scenario        The ScenarioRunner object this host object is part of.
-        """
-        self.scenario = scenario
-        self.declarationLine = Campaign.currentLineNumber
 
     def parseSetting(self, key, value):
         """
@@ -297,6 +284,8 @@ class host:
         Subclassers are advised to make sure self.sendCommand() will function correctly and then to call this
         implementation followed by any other steps they need to take themselves.
         """
+        if self.isInCleanup():
+            return
         if not self.remoteDirectory:
             self.tempDirectory = self.sendCommand( 'mktemp -d' )
             if self.tempDirectory == '' or self.sendCommand( '[ -d {0} ] || echo "E"'.format( self.tempDirectory ) ) == 'E':
@@ -311,7 +300,10 @@ class host:
         The default implementation removes the remote temporary directory, if one was created.
 
         Subclassers are advised to first call this implementation and then proceed with their own steps.
+        Whatever is done, however, it is important to call coreObject.cleanup(self) as soon as possible; this
+        implementation starts with that call (which may be made multiple times without harm).
         """
+        coreObject.cleanup(self)
         if self.tempDirectory:
             self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ) )
             if self.sendCommand( '[ -d {0} ] || echo "E"'.format( self.tempDirectory ) ) != 'E':

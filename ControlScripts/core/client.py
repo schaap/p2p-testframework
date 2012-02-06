@@ -1,3 +1,8 @@
+import tempfile
+import os
+import stat
+import threading
+
 from core.parsing import *
 from core.campaign import Campaign
 
@@ -14,10 +19,6 @@ class client:
     When subclassing client be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
-    scenario = None             # The ScenarioRunner this object is part of
-    name = ''                   # String containing the name of this object; unique among all hosts
-    declarationLine = -1        # Line number of the declaration of this host object, read during __init__
-
     extraParameters = ''        # String with extra parameters to be passed on to the client
     defaultParser = None        # String with the name of the parser object to be used with this client if no other parser is given in the execution; defaults to None which will use the default parser for the client (which is the parser module named the same as the client, with the default settings of that module)
 
@@ -28,6 +29,9 @@ class client:
 
     builderObj = None           # The instance of the builder module requested
     sourceObj = None            # The instance of the source module requested
+
+    pids{} = None               # The process IDs of the running clients (dictionary execution-number->PID)
+    pid__lock = None            # Lock object to guard the pids dictionary
 
     # For more clarity: the way source, isRemote, location and builder work together is as follows.
     #
@@ -50,8 +54,8 @@ class client:
 
         @param  scenario        The ScenarioRunner object this client object is part of.
         """
-        self.scenario = scenario
-        self.declarationLine = Campaign.currentLineNumber
+        coreObject.__init__(self, scenario)
+        self.pid__lock = threading.Lock()
 
     def parseSetting(self, key, value):
         """
@@ -152,8 +156,22 @@ class client:
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.
+
+        This implementation takes care of local compilation of the client, if needed.
         """
-        pass
+        # Build the client if it is to be built locally
+        if self.isInCleanup():
+            return
+        if not self.isRemote:
+            if self.builder:
+                # Only say we're compiling if a builder was given
+                print "Locally compiling client {0}".format( self.name )
+            if not self.sourceObj.prepareLocal( self ):
+                raise Exception( "The source of client {0} could not be prepared locally".format( self.name ) )
+            if self.isInCleanup():
+                return
+            if not self.builderObj.buildLocal( self ):
+                raise Exception( "A local build of client {0} failed".format( self.name ) )
 
     def prepareHost(self, host):
         """
@@ -164,20 +182,161 @@ class client:
         Note that the sendToHost and sendToSeedingHost methods of the file objects have not been called, yet.
         This means that any data files are not available.
 
+        This implementation takes care of creating client specific directories on the host, as well as compilation
+        of the client, if needed.
+
         @param  host            The host on which to prepare the client.
         """
-        pass
+        if self.isInCleanup():
+            return
+        # Create client specific directories
+        host.sendCommand( 'mkdir -p "{0}/clients/{2}"; mkdir -p "{0}/logs/{2}"; mkdir -p "{1}/clients/{2}"; mkdir -p "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ) )
+        # Build the client if it is to be built remotely
+        if self.isRemote:
+            if self.isInCleanup():
+                return
+            if self.builder:
+                # Only say we're compiling if a builder was given
+                print "Remotely compiling client {0}".format( self.name )
+            if not self.sourceObj.prepareRemote( self, host ):
+                raise Exception( "The source of client {0} could not be prepared remotely on host {1}".format( self.name, host.name ) )
+            if self.isInCleanup():
+                return
+            if not self.builderObj.buildRemote( self, host ):
+                raise Exception( "A remote build of client {0} failed on host {1}".format( self.name, host.name ) )
 
-    def prepareExecution(self, execution):
+    def getClientDir(self, host, persistent = False):
+        """
+        Convenience function that constructs the path to the test directory of the client on the remote host.
+
+        This is the directory where client-specific temporary data, irrespective of execution, should be stored.
+
+        @param  host            The remote host for to construct the path.
+        @param  persistent      Set to True to get the persistent test directory (default: False).
+
+        @return The path to the client test directory on the remote host.
+        """
+        if persistent:
+            return "{0}/clients/{1}".format( host.getPersistentTestDir(), self.name )
+        else:
+            return "{0}/clients/{1}".format( host.getTestDir(), self.name )
+
+    def getLogDir(self, host, persistent = True):
+        """
+        Convenience function that constructs the path to the log directory of the client on the remote host.
+
+        This is the directory where client-specific logs, irrespective of execution, should be stored.
+
+        @param  host            The remote host for to construct the path.
+        @param  persistent      Set to True to get the persistent log directory (default: True).
+
+        @return The path to the log directory on the remote host.
+        """
+        if persistent:
+            return "{0}/logs/{1}".format( host.getPersistentTestDir(), self.name )
+        else:
+            return "{0}/logs/{1}".format( host.getTestDir(), self.name )
+
+    def getExecutionClientDir(self, execution, persistent = False):
+        """
+        Convenience function that constructs the path to the test directory of the execution on the remote host.
+
+        This is the directory where client/execution-specific temporary data should be stored.
+
+        @param  execution       The execution for which to construct the path.
+        @param  persistent      Set to True to get the persistent test directory (default: False).
+
+        @return The path to the execution test directory on the remote host.
+        """
+        if persistent:
+            return "{0}/clients/{1}/exec_{2}".format( execution.host.getPersistentTestDir(), self.name, execution.getNumber() )
+        else:
+            return "{0}/clients/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
+
+    def getExecutionLogDir(self, execution, persistent = True):
+        """
+        Convenience function that constructs the path to the log directory of the execution on the remote host.
+
+        This is the directory where client/execution-specific logs should be stored.
+
+        @param  execution       The execution for which to construct the path.
+        @param  persistent      Set to True to get the persistent test directory (default: True).
+
+        @return The path to the execution log directory on the remote host.
+        """
+        if persistent:
+            return "{0}/logs/{1}/exec_{2}".format( execution.host.getPersistentTestDir(), self.name, execution.getNumber() )
+        else:
+            return "{0}/logs/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
+
+    def prepareExecution(self, execution, simpleCommandLine = None, complexCommandLine = None):
         """
         Client specific preparations for a specific execution.
 
         If any scripts for running the client on the host are needed, this is the place to build them.
         Be sure to take self.extraParameters into account, in that case.
 
-        @param  execution       The execution to prepare this client for.
+        This implementation will create the client/execution specific directories.
+
+        If one wishes, a client runner script can also be created for use with start() later on.
+        To use this, fill in either the simpleCommandLine or complexCommandLine parameters. Not both!
+        A client runner script will always start with changing directory to the directory where the client will
+        reside on the remote host. Note that this directory is not necessarily the same directory where results
+        or data should be stored. Those directories can be found via getClientDir(...), getLogDir(...),
+        getExecutionClientDir(...) and getExecutionLogDir(...). The client runner script will be placed on the
+        remote host as "{0}/clientRunnerScript".format( self.getExecutionClientDir( execution ) ) )
+        
+        The simpleCommandLine should be a single command that will be running for the duration of your client, e.g.:
+            ./myClientBinary
+        This can be prefixed with simple command that have a short duration, such as:
+            mkdir dataDir; touch dataDir/fileToBeDownloaded; ./myClientBinary
+        The simple command will be postfixed with an & to push the last command in the simpleCommandLine parameter
+        to the background of the shell (in both examples myClientBinary would be running in the background, the
+        mkdir and touch commands would be running in the foreground which is why they should be quick).
+
+        If you need for more complex operations to be performed before your final client launch, or your client
+        is made up of multiple phases of execution, then use the complexCommandLine parameter. An example:
+            ./myClientBinaryLeechPart; ./myClientBinarySeedPart
+        This example would be for an imaginary client that is first started to leech, and finishes as soon as it's
+        done leeching (but leeching *does* take quite some time). Then the client is started again to start seeding.
+        For the complexCommandLine the whole will be run in a subshell. Take into account that it's possible that
+        only part of your command line is actually executed; as an example the framework could decide to stop all
+        executions while the imaginary client is still leeching. The subshell is stopped, which in turn will stop
+        the leeching client. The seeding client will never be run.
+
+        @param  execution           The execution to prepare this client for.
+        @param  simpleCommandLine   Fill in to have a client runner script ready with a simple command.
+        @param  complexCommandLine  Fill in to have a client runner script ready with a complex command.
         """
-        pass
+        if self.isInCleanup():
+            return
+        # Create client/execution specific directories
+        host.sendCommand( 'mkdir -p "{0}/clients/{2}/exec_{3}"; mkdir -p "{0}/logs/{2}/exec_{3}"; mkdir -p "{1}/clients/{2}/exec_{3}"; mkdir -p "{1}/logs/{2}/exec_{3}"'.format( execution.host.getTestDir(), execution.host.getPersistentTestDir(), self.name, execution.getNumber() ) )
+
+        # Build runner script, if requested
+        if simpleCommandLine or complexCommandLine:
+            if self.isInCleanup():
+                return
+            if simpleCommandLine and complexCommandLine:
+                raise Exception( "The documentation explicitly states: do NOT use both simpleCommandLine and complexCommandLine together." )
+            crf, clientRunner = tempfile.mkstemp()
+            fileObj = os.fdopen( crf )
+            remoteClientDir = self.getClientDir( execution.host )
+            if self.isRemote:
+                remoteClientDir = self.sourceObj.getRemoteLocation()
+            fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) );
+            if simpleCommandLine:
+                fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
+            else:
+                fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
+            fileObj.write( 'echo $!\n' );
+            fileObj.close()
+            os.chmod( clientRunner, os.stat( self.clientRunner ).st_mode | stat.s_IXUSR )
+            if self.isInCleanup():
+                os.remove( clientRunner )
+                return
+            execution.host.sendFile( clientRunner, "{0}/clientRunnerScript".format( self.getExecutionClientDir( execution ) ) )
+            os.remove( clientRunner )
 
     def start(self, execution):
         """
@@ -186,26 +345,70 @@ class client:
         All necessary files are already available on the host at this point.
         Be sure to take self.extraParameters into account, here.
 
+        This implementation simply tries and run the client runner script. If you didn't give a command line to
+        prepareExecution(...) or didn't provide a script in the location indicated by the documentation of
+        prepareExecution(...), be sure to provide your own implementation.
+
+        The PID of the running client will be saved in the dictionary self.pids, which is guarded by
+        self.pid__lock
+
         @param  execution       The execution this client is to be run for.
         """
-        pass
+        self.pid__lock.acquire()
+        if self.isInCleanup():
+            self.pid__lock.release()
+            return
+        if execution.getNumber() in self.pids:
+            self.pid__lock.release()
+            raise Exception( "Execution number {0} already present in list PIDs".format( execution.getNumber() ) )
+        try:
+            result = execution.host.sendCommand( '{0}/clientRunner'.format( self.getClientDir( execution.host ) ) )
+            m = re.match( '^([0-9][0-9]*)', result )
+            if not m:
+                raise Exception( "Could not retrieve PID for execution {0} of client {1} on host {2} from result:\n{3}".format( execution.getNumber(), execution.client.name, execution.host.name, result ) )
+            self.pids[execution.getNumber()] = m.group( 1 )
+        finally:
+            self.pid__lock.release()
 
     def isRunning(self, execution):
         """
         Return whether the client is running for the provided execution.
 
+        This implementation will check the remote host to see if the process with PID
+        self.pids[execution.getNumber()] is still running.
+
         @param  execution       The execution for which to check if the client is running.
 
         @return True iff the client is running.
         """
-        pass
+        self.pid__lock.acquire()
+        if execution.getNumber() not in self.pids:
+            self.pid__lock.release()
+            raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+        res = False
+        try:
+            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( self.pids[execution.getNumber()] ) )
+            res = re.match( '^Y', result ) is not None
+        finally:
+            self.pid__lock.release()
+        return res
 
     def kill(self, execution):
         """
         End the execution of the client for the provided execution.
 
+        This implementation will check the remote host to see if the process with PID
+        self.pids[execution.getNumber()] is still running and while it is send signals to have it stop.
+
         @param  execution       The execution for which to kill the client.
         """
+        # FIXME: CONTINUE
+        # Important note: it is NOT doable to get a trace on all forks of subprocesses. One MAY be able to trace the
+        # direct child, but that is inefficient (ptrace creates actual traps, not just simple notifications) and then
+        # the child's children still aren't traced. It stinks, basically. In other words: it is not possible to track
+        # all children recursively of this process, so we're not going to try. Child processes started by this method
+        # MUST behave correctly when sent the signals to stop. This means that wrapper scripts need to trap on
+        # signals and pass them on to their detected children.
         pass
 
     def retrieveLogs(self, execution, localLogDestination):
