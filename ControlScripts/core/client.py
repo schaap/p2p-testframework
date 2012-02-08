@@ -132,8 +132,9 @@ class client:
         else:
             try:
                 __import__( 'module.parser.'+self.__class__.__name__, globals(), locals(), self.__class__.__name__ )
+                Campaign.loadModule( 'parser', self.__class__.__name__ )
             except ImportError:
-                raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{0} is not possible since that module does not exist.".format( self.name, self.__class__.__name__ ) )
+                raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{0} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
         if not self.builder:
             self.builder = 'none'
             try:
@@ -404,29 +405,54 @@ class client:
         """
         # FIXME: CONTINUE
         # Important note: it is NOT doable to get a trace on all forks of subprocesses. One MAY be able to trace the
-        # direct child, but that is inefficient (ptrace creates actual traps, not just simple notifications) and then
-        # the child's children still aren't traced. It stinks, basically. In other words: it is not possible to track
-        # all children recursively of this process, so we're not going to try. Child processes started by this method
-        # MUST behave correctly when sent the signals to stop. This means that wrapper scripts need to trap on
-        # signals and pass them on to their detected children.
-        pass
+        # direct child, but that is inefficient (ptrace creates actual traps, not just simple notifications,
+        # potentially many traps that really slow things down) and then the child's children still aren't traced. It
+        # stinks, basically. In other words: it is not possible to track all children recursively of this process, so
+        # we're not going to try. Child processes started by this method MUST behave correctly when sent the signals
+        # to stop. This means that wrapper scripts need to trap on signals and pass them on to their detected children.
+        self.pid__lock.acquire()
+        if execution.getNumber() not in self.pids:
+            # An execution for which no PID has been found is assumed dead and hence kill 'succeeded'
+            self.pid__lock.release()
+            return
+        theProgramPID = self.pids[execution.getNumber()]
+        self.pid_lock.release()
+        isRunning = True
+        # Signal sent by kill to the process to try and stop it (0 for no signal)
+        killActions = ('TERM', 0, 0, 0, 0, 0, 0, 0, 'INT', 'INT', 'KILL')
+        # Time to wait after sending the signal before checking whether the process died
+        killDelays =  (1,      1, 1, 2, 5, 5, 5, 5, 5,     5,     5)
+        # The counter with which to walk the above arrays
+        killCounter = 0
+        # E.g. for killCounter = 8 the following will be done:
+        # - kill -INT $pid
+        # - sleep 5
+        # - kill -0 $pid
+        # The first line tries and kill the process using signal INT (killActions[8]).
+        # The second line gives the process 5 second time (killDelays[8]).
+        # The third line checks whether the process died.
+        while isRunning and killCounter < len(killActions):
+            if killActions[killCounter] == 0:
+                execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ) )
+            threading.sleep( killDelays[killCounter] )
+            killCounter += 1
+            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgamPID ) )
+            if re.match( '^Y', result ) is not None:
+                self.pid__lock.acquire()
+                del self.pids[execution.getNumber()]
+                self.pid__lock.release()
+                break
 
     def retrieveLogs(self, execution, localLogDestination):
         """
         Retrieve client specific logs for the given execution.
         
         The logs are to be stored in the directory pointed to by localLogDestination.
+        
+        By default this doesn't do anything.
 
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
-        """
-        pass
-
-    def cleanupExection(self, execution):
-        """
-        Client specific cleanup for a specific execution.
-
-        @param  execution       The execution for which to clean up.
         """
         pass
 
@@ -438,7 +464,7 @@ class client:
 
         @param  host            The host on which to clean up the client.
         """
-        pass
+        host.sendCommand( 'rm -rf "{0}/clients/{2}" "{0}/logs/{2}" "{1}/clients/{2}" "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ) )
 
     def loadDefaultParser(self, execution):
         """
@@ -454,12 +480,18 @@ class client:
 
         @return The parser instance.
         """
-        pass
+    defaultParser = None        # String with the name of the parser object to be used with this client if no other parser is given in the execution; defaults to None which will use the default parser for the client (which is the parser module named the same as the client, with the default settings of that module)
+        if self.defaultParser:
+            return self.scenario.getObjectsDict( 'parser' )[self.defaultParser]
+        else:
+            modclass = Campaign.loadModule( 'parser', self.__class__.__name__ )
+            return modclass()
 
     def cleanup(self):
         """
         Client specific cleanup, irrespective of host or execution.
         """
+        # FIXME: CONTINUE
         pass
 
     def trafficProtocol(self):
