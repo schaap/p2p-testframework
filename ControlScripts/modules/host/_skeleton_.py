@@ -28,6 +28,10 @@ class _skeleton_(host):
     """
     # TODO: Update the description above
 
+    # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
+    # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
+    # and bail out if that returns True.
+
     def __init__(self, scenario):
         """
         Initialization of a generic host object.
@@ -70,7 +74,7 @@ class _skeleton_(host):
         #
         # Be sure not to forget that last case!
         #
-        # This implementation assumes you have no parameters specific to your host type:
+        # The following implementation assumes you have no parameters specific to your host type:
         host.parseSetting(self, key, value)
 
     def checkSettings(self):

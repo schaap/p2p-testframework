@@ -7,9 +7,7 @@ from core.parsing import *
 from core.campaign import Campaign
 
 def parseError( msg ):
-    raise Exception( "Parse error for host object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
-
-    # FIXME: Go over all the cleanup stuff to see which are really needed. It's a bit of a mess, now.
+    raise Exception( "Parse error for client object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
 class client:
     """
@@ -403,7 +401,6 @@ class client:
 
         @param  execution       The execution for which to kill the client.
         """
-        # FIXME: CONTINUE
         # Important note: it is NOT doable to get a trace on all forks of subprocesses. One MAY be able to trace the
         # direct child, but that is inefficient (ptrace creates actual traps, not just simple notifications,
         # potentially many traps that really slow things down) and then the child's children still aren't traced. It
@@ -480,7 +477,6 @@ class client:
 
         @return The parser instance.
         """
-    defaultParser = None        # String with the name of the parser object to be used with this client if no other parser is given in the execution; defaults to None which will use the default parser for the client (which is the parser module named the same as the client, with the default settings of that module)
         if self.defaultParser:
             return self.scenario.getObjectsDict( 'parser' )[self.defaultParser]
         else:
@@ -490,8 +486,9 @@ class client:
     def cleanup(self):
         """
         Client specific cleanup, irrespective of host or execution.
+
+        The default implementation does nothing.
         """
-        # FIXME: CONTINUE
         pass
 
     def trafficProtocol(self):
@@ -504,11 +501,11 @@ class client:
         When a TC module finds a protocol it can't handle explicitly, or '' as a protocol, it will fall back to
         full traffic control, i.e. all traffic between involved hosts.
 
-        If possible, specify this correctly, otherwise leave it ''.
+        If possible, specify this correctly, otherwise leave it '' (default).
 
         @return The protocol the client uses for communication.
         """
-        pass
+        return ''
 
     def trafficInboundPorts(self):
         """
@@ -517,13 +514,15 @@ class client:
         This list is used to set up traffic control, if requested.
 
         The list should only be given if it is definite: if dynamic ports can be assigned to the clients it is best
-        to just return [] to force full traffic control. This also goes if the list can't be given for other reasons.
+        to just return () to force full traffic control. This also goes if the list can't be given for other reasons.
 
         The exact notation of ports depends on the value returned by self.trafficProtocol().
 
+        The default implementation just returns ().
+
         @return A list of all ports on which incoming traffic can come, or [] if no such list can be given.
         """
-        pass
+        return ()
 
     def trafficOutboundPorts(self):
         """
@@ -532,13 +531,15 @@ class client:
         This list is used to set up traffic control, if requested.
 
         The list should only be given if it is definite: if dynamic ports can be assigned to the clients it is best
-        to just return [] to force full traffic control. This also goes if the list can't be given for other reasons.
+        to just return () to force full traffic control. This also goes if the list can't be given for other reasons.
 
         The exact notation of ports depends on the value returned by self.trafficProtocol().
 
+        The default implementation just returns ().
+
         @return A list of all ports from which outgoing traffic can come, or [] if no such list can be given.
         """
-        pass
+        return ()
 
     @staticmethod
     def APIVersion():
