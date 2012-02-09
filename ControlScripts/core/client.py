@@ -5,15 +5,16 @@ import threading
 
 from core.parsing import *
 from core.campaign import Campaign
+from core.coreObject import coreObject
 
 def parseError( msg ):
     raise Exception( "Parse error for client object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
-class client:
+class client(coreObject):
     """
     The parent class for all clients.
 
-    This object contains all the default implementations for every host.
+    This object contains all the default implementations for every client.
     When subclassing client be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 

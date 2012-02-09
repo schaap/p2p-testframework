@@ -2,6 +2,7 @@ import os
 
 from core.parsing import *
 from core.campaign import Campaign
+from core.coreObject import coreObject
 
 def parseError( msg ):
     raise Exception( "Parse error for host object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
@@ -19,7 +20,7 @@ def checkSpeedValue( value, speedName ):
         parseError( '{1} should be a positive integer, possibly postfixed by kbit or mbit (default: mbit), found "{0}"'.format( origValue, speedName ) )
     return value
 
-class host:
+class host(coreObject):
     """
     The parent class for all hosts.
 
