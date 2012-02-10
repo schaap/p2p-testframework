@@ -519,11 +519,11 @@ class client(coreObject):
 
         The exact notation of ports depends on the value returned by self.trafficProtocol().
 
-        The default implementation just returns ().
+        The default implementation just returns [].
 
         @return A list of all ports on which incoming traffic can come, or [] if no such list can be given.
         """
-        return ()
+        return []
 
     def trafficOutboundPorts(self):
         """
@@ -536,11 +536,11 @@ class client(coreObject):
 
         The exact notation of ports depends on the value returned by self.trafficProtocol().
 
-        The default implementation just returns ().
+        The default implementation just returns [].
 
         @return A list of all ports from which outgoing traffic can come, or [] if no such list can be given.
         """
-        return ()
+        return []
 
     @staticmethod
     def APIVersion():

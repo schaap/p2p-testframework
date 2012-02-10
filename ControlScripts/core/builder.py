@@ -1,18 +1,13 @@
-import os
 from subprocess import STDOUT
 from subprocess import PIPE
 from subprocess import Popen
 
-from core.parsing import *
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
-def parseError( msg ):
-    raise Exception( "Parse error for client object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
-
 class builder(coreObject):
     """
-    The parent class for all builder.
+    The parent class for all builders.
 
     This object contains all the default implementations for every builder.
     When subclassing builder be sure to use the skeleton class as a basis: it saves you a lot of time.
@@ -63,7 +58,17 @@ class builder(coreObject):
         @param  host        The remote host on which the source are to be built.
         """
         if self.buildCommand:
-            # FIXME: CONTINUE
+            result = ''
+            try:
+                if self.isInCleanup():
+                    return
+                host.sendCommand( 'cd "{0}"'.format( client.sourceObj.remoteLocation() ) )
+                if self.isInCleanup():
+                    return
+                result = host.sendCommand(self.buildCommand)
+            except Exception exc:
+                Campaign.logger( result )
+                raise Exception( "Could not build client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
 
     @staticmethod
     def APIVersion():

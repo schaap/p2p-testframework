@@ -92,27 +92,80 @@ class _skeleton_(host):
         #   if self.hostname == self.username:
         #       raise Exception( "You're either confused or incredibly vain. Not acceptable either way." )
 
-    def sendCommand(self, command):
+    def setupNewConnection(self):
         """
-        Sends a bash command to the remote host.
+        Create a new connection to the host.
 
-        @param  command     The command to be executed on the remote host.
+        The returned object has no specific type, but should be usable as a connection object either by uniquely identifying it or 
+        simply by containing the needed information for it.
 
-        @return The result from the command.
+        Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
+        connections will automatically closed and, hence, any calls using those connections will then fail.
+
+        @return The connection object for a new connection.
         """
         # TODO: Implement this! Example:
         #
         #   FIXME: WRITE EXAMPLE
         #
+        # Be sure to include the new connection in the self.connections list after acquiring self.connections__lock
         raise Exception( "Not implemented" )
 
-    def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False):
+    def closeConnection(self, connection):
+        """
+        Close a previously created connection to the host.
+
+        Any calls afterwards to methods of this host with the close connection will fail.
+
+        @param  The connection to be closed.
+        """
+        # TODO: Implement this! Example:
+        #
+        #   FIXME: WRITE EXAMPLE
+        #
+        # Be sure to remove the connection from the self.connections list after acquiring self.connections__lock
+        raise Exception( "Not implemented" )
+
+    def sendCommand(self, command, reuseConnection = True):
+        """
+        Sends a bash command to the remote host.
+
+        @param  command             The command to be executed on the remote host.
+        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
+                                    False to build a new connection for this command and use that.
+                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+
+        @return The result from the command.
+        """
+        # TODO: Implement this! Example:
+        #
+        #   connection = None
+        #   if not reuseConnection:
+        #       connection = self.setupNewConnection()
+        #   elif reuseConnection == True:
+        #       self.connections__lock.acquire()
+        #       connection = self.connections[0]
+        #       self.connections__lock.release()
+        #   else:
+        #       connection = reuseConnection
+        #   FIXME: WRITE MORE EXAMPLE
+        #   if not reuseConnection:
+        #       self.closeConnection( connection )
+        #
+        raise Exception( "Not implemented" )
+
+    def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
+
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
 
         @param  localSourcePath         Path to the local file that is to be sent.
         @param  remoteDestinationPath   Path to the destination file on the remote host.
         @param  overwrite               Set to True to not raise an Exception if the destination already exists.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         # TODO: Implement this! Example:
         #
@@ -122,13 +175,18 @@ class _skeleton_(host):
     
     # TODO If you have a more effective way of sending multiple files at once, override sendFiles as well.
 
-    def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False):
+    def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
         Retrieves a file from the remote host.
+
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
 
         @param  remoteSourcePath        Path to the file to be retrieved on the remote host.
         @param  localDestinationPath    Path to the local destination file.
         @param  overwrite               Set to True to not raise an Exception if the destination already exists.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         # TODO: Implement this! Example:
         #
@@ -141,17 +199,14 @@ class _skeleton_(host):
         Execute commands on the remote host needed for host specific preparation.
 
         The default implementation simply ensures the existence of a remote directory.
-
-        Subclassers are advised to make sure self.sendCommand() will function correctly and then to call this
-        implementation followed by any other steps they need to take themselves.
         """
-        # TODO: Prepare as much as needed to get self.sendCommand working. Example:
+        # TODO: Prepare anything you may need before being able to set up a connection, first.
         #
-        #   FIXME: WRITE EXAMPLE
-        #
-        # Only then do this call, and definitely do this call unless you know what you're doing:
+        # Then do this call, and definitely do this call unless you know what you're doing:
         host.prepare(self)
-        # Here you can do any other less-important host-specific preparation
+        # After that you can do any other less-important host-specific preparation
+        #
+        # Usually this one call will be enough if you just need to set up the connection.
 
     def cleanup(self):
         """

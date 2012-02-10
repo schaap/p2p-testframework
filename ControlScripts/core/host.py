@@ -1,4 +1,5 @@
 import os
+import threading
 
 from core.parsing import *
 from core.campaign import Campaign
@@ -49,6 +50,18 @@ class host(coreObject):
     tcInboundPortList = []      # The list of incoming ports that will be restricted using TC; [] for no restrictions, -1 for all ports
     tcOutboundPortList = []     # The list of outgoing ports that will be restricted using TC; [] for no restrictions, -1 for all ports
     tcProtocol = ''             # The name of the protocol on which port-based restrictions will be placed, '' for multi-protocol (tcInboundPortList or tcOutboundPortList will be -1 in this case)
+
+    connections = []            # The list of connections created for this host. self.connections[0] should always be the default connection. Do not access this list from outside a host class.
+    connections__lock = None    # The threading.RLock() guarding access to the connections list.
+
+    def __init__(self, scenario):
+        """
+        Initialization of a generic module object.
+
+        @param  scenario            The ScenarioRunner object this module object is part of.
+        """
+        coreObject.__init__(self, scenario)
+        self.connections__lock = threading.RLock()
 
     def parseSetting(self, key, value):
         """
@@ -216,23 +229,55 @@ class host(coreObject):
                 if self.tcJitter > self.tcDelay:
                     raise Exception( "Host {0} was given a jitter ({1}) and delay ({2}) for TC, but the jitter can't be larger tan the delay.".format( self.name, self.tcJitter, self.tcDelay ) )
 
-    def sendCommand(self, command):
+    def setupNewConnection(self):
+        """
+        Create a new connection to the host.
+
+        The returned object has no specific type, but should be usable as a connection object either by uniquely identifying it or 
+        simply by containing the needed information for it.
+
+        Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
+        connections will automatically closed and, hence, any calls using those connections will then fail.
+
+        @return The connection object for a new connection.
+        """
+        raise Exception( "Not implemented" )
+
+    def closeConnection(self, connection):
+        """
+        Close a previously created connection to the host.
+
+        Any calls afterwards to methods of this host with the close connection will fail.
+
+        @param  The connection to be closed.
+        """
+        raise Exception( "Not implemented" )
+
+    def sendCommand(self, command, reuseConnection = True):
         """
         Sends a bash command to the remote host.
 
-        @param  command     The command to be executed on the remote host.
+        @param  command             The command to be executed on the remote host.
+        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
+                                    False to build a new connection for this command and use that.
+                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
 
         @return The result from the command.
         """
         raise Exception( "Not implemented" )
 
-    def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False):
+    def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
+
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
 
         @param  localSourcePath         Path to the local file that is to be sent.
         @param  remoteDestinationPath   Path to the destination file on the remote host.
         @param  overwrite               Set to True to not raise an Exception if the destination already exists.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         raise Exception( "Not implemented" )
     
@@ -248,11 +293,16 @@ class host(coreObject):
 
         This method will always overwrite existing files.
 
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
+
         The default implementation will recursively call sendFile or sendFiles on the contents of the
         local directory.
 
         @param  localSourcePath         Path to the local directory that is to be sent.
         @param  remoteDestinationPath   Path to the destination directory on the remote host.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         if not os.path.isdir( localSourcePath ):
             raise Exception( "localSourcePath must point to a local directory, found: {0}".format( localSourcePath ) )
@@ -262,17 +312,22 @@ class host(coreObject):
             fullLocalPath = os.path.join( localSourcePath, path )
             fullRemotePath = '{0}/{1}'.format( remoteDestinationPath, path )
             if os.path.isdir( fullLocalPath ):
-                self.sendFiles( fullLocalPath, fullRemotePath )
+                self.sendFiles( fullLocalPath, fullRemotePath, reuseConnection = reuseConnection )
             else:
-                self.sendFile( fullLocalPath, fullRemotePath, True )
+                self.sendFile( fullLocalPath, fullRemotePath, True, reuseConnection = reuseConncetion )
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False):
         """
         Retrieves a file from the remote host.
 
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
+
         @param  remoteSourcePath        Path to the file to be retrieved on the remote host.
         @param  localDestinationPath    Path to the local destination file.
         @param  overwrite               Set to True to not raise an Exception if the destination already exists.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         raise Exception( "Not implemented" )
 
@@ -280,13 +335,18 @@ class host(coreObject):
         """
         Execute commands on the remote host needed for host specific preparation.
 
-        The default implementation simply ensures the existence of a remote directory.
-
-        Subclassers are advised to make sure self.sendCommand() will function correctly and then to call this
-        implementation followed by any other steps they need to take themselves.
+        The default implementation creates self.connections[0] (the default connection) and ensures the
+        existence of a remote directory.
         """
         if self.isInCleanup():
             return
+        self.connections__lock.acquire()
+        try:
+            if self.connections[0]:
+                raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
+            self.connections[0] = setupNewConnection()
+        finally:
+            self.connections__lock.release()
         if not self.remoteDirectory:
             self.tempDirectory = self.sendCommand( 'mktemp -d' )
             if self.tempDirectory == '' or self.sendCommand( '[ -d {0} ] || echo "E"'.format( self.tempDirectory ) ) == 'E':
@@ -298,7 +358,8 @@ class host(coreObject):
         """
         Executes commands to do host specific cleanup.
         
-        The default implementation removes the remote temporary directory, if one was created.
+        The default implementation removes the remote temporary directory, if one was created, and closes all
+        created connections.
 
         Subclassers are advised to first call this implementation and then proceed with their own steps.
         Whatever is done, however, it is important to call coreObject.cleanup(self) as soon as possible; this
@@ -307,9 +368,20 @@ class host(coreObject):
         coreObject.cleanup(self)
         if self.tempDirectory:
             self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ) )
-            if self.sendCommand( '[ -d {0} ] || echo "E"'.format( self.tempDirectory ) ) != 'E':
+            if self.sendCommand( '[ -d {0} ] && echo "N" || echo "E"'.format( self.tempDirectory ) )[0] != 'E':
                 Campaign.logger.log( "Warning: Could not remove temporary directory {0} from host {1} during cleanup.".format( self.tempDirectory, self.name ) )
             self.tempDirectory = None
+        self.connections__lock.acquire()
+        closeConns = []     # Copy self.connections first: it will be modified while iterating over all connections to close them
+        for conn in self.connections:
+            closeConns = conn
+        for conn in closeConns:
+            try:
+                self.closeConnection( conn )
+            except Exception exc:
+                Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring".format( host.name ) )
+                Campaign.logger.exceptionTraceback()
+        self.connections__lock.release()
 
     def getTestDir(self):
         """
