@@ -296,7 +296,7 @@ class _skeleton_(client):
         """
         Client specific cleanup, irrespective of host or execution.
 
-        The default implementation does nothing.
+        The default calls any required cleanup on the sources.
         """
         #
         # TODO: Implement this if needed, be symmetrical with prepare(...)

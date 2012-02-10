@@ -1,0 +1,152 @@
+import tempfile
+import shutil
+import threading
+from subprocess import Popen
+from subprocess import PIPE
+from subprocess import STDOUT
+
+from core.campaign import Campaign
+from core.coreObject import coreObject
+
+class source(coreObject):
+    """
+    The parent class for all sources.
+
+    This object contains all the default implementations for every source.
+    When subclassing source be sure to use the skeleton class as a basis: it saves you a lot of time.
+    """
+
+    localSourceDir = None       # If this is set then that very directory needs to be removed when cleaning up.
+    localSourceDir__lock = None # threading.Lock() guarding localSourceDir
+
+    def __init__(self, scenario):
+        """
+        Initialization of a generic source object.
+
+        @param  scenario        The ScenarioRunner object this source object is part of.
+        """
+        coreObject.__init__(self, scenario)
+        self.localSourceDir__lock = threading.Lock()
+
+    def prepareCommand(self, client):
+        """
+        Return the command to prepare the sources.
+
+        This method interprets and verifies client.location, where the location of the sources is specified.
+
+        Does not do the preparing itself! This method is used by prepareLocal(...) and prepareRemote(...) to find out
+        what they are supposed to do.
+
+        The default implementation returns None, which will tell prepareLocal(...) and prepareRemote(...) not to do
+        anything.
+
+        @param  client      The client for which the sources are to be prepared.
+        """
+        return None
+
+    def prepareLocal(self, client):
+        """
+        Prepare the source code of the client on the local machine.
+
+        The default implementation creates a local temporary directory and runs self.prepareCommand(...) in that
+        directory.
+
+        If self.prepareCommand(...) returns None the default implementation does nothing.
+
+        @param  client      The client for which the sources are to be prepared.
+        """
+        prepareCommand = self.prepareCommand(client)
+        if prepareCommand:
+            self.localSourceDir__lock.acquire()
+            try:
+                if self.isInCleanup():
+                    return
+                if self.localSourceDir:
+                    raise Exception( "prepareLocal(...) of a source object should really be called only once!" )
+                self.localSourceDir = tempfile.mkdtemp( )
+                if not self.localSourceDir:
+                    raise Exception( "prepareLocal(...) could not create a temporary directory on the local host" )
+                if self.isInCleanup():
+                    shutil.rmtree( self.localSourceDir )
+                    self.localSourceDir = ''
+                    return
+                proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=self.localSourceDir )
+                if self.isInCleanup():
+                    shutil.rmtree( self.localSourceDir )
+                    self.localSourceDir = ''
+                    proc.kill()
+                    return
+                try:
+                    result = proc.communicate(prepareCommand)
+                except Exception exc:
+                    Campaign.logger.log( result )
+                    raise Exception( "Could not prepare sources for client {0} locally using source {1}".format( client.name, self.__class__.__name__ ) )
+            finally:
+                self.localSourceDir__lock.release()
+
+    def prepareRemote(self, client, host):
+        """
+        Prepare the source code of the client on the remote host.
+
+        The default implementation creates the directory self.remoteLocation(...) and runs self.prepareCommand(...)
+        in that directory.
+
+        If self.prepareCommand(...) returns None the default implementation does nothing.
+
+        @param  client      The client for which the sources are to be prepared.
+        @param  host        The host on which the sources are to be prepared.
+        """
+        prepareCommand = self.prepareCommand(client)
+        if prepareCommand:
+            if self.isInCleanup():
+                return
+            host.sendCommand( 'mkdir "{0}"; cd "{0}"'.format( self.remoteLocation(client, host) ) )
+            if self.isInCleanup():
+                return
+            result = host.sendCommand(prepareCommand)
+        except Exception exc:
+            Campaign.logger( result )
+            raise Exception( "Could not prepare sources for client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
+
+    def localLocation(self, client):
+        """
+        Returns the local location of the client sources.
+
+        Raises an Exception if no local sources are available (e.g. when prepareLocal has not yet been called).
+
+        Note that when cleanup(...) is called, this directory will be removed.
+        
+        @param  client      The client for which the local is needed.
+        """
+        self.localSourceDir__lock.acquire()
+        try:
+            return self.localSourceDir
+        finally:
+            self.localSourceDir__lock.release()
+
+    def remoteLocation(self, client, host):
+        """
+        Returns the remote location of the client sources on the host.
+
+        No guarantees exist that the location exists. Be sure to call prepareRemote(...) for that.
+
+        @param  client      The client for which the location is needed.
+        @param  host        The host on which the location should reside.
+        """
+        return "{0}/source".format( client.getClientDir( host ) )
+
+    def cleanup(self):
+        """
+        Cleans up the sources.
+        """
+        self.localSourceDir__lock.acquire()
+        try:
+            if self.localSourceDir:
+                shutil.rmtree( self.localSourceDir )
+                self.localSourceDir = ''
+        finally:
+            self.localSourceDir__lock.release()
+
+    @staticmethod
+    def APIVersion():
+        return "2.0.0-core"

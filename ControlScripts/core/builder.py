@@ -13,9 +13,6 @@ class builder(coreObject):
     When subclassing builder be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
-    buildCommand = None         # If this is set to a string, that command can be used by the default implementation
-                                # for buildLocal(...) and buildRemote(...).
-
     def __init__(self, scenario):
         """
         Initialization of a generic builder object.
@@ -24,16 +21,30 @@ class builder(coreObject):
         """
         coreObject.__init__(self, scenario)
 
+    def buildCommand(self, client):
+        """
+        Return the command to build the client.
+
+        Does not do the building itself! This method is used by buildLocal(...) and buildRemote(...) to find out what they are
+        supposed to do.
+
+        The default implementation returns None, which will tell buildLocal(...) and buildRemote(...) not to do anything.
+
+        @param  client      The client for which the sources are to be built.
+        """
+        return None
+
     def buildLocal(self, client):
         """
         Build the local sources for the client.
         
-        This default implementation does nothing if buildCommand is not set.
-        Otherwise it starts a local bash instance and gives the buildCommand as input to that.
+        This default implementation does nothing if buildCommand(...) returns None.
+        Otherwise it starts a local bash instance and gives the buildCommand(...) as input to that.
 
         @param  client      The client for which the sources are to be built locally.
         """
-        if self.buildCommand:
+        buildCommand = self.buildCommand()
+        if buildCommand:
             result = ''
             try:
                 if self.isInCleanup():
@@ -42,7 +53,7 @@ class builder(coreObject):
                 if self.isInCleanup():
                     proc.kill()
                     return
-                result = proc.communicate(self.buildCommand)
+                result = proc.communicate(buildCommand)
             except Exception exc:
                 Campaign.logger.log( result )
                 raise Exception( "Could not build client {0} locally using builder {1}".format( client.name, self.__class__.__name__ ) )
@@ -51,13 +62,14 @@ class builder(coreObject):
         """
         Build the remote source for the client on the host.
 
-        This default implementation does nothing if buildCommand is not set.
-        Otherwise it sends the buildCommand to the host.
+        This default implementation does nothing if buildCommand(...) returns None.
+        Otherwise it sends the buildCommand(...) to the host.
 
         @param  client      The client for which the sources are to be built remotely.
         @param  host        The remote host on which the source are to be built.
         """
-        if self.buildCommand:
+        buildCommand = self.buildCommand()
+        if buildCommand:
             result = ''
             try:
                 if self.isInCleanup():
@@ -65,7 +77,7 @@ class builder(coreObject):
                 host.sendCommand( 'cd "{0}"'.format( client.sourceObj.remoteLocation() ) )
                 if self.isInCleanup():
                     return
-                result = host.sendCommand(self.buildCommand)
+                result = host.sendCommand(buildCommand)
             except Exception exc:
                 Campaign.logger( result )
                 raise Exception( "Could not build client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )

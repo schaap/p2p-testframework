@@ -488,9 +488,9 @@ class client(coreObject):
         """
         Client specific cleanup, irrespective of host or execution.
 
-        The default implementation does nothing.
+        The default calls any required cleanup on the sources.
         """
-        pass
+        self.sourceObj.cleanup()
 
     def trafficProtocol(self):
         """
