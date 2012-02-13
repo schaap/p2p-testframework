@@ -16,6 +16,15 @@ class _skeleton_(source):
 
     Look at the TODO in this file to know where you come in.
     """
+    # TODO: Update the description above. Example:
+    #
+    #   """
+    #   SVN implementation of source class.
+    #
+    #   client.location is interpreted as an SVN repository to be checked out.
+    #   """
+    #
+    # Be sure to indicate how client.location is interpreted.
 
     def __init__(self, scenario):
         """

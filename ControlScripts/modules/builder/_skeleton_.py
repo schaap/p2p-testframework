@@ -2,12 +2,12 @@ from core.builder import builder
 
 # You can define anything you like in the scope of your own module: the only thing that will be imported from it
 # is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
-# suppose you copy this file to modules/client/rudeClient.py then the name of your class would be rudeClient.
+# suppose you copy this file to modules/builder/make.py then the name of your class would be rudeClient.
 
 # TODO: Change the name of the class. See the remark above about the names of the module and the class. Example:
 #
 #   class make(builder):
-class _skelaton_(coreObject):
+class _skeleton_(coreObject):
     """
     The skeleton implementation of the builder class.
 
@@ -16,6 +16,11 @@ class _skelaton_(coreObject):
 
     Look at the TODO in this file to know where you come in.
     """
+    # TODO: Update this description. Example:
+    #
+    #   """
+    #   Builder object for (GNU) make.
+    #   """
 
     def __init__(self, scenario):
         """

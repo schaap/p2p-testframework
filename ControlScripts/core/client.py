@@ -79,7 +79,7 @@ class client(coreObject):
             if not isValidName( value ):
                 parseError( '"{0}" is not a valid name'.format( value ) )
             if value in self.scenario.getObjectsDict('client'):
-                parseError( 'Host object called {0} already exists'.format( value ) )
+                parseError( 'Client object called {0} already exists'.format( value ) )
             self.name = value
         elif key == 'params' or key == 'extraParameters':
             if self.extraParameters != '':
@@ -471,8 +471,9 @@ class client(coreObject):
         The order in which parsers are determined is this (first hit goes):
         - The parser given in the execution object
         - The parser given in the client object
+        - The parser object with the same name as the client
         - The parser with the same name as the client
-        The second and third are to be loaded by this method.
+        The second, third and fourth are to be loaded by this method.
         
         @param  execution       The execution for which to load a parser.
 
@@ -480,9 +481,13 @@ class client(coreObject):
         """
         if self.defaultParser:
             return self.scenario.getObjectsDict( 'parser' )[self.defaultParser]
+        elif self.__class__.__name__ in self.scenario.getObjectsDict( 'parser' ):
+            return self.scenario.getObjectsDict( 'parser' )[self.__class__.__name__]
         else:
             modclass = Campaign.loadModule( 'parser', self.__class__.__name__ )
-            return modclass()
+            obj = modclass()
+            obj.checkSettings()
+            return obj
 
     def cleanup(self):
         """

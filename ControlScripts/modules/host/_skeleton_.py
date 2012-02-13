@@ -26,7 +26,17 @@ class _skeleton_(host):
 
     Look at the TODO in this file to know where you come in.
     """
-    # TODO: Update the description above
+    # TODO: Update the description above. Example:
+    #
+    #   """
+    #   A rudeHost host implementation.
+    #
+    #   Use with care to subdue rude hosts.
+    #
+    #   Extra parameters:
+    #   - hostname  The hostname to connect to.
+    #   - username  The username to use when connecting. Optional.
+    #   """
 
     # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
     # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
@@ -89,6 +99,8 @@ class _skeleton_(host):
         host.checkSettings(self)
         # TODO: Check your settings. Example:
         #
+        #   if not self.hostname:
+        #       raise Exception( "You're very Zen. You don't need host. You won't need object." )
         #   if self.hostname == self.username:
         #       raise Exception( "You're either confused or incredibly vain. Not acceptable either way." )
 

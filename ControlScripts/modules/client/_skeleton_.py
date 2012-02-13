@@ -26,7 +26,15 @@ class _skeleton_(client):
 
     Look at the TODO in this file to know where you come in.
     """
-    # TODO: Update the description above
+    # TODO: Update the description above. Example:
+    #
+    #   """
+    #   Client object for rudeClient programs.
+    #
+    #   Extra parameters:
+    #   - postFixParams     Extra parameters to be placed at the end of the command line. At most protocolVersion characters long.
+    #   - protocolVersion   A non-zero positive integer indicating the ProtRude version.
+    #   """
 
     # The parent class handles most of the interactions between source, isRemote, location and builder; where needed
     # the comments in this skeleton implementation will guide you enough for a simple implementation. If you plan on
