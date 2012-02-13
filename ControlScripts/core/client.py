@@ -2,8 +2,10 @@ import tempfile
 import os
 import stat
 import threading
+import re
+import time
 
-from core.parsing import *
+from core.parsing import isValidName
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -25,11 +27,13 @@ class client(coreObject):
     isRemote = False            # True iff the client source is on the remote host; this means either having the source available there or retrieving it from there
     location = None             # String with the path to the location of the client; meaning depends on the way the client is to be found
     builder = None              # String with the name of the builder module to use to build the source; None for precompiled binaries
+    
+    parser = None               # String with the name of the parser object to use
 
     builderObj = None           # The instance of the builder module requested
     sourceObj = None            # The instance of the source module requested
 
-    pids{} = None               # The process IDs of the running clients (dictionary execution-number->PID)
+    pids = {}                   # The process IDs of the running clients (dictionary execution-number->PID)
     pid__lock = None            # Lock object to guard the pids dictionary
 
     # For more clarity: the way source, isRemote, location and builder work together is as follows.
@@ -140,7 +144,8 @@ class client(coreObject):
                 __import__( 'module.builder.none', globals(), locals(), 'none' )
             except ImportError:
                 raise Exception( "The default builder module builder:none can't be imported. This means your installation is broken." )
-        self.builderObj = Campaign.loadModule( 'builder', self.builder )()
+        builderClass = Campaign.loadModule( 'builder', self.builder )
+        self.builderObj = builderClass()
         if not self.builderObj:
             raise Exception( "Could not instantiate builder module builder:{0} for client {1}".format( self.builder, self.name ) )
         if not self.source:
@@ -311,7 +316,7 @@ class client(coreObject):
         if self.isInCleanup():
             return
         # Create client/execution specific directories
-        host.sendCommand( 'mkdir -p "{0}/clients/{2}/exec_{3}"; mkdir -p "{0}/logs/{2}/exec_{3}"; mkdir -p "{1}/clients/{2}/exec_{3}"; mkdir -p "{1}/logs/{2}/exec_{3}"'.format( execution.host.getTestDir(), execution.host.getPersistentTestDir(), self.name, execution.getNumber() ) )
+        execution.host.sendCommand( 'mkdir -p "{0}/clients/{2}/exec_{3}"; mkdir -p "{0}/logs/{2}/exec_{3}"; mkdir -p "{1}/clients/{2}/exec_{3}"; mkdir -p "{1}/logs/{2}/exec_{3}"'.format( execution.host.getTestDir(), execution.host.getPersistentTestDir(), self.name, execution.getNumber() ) )
 
         # Build runner script, if requested
         if simpleCommandLine or complexCommandLine:
@@ -324,14 +329,14 @@ class client(coreObject):
             remoteClientDir = self.getClientDir( execution.host )
             if self.isRemote:
                 remoteClientDir = self.sourceObj.getRemoteLocation()
-            fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) );
+            fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
             if simpleCommandLine:
                 fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
             else:
                 fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
-            fileObj.write( 'echo $!\n' );
+            fileObj.write( 'echo $!\n' )
             fileObj.close()
-            os.chmod( clientRunner, os.stat( self.clientRunner ).st_mode | stat.s_IXUSR )
+            os.chmod( clientRunner, os.stat( clientRunner ).st_mode | stat.S_IXUSR )
             if self.isInCleanup():
                 os.remove( clientRunner )
                 return
@@ -414,7 +419,7 @@ class client(coreObject):
             self.pid__lock.release()
             return
         theProgramPID = self.pids[execution.getNumber()]
-        self.pid_lock.release()
+        self.pid__lock.release()
         isRunning = True
         # Signal sent by kill to the process to try and stop it (0 for no signal)
         killActions = ('TERM', 0, 0, 0, 0, 0, 0, 0, 'INT', 'INT', 'KILL')
@@ -432,9 +437,9 @@ class client(coreObject):
         while isRunning and killCounter < len(killActions):
             if killActions[killCounter] == 0:
                 execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ) )
-            threading.sleep( killDelays[killCounter] )
+            time.sleep( killDelays[killCounter] )
             killCounter += 1
-            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgamPID ) )
+            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgramPID ) )
             if re.match( '^Y', result ) is not None:
                 self.pid__lock.acquire()
                 del self.pids[execution.getNumber()]
@@ -464,6 +469,8 @@ class client(coreObject):
         """
         host.sendCommand( 'rm -rf "{0}/clients/{2}" "{0}/logs/{2}" "{1}/clients/{2}" "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ) )
 
+    # This method has unused argument execution; that's fine
+    # pylint: disable-msg=W0613
     def loadDefaultParser(self, execution):
         """
         Loads the default parser for the given execution.
@@ -488,6 +495,7 @@ class client(coreObject):
             obj = modclass()
             obj.checkSettings()
             return obj
+        # pylint: enable-msg=W0613
 
     def cleanup(self):
         """

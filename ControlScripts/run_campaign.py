@@ -4,13 +4,11 @@
 import sys
 import os
 import time
-import re
 import shutil
 import threading
 
 # P2P Testing Framework imports
 from core.campaign import Campaign
-from core import logger
 from core.parsing import *
 
 # Global API version of the core
@@ -32,7 +30,7 @@ def loadCoreModule( moduleType ):
     """
     objectModule = __import__( 'core.' + moduleType, globals(), locals(), moduleType )
     objectClass = getattr( objectModule, moduleType )
-    if objectClass.APIVersion() != APIVersion.'--core':
+    if objectClass.APIVersion() != APIVersion + '--core':
         raise Exception( "The running core if version {0}, but core module {1} is written for verion {2}. This is a very clear signal for a broken translation which will hence break.".format( APIVersion, objectClass.APIVersion(), moduleType ) )
     return objectClass
 
@@ -63,13 +61,13 @@ def loadModule( moduleType, moduleSubType ):
             raise Exception( "A {0} can never have a subtype (line {1}".format( moduleType, Campaign.currentLineNumber ) )
     else:
         raise Exception( "Unknown module type {0} on line {1}".format( moduleType, Campaign.currentLineNumber ) )
-    if moduleSubType = '':
+    if moduleSubType == '':
         return loadCoreModule( moduleType )
     else:
         objectModule = __import__( 'modules.' + moduleType + '.' + moduleSubType, globals(), locals(), moduleSubType )
         objectClass = getattr( objectModule, moduleSubType )
         if objectClass.APIVersion() != APIVersion:
-            if objectClass.APIVersion() == APIVersion.'--core':
+            if objectClass.APIVersion() == APIVersion + '--core':
                 raise Exception( "Module modules.{0}.{1} has not correctly overridden the APIVersion function. This is required for correctly functioning modules.".format( moduleType, moduleSubType ) )
             raise Exception( "Module modules.{0}.{1} was made for API version {2}, which is different from the core (version {3})".format( moduleType, moduleSubType, objectClass.APIVersion(), APIVersion ) )
         return objectClass
@@ -79,10 +77,10 @@ class BusyExecutionThread(threading.Thread):
     busy = False
     raisedException = None
     execution = None
-    cleanup = False
+    inCleanup = False
     def __init__(self, execution):
         self.execution = execution
-        Thread.__init__(self)
+        threading.Thread.__init__(self)
 
     def doTask(self):
         """Be sure to override this to implement the actual task."""
@@ -92,10 +90,10 @@ class BusyExecutionThread(threading.Thread):
         self.busy = True
         try:
             self.doTask()
-        except Exception exc:
+        except Exception as exc:
             self.raisedException = exc
-            logger.log( "Exception while running task in class {3} for execution with client {0} on host {1}: {2}".format( self.execution.client.name, self.execution.host.name, exc.__str__(), self.__class__.__name__ ) )
-            logger.exceptionTraceback()
+            Campaign.logger.log( "Exception while running task in class {3} for execution with client {0} on host {1}: {2}".format( self.execution.client.name, self.execution.host.name, exc.__str__(), self.__class__.__name__ ) )
+            Campaign.logger.exceptionTraceback()
         finally:
             self.busy = False
 
@@ -105,15 +103,15 @@ class BusyExecutionThread(threading.Thread):
 
     def cleanup(self):
         """Cleans up the thread's execution, which is just setting self.cleanup by default."""
-        self.cleanup = True
+        self.inCleanup = True
     
     def getException(self):
         return self.raisedException
 
     def __str__(self):
-        return "Task thread type {2} for execution with client {0} on host {1}".format( self.execution.client.name, self.execution.host.name, self.__class__.__name__ );
+        return "Task thread type {2} for execution with client {0} on host {1}".format( self.execution.client.name, self.execution.host.name, self.__class__.__name__ )
 
-class ClientRunner(BusyThread):
+class ClientRunner(BusyExecutionThread):
     """Simple runner for client.start()"""
     def doTask(self):
         self.execution.client.start( self.execution.host )
@@ -122,22 +120,22 @@ class ClientRunner(BusyThread):
         if self.execution.client.isRunning( self.execution.host ):
             self.execution.client.kill( self.execution.host )
 
-class ClientKiller(BusyThread):
+class ClientKiller(BusyExecutionThread):
     """Simple runner for client.kill()"""
     def doTask(self):
         if self.execution.client.isRunning( self.execution.host ):
             self.execution.client.kill( self.execution.host )
 
-class LogProcessor(BusyThread):
+class LogProcessor(BusyExecutionThread):
     """Simple runner for client.retrieveLogs() and execution.runParsers()."""
     execdir = ''
     def __init__(self, execution, execdir):
         self.execdir = execdir
-        BusyThread.__init__(self, execution)
+        BusyExecutionThread.__init__(self, execution)
 
     def doTask(self):
         self.execution.client.retrieveLogs( self.execution.host, os.path.join( self.execdir, 'logs' ) )
-        if self.cleanup:
+        if self.inCleanup:
             return
         self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
 
@@ -234,8 +232,7 @@ class ScenarioRunner:
                 if obj is not None:
                     obj.checkSettings()
                     self.objects[obj.moduleType][obj.name] = obj
-                objectLine = Campaign.currentLineNumber
-                objectClass = loadModule( getModuleType( getSectionName( line ) ), getSubModuleType( getSectionName( line ) )
+                objectClass = loadModule( getModuleType( getSectionName( line ) ), getModuleSubType( getSectionName( line ) ) )
                 obj = objectClass()
             else:
                 if obj is None:
@@ -259,14 +256,14 @@ class ScenarioRunner:
         directionstring = ''
         if direction != '':
             directionstring = direction + ' '
-        logger.log( "Host {0} could not initiate restricted {1}traffic control, falling back to unrestricted traffic control.".format( host.name, directionstring ) )
-        self.unrestrictedWarning( host, direction )
+        Campaign.logger.log( "Host {0} could not initiate restricted {1}traffic control, falling back to unrestricted traffic control.".format( host.name, directionstring ) )
+        self.unrestrictedTCWarning( host, direction )
 
     def unrestrictedTCWarning(self, host, direction):
         """Log a warning about using unrestricted traffic control on the given host in the given direction."""
         if direction != '':
             direction = direction + ' '
-        logger.log( "Warning: using unrestricted traffic control for {1}traffic on host {0}. If the commanding host (i.e. your terminal) is also part of the nodes you configured for testing, then this WILL cause trouble.".format( host.name, direction ) )
+        Campaign.logger.log( "Warning: using unrestricted traffic control for {1}traffic on host {0}. If the commanding host (i.e. your terminal) is also part of the nodes you configured for testing, then this WILL cause trouble.".format( host.name, direction ) )
 
     def setup(self, testRun = False):
         """
@@ -303,28 +300,28 @@ class ScenarioRunner:
                 if host.tcDown == '' and host.tcLoss == 0 and host.tcCorruption == 0 and host.tcDuplication == 0:
                     # Download speed not restricted and no loss, corruption or duplication: no inbound TC
                     tcinbound = 0
-                if host.tcUp = '' and host.tcDelay == 0:
+                if host.tcUp == '' and host.tcDelay == 0:
                     # Upload speed not restricted and no delay is introduced: no outbound TC
                     tcoutbound = 0
                 inboundrestrictedlist = []
                 outboundrestrictedlist = []
-                for client in hostClients:
+                for client in set([execution.client for execution in self.objects['execution'] if execution.host == host]):
                     # Go over all clients to see how they think they should be restricted. Aggregate data to be saved in the host.
                     if host.tcProtocol == '':
                         host.tcProtocol = client.trafficProtocol()
                     elif host.tcProtocol != client.trafficProtocol():
                         # TC at this point only supports restricted control on one protocol
-                        logger.log( "Restricted traffic control using multiple protocols is not supported. Falling back to unrestricted traffic control on host {0}.".format( host.name ) )
+                        Campaign.logger.log( "Restricted traffic control using multiple protocols is not supported. Falling back to unrestricted traffic control on host {0}.".format( host.name ) )
                         tcinbound *= 2
                         tcoutbound *= 2
                     if tcinbound == 1:
                         if len(client.trafficInboundPorts()) == 0:
-                            logger.log( "Client {0} can't have restricted inbound traffic control. Falling back to unrestricted inbound traffic control on host {1}.".format( client.name, host.name ) )
+                            Campaign.logger.log( "Client {0} can't have restricted inbound traffic control. Falling back to unrestricted inbound traffic control on host {1}.".format( client.name, host.name ) )
                             tcinbound = 2
                         inboundrestrictedlist += client.trafficInboundPorts()
                     if tcoutbound == 1:
                         if len(client.trafficOutboundPorts()) == 0:
-                            logger.log( "Client {0} can't have restricted outbound traffic control. Falling back to unrestricted outbound traffic control on host {1}.".format( client.name, host.name ) )
+                            Campaign.logger.log( "Client {0} can't have restricted outbound traffic control. Falling back to unrestricted outbound traffic control on host {1}.".format( client.name, host.name ) )
                             tcoutbound = 2
                         outboundrestrictedlist += client.trafficOutboundPorts()
                     if tcoutbound != 1 and tcinbound != 1:
@@ -341,7 +338,7 @@ class ScenarioRunner:
                     host.tcOutboundPortList = list(set(outboundrestrictedlist))
                 # Load TC module and check with that module to see what is possible
                 tcClass = loadModule( 'tc', host.tc )
-                host.tcObj = tcObj
+                host.tcObj = tcClass()
                 if not host.tcObj.check(host):
                     # Try to fall back to full control and see if that works
                     if host.tcInboundPortList != -1 and host.tcInboundPortList != []:
@@ -382,12 +379,12 @@ class ScenarioRunner:
         if not testRun:
             for host in executionHosts:
                 # Send all files to the host that do not have this host as seeder
-                for file in host.files:
-                    file.sendToHost( host )
+                for f in host.files:
+                    f.sendToHost( host )
                 # Send all files to the host that have this host as seeder
-                for file in host.seedingFiles:
-                    file.sendToHost( host )
-                    file.sendToSeedingHost( host )
+                for f in host.seedingFiles:
+                    f.sendToHost( host )
+                    f.sendToSeedingHost( host )
 
     def executeRun(self):
         """
@@ -402,7 +399,7 @@ class ScenarioRunner:
         # All hosts that are part of an execution
         executionHosts = set([execution.host for execution in self.objects['execution']])
         # Apply traffic control to all hosts requiring it
-        for host in executionHosts for
+        for host in executionHosts:
             if host.tc == '':
                 continue
             host.tcObj.install( host, list(set([host.getSubnet() for host in executionHosts])) )
@@ -412,7 +409,7 @@ class ScenarioRunner:
             execThreads.append( ClientRunner( execution ) )
         self.threads += execThreads
         print "Starting all clients"
-        if self.parallel:
+        if self.doParallel:
             for thread in execThreads:
                 thread.start()
         else:
@@ -439,20 +436,20 @@ class ScenarioRunner:
         for execution in self.objects['execution']:
             killThreads.append( ClientKiller( execution ) )
         self.threads += killThreads
-        if self.parallel:
+        if self.doParallel:
             for thread in killThreads:
                 thread.start()
             for thread in killThreads:
                 if thread.isAlive():
                     thread.join( 60 )
                     if thread.isAlive():
-                        logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
+                        Campaign.logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
         else:
             for thread in killThreads:
                 thread.run()
 
         print "Removing all traffic control from hosts."
-        for host in executionHosts for
+        for host in executionHosts:
             if host.tc == '':
                 continue
             host.tcObj.remove( host )
@@ -466,19 +463,19 @@ class ScenarioRunner:
         logThreads = []
         for execution in self.objects['execution']:
             execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.name ) )
-            makedirs( os.path.join( execdir, 'logs' ) )
-            makedirs( os.path.join( execdir, 'parsedLogs' ) )
+            os.makedirs( os.path.join( execdir, 'logs' ) )
+            os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
             logThreads = LogProcessor( execution )
         self.threads += logThreads
         print "Retrieving logs and parsing them"
-        if self.parallel:
+        if self.doParallel:
             for thread in logThreads:
                 thread.start()
             for thread in logThreads:
                 if thread.isAlive():
                     thread.join( 60 )
                     if thread.isAlive():
-                        logger.log( "Warning! A log processor wasn't done after 60 seconds: {0}".format( thread.execution.client.name ) )
+                        Campaign.logger.log( "Warning! A log processor wasn't done after 60 seconds: {0}".format( thread.execution.client.name ) )
         else:
             for thread in logThreads:
                 thread.run()
@@ -506,44 +503,44 @@ class ScenarioRunner:
                     if thread.isAlive():
                         thread.join( 60 )
                         if thread.isAlive():
-                            logger.log( "Warning! A thread is still running after waiting 60 seconds: {0}".format( thread.__str__() ) )
+                            Campaign.logger.log( "Warning! A thread is still running after waiting 60 seconds: {0}".format( thread.__str__() ) )
                 except Exception as exc:
-                    logger.log( "Exception while cleaning up thread, will be discarded: {0}".format( exc.__str__() ) )
-                    logger.exceptionTraceback()
+                    Campaign.logger.log( "Exception while cleaning up thread, will be discarded: {0}".format( exc.__str__() ) )
+                    Campaign.logger.exceptionTraceback()
         print "Cleaning up files"
-        for file in self.getObjects('file'):
+        for f in self.getObjects('file'):
             try:
-                file.cleanup()
+                f.cleanup()
             except Exception as exc:
-                logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
-                logger.exceptionTraceback()
+                Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
+                Campaign.logger.exceptionTraceback()
         print "Cleaning up clients"
         for host in self.getObjects('host'):
             for client in host.clients:
                 try:
                     client.cleanupHost( host )
                 except Exception as exc:
-                    logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
-                    logger.exceptionTraceback()
+                    Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
+                    Campaign.logger.exceptionTraceback()
         for client in self.getObjects('client'):
             try:
                 client.cleanup()
             except Exception as exc:
-                logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
-                logger.exceptionTraceback()
+                Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
+                Campaign.logger.exceptionTraceback()
         print "Cleaning up hosts"
         for host in self.getObjects('host'):
             if host.tc != '' and host.tcObj:
                 try:
                     host.tcObj.remove( host )
                 except Exception as exc:
-                    logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
-                    logger.exceptionTraceback()
+                    Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
+                    Campaign.logger.exceptionTraceback()
             try:
                 host.cleanup()
             except Exception as exc:
-                logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
-                logger.exceptionTraceback()
+                Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
+                Campaign.logger.exceptionTraceback()
 
     def processLogs(self):
         """
@@ -553,12 +550,12 @@ class ScenarioRunner:
         """
         print "Processing logs"
         processeddir = os.path.join( self.resultsDir, 'processed' )
-        makedirs( processeddir )
+        os.makedirs( processeddir )
         for processor in self.getObjects('processor'):
             processor.processLogs( os.path.join( self.resultsDir, 'executions' ), processeddir )
         print "Running viewers"
         viewerdir = os.path.join( self.resultsDir, 'views' )
-        makedirs( viewerdir )
+        os.makedirs( viewerdir )
         for viewer in self.getObjects('viewer'):
             viewer.createView( processeddir, viewerdir )
 
@@ -566,7 +563,6 @@ class ScenarioRunner:
         """
         Do a check run of the scenario, to find out whether everything is in order.
         """
-        caughtExc = None
         try:
             self.setup( True )
         finally:
@@ -575,8 +571,8 @@ class ScenarioRunner:
             try:
                 shutil.rmtree( self.resultsDir )
             except Exception as exc:
-                logger.log( "Exception while removing results from test, will be discared: {0}".format( exc.__str__() ) )
-                logger.exceptionTraceback()
+                Campaign.logger.log( "Exception while removing results from test, will be discared: {0}".format( exc.__str__() ) )
+                Campaign.logger.exceptionTraceback()
         print "Scenario {0} checked".format( self.name )
 
     def run(self):
@@ -622,7 +618,7 @@ class CampaignRunner:
         if not os.path.exists( self.campaignResultsDir ):
             raise Exception( 'Could not create campaign results directory "{0}"'.format( self.campaignResultsDir ) )
 
-        logger.logToFile( os.path.join( self.campaignResultsDir, 'err.log' ) )
+        Campaign.logger.logToFile( os.path.join( self.campaignResultsDir, 'err.log' ) )
 
     def readCampaignFile(self):
         """
@@ -633,7 +629,6 @@ class CampaignRunner:
 
         fileObj = open( self.campaignFile, 'r' )
         Campaign.currentLineNumber = 1
-        scenarioLine = 0
         scenarioName = ''
         scenarioFiles = []
         scenarioLine = Campaign.currentLineNumber
@@ -675,14 +670,14 @@ class CampaignRunner:
                         raise Exception( 'Scenario {0} already exists (line {1})'.format( parameterValue, Campaign.currentLineNumber ) )
                     os.makedirs( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) )
                     if not os.path.exists( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) ):
-                        raise Exception( 'Could not create result directory "{0}" for scenario {1}'.format( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ), parameterValue )
+                        raise Exception( 'Could not create result directory "{0}" for scenario {1}'.format( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ), parameterValue ) )
                     scenarioName = parameterValue
                 elif parameterName == 'file':
                     # A file for the scenario: check existence and add to files array
-                    file = os.path.join( Campaign.testEnvDir, parameterValue )
-                    if not os.path.exists( file ) or not os.path.isfile( file ):
-                        raise Exception( 'Scenario file "{0}" does not exist or is not a file (line {1})'.format( file, Campaign.currentLineNumber ) )
-                    scenarioFiles.append( file )
+                    f = os.path.join( Campaign.testEnvDir, parameterValue )
+                    if not os.path.exists( f ) or not os.path.isfile( f ):
+                        raise Exception( 'Scenario file "{0}" does not exist or is not a file (line {1})'.format( f, Campaign.currentLineNumber ) )
+                    scenarioFiles.append( f )
                 elif parameterName == 'parallel':
                     # disable parallel handling of clients if it gives trouble
                     scenarioParallel = ( parameterValue != 'no' )
@@ -713,8 +708,6 @@ class CampaignRunner:
     doCheckRun = True       # True iff a checking run is to be done
     doRealRun = True        # True iff a real run is to be done
 
-    logger = None           # The global logging object, always available through Campaign.logger
-
     currentCampaign = None  # The campaign object currently running
 
     @staticmethod
@@ -740,8 +733,6 @@ When neither --check nor --nocheck is given, a test run is conducted first, foll
 
         @param  argv        The argument list as pass on by sys.argv
         """
-        global logger
-
         campaign_files = []
         options = []
         # Split arguments in options and campaign files
@@ -795,21 +786,18 @@ When neither --check nor --nocheck is given, a test run is conducted first, foll
         Campaign.loadModule = staticmethod(loadModule)
         Campaign.loadCoreModule = staticmethod(loadCoreModule)
 
-        Campaign.logger = logger.logger()
-        logger = Campaign.logger
-
         # Let's run those campaign files
         for campaign_file in campaign_files:
             try:
                 Campaign.currentCampaign = CampaignRunner(campaign_file)
                 Campaign.currentCampaign.readCampaignFile()
             except Exception as exc:
-                logger.log( exc.__str__() )
-                logger.exceptionTraceback()
-                if logger.loggingToFile():
-                    logger.closeLogFile()
-                    logger.log( exc.__str__() )
-                    logger.exceptionTraceback()
+                Campaign.logger.log( exc.__str__() )
+                Campaign.logger.exceptionTraceback()
+                if Campaign.logger.loggingToFile():
+                    Campaign.logger.closeLogFile()
+                    Campaign.logger.log( exc.__str__() )
+                    Campaign.logger.exceptionTraceback()
 
 if __name__ == "__main__":
     CampaignRunner.load(sys.argv)

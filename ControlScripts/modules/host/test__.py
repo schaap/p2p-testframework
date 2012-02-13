@@ -1,9 +1,6 @@
 import threading
 import os
 
-# These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
-# the Campaign data object and the host parent class.
-from core.parsing import *
 from core.campaign import Campaign
 from core.host import host
 
@@ -132,13 +129,13 @@ class test__(host):
         return connection
 
     def writeCommandLog(self, log):
-        the__lock.acquire()
+        self.the__lock.acquire()
         try:
-            f = open( os.path.join( Campaign.currentCampaign.campaignResultsDir, '__host__test__{0}__.log'.format( self.name ) ), 'a' )
+            f = open( os.path.join( Campaign.getCurrentCampaign().campaignResultsDir, '__host__test__{0}__.log'.format( self.name ) ), 'a' )
             f.write( log )
             f.close()
         finally:
-            the__lock.release()
+            self.the__lock.release()
 
     def sendCommand(self, command, reuseConnection = True):
         """

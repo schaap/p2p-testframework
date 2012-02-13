@@ -1,4 +1,4 @@
-from core.parsing import *
+from core.parsing import isValidName
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -61,9 +61,11 @@ class parser(coreObject):
         if self.name == '':
             if self.__class__.__name__ in self.scenario.getObjectsDict('parser'):
                 raise Exception( "File object declared at line {0} was not given a name and default name for this parser ({1}) was already used".format( self.declarationLine, self.__class__.__name__ ) )
-            else
+            else:
                 self.name = self.__class__.__name__
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def parseLogs(self, execution, logDir, outputDir):
         """
         Parse the logs for the current execution.
@@ -77,6 +79,7 @@ class parser(coreObject):
         @param  outputDir   The path to the directory on the local machine where the parsed logs are to be stored.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
     @staticmethod
     def APIVersion():

@@ -28,7 +28,7 @@ class _skeleton_(tc):
 
         @param  scenario        The ScenarioRunner object this tc object is part of.
         """
-        coreObject.__init__(self, scenario)
+        tc.__init__(self, scenario)
         # TODO: Your initialization, if any (not likely). Oh, and remove the next line.
         raise Exception( "DO NOT instantiate the skeleton implementation" )
 

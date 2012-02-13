@@ -1,12 +1,13 @@
 import os
 
-from core.parsing import *
+from core.parsing import isValidName
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
 def parseError( msg ):
     raise Exception( "Parse error for file object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
+# Yes, that's a warning below. That's OK, though.
 class file(coreObject):
     """
     The parent class for all files.
@@ -111,6 +112,8 @@ class file(coreObject):
             host.sendCommand( 'mkdir -p "{0}/meta/"'.format( self.getFileDir( host ) ) )
             host.sendFile( self.metaFile, self.getMetaFile( host ) )
 
+    # There's an unused argument host here; that's fine
+    # pylint: disable-msg=W0613
     def sendToSeedingHost(self, host):
         """
         Send any files required for seeding hosts.
@@ -124,7 +127,10 @@ class file(coreObject):
         @param  host        The host to which to send the files.
         """
         return
+    # pylint: enable-msg=W0613
 
+    # There's an unused argument host here; that's fine
+    # pylint: disable-msg=W0613
     def getFile(self, host):
         """
         Returns the path to the files on the remote seeding host.
@@ -144,6 +150,7 @@ class file(coreObject):
         """
         # Note that this is the new name of getName(...), which made no sense in naming
         return None
+    # pylint: enable-msg=W0613
 
     def getMetaFile(self, host):
         """

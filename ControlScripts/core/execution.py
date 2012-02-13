@@ -1,4 +1,4 @@
-from core.parsing import *
+from core.parsing import isValidName
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -22,6 +22,7 @@ class execution(coreObject):
 
     host = None             # The host object
     client = None           # The client object
+    # Yes, that's a warning below. That's OK, though.
     file = None             # The file object
     parser = None           # The parser object
 

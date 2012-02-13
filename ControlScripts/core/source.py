@@ -28,6 +28,8 @@ class source(coreObject):
         coreObject.__init__(self, scenario)
         self.localSourceDir__lock = threading.Lock()
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def prepareCommand(self, client):
         """
         Return the command to prepare the sources.
@@ -43,6 +45,7 @@ class source(coreObject):
         @param  client      The client for which the sources are to be prepared.
         """
         return None
+    # pylint: enable-msg=W0613
 
     def prepareLocal(self, client):
         """
@@ -78,7 +81,7 @@ class source(coreObject):
                     return
                 try:
                     result = proc.communicate(prepareCommand)
-                except Exception exc:
+                except Exception:
                     Campaign.logger.log( result )
                     raise Exception( "Could not prepare sources for client {0} locally using source {1}".format( client.name, self.__class__.__name__ ) )
             finally:
@@ -98,16 +101,19 @@ class source(coreObject):
         """
         prepareCommand = self.prepareCommand(client)
         if prepareCommand:
-            if self.isInCleanup():
-                return
-            host.sendCommand( 'mkdir "{0}"; cd "{0}"'.format( self.remoteLocation(client, host) ) )
-            if self.isInCleanup():
-                return
-            result = host.sendCommand(prepareCommand)
-        except Exception exc:
-            Campaign.logger( result )
-            raise Exception( "Could not prepare sources for client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
+            try:
+                if self.isInCleanup():
+                    return
+                host.sendCommand( 'mkdir "{0}"; cd "{0}"'.format( self.remoteLocation(client, host) ) )
+                if self.isInCleanup():
+                    return
+                result = host.sendCommand(prepareCommand)
+            except Exception:
+                Campaign.logger.log( result )
+                raise Exception( "Could not prepare sources for client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def localLocation(self, client):
         """
         Returns the local location of the client sources.
@@ -116,13 +122,14 @@ class source(coreObject):
 
         Note that when cleanup(...) is called, this directory will be removed.
         
-        @param  client      The client for which the local is needed.
+        @param  client      The client for which the local source is needed.
         """
         self.localSourceDir__lock.acquire()
         try:
             return self.localSourceDir
         finally:
             self.localSourceDir__lock.release()
+    # pylint: enable-msg=W0613
 
     def remoteLocation(self, client, host):
         """

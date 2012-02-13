@@ -260,7 +260,7 @@ class _skeleton_(client):
         # for errors. That is why all of the above is highly discouraged: please use the simpleCommandLine or
         # complexCommandLine named parameters to client.prepareExecution(...) in your implementation of
         # prepareExecution(...) above and just use the following implementation:
-        client.start(execution)
+        client.start(self, execution)
         #
         # TODO: If you really, really must: override this implementation. Your risk.
         #

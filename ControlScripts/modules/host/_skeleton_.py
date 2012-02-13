@@ -185,7 +185,7 @@ class _skeleton_(host):
         #
         raise Exception( "Not implemented" )
     
-    # TODO If you have a more effective way of sending multiple files at once, override sendFiles as well.
+    # TODO: If you have a more effective way of sending multiple files at once, override sendFiles as well.
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """

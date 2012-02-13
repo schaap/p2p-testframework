@@ -1,4 +1,3 @@
-from core.campaign import Campaign
 from core.coreObject import coreObject
 
 class tc(coreObject):
@@ -17,6 +16,8 @@ class tc(coreObject):
         """
         coreObject.__init__(self, scenario)
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def check(self, host):
         """
         Checks whether traffic control can be set up on the host.
@@ -26,7 +27,10 @@ class tc(coreObject):
         @return True iff traffic control can be set up.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def install(self, host):
         """
         Installs the traffic control on the host.
@@ -34,7 +38,10 @@ class tc(coreObject):
         @param  host    The host on which to install TC.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def remove(self, host):
         """
         Removes the traffic control from the host.
@@ -42,6 +49,7 @@ class tc(coreObject):
         @param  host    The host from which to remove TC.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
     @staticmethod
     def APIVersion():

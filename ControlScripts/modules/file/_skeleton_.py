@@ -49,7 +49,7 @@ class _skeleton_(core.file.file):
 
         @param  scenario        The ScenarioRunner object this client object is part of.
         """
-        coreObject.__init__(self, scenario)
+        core.file.file.__init__(self, scenario)
         # TODO: Your initialization, if any (not likely). Oh, and remove the next line.
         raise Exception( "DO NOT instantiate the skeleton implementation" )
 
@@ -116,7 +116,7 @@ class _skeleton_(core.file.file):
 
         @param  host        The host to which to send the files.
         """
-        core.file.file.sendToHost(host)
+        core.file.file.sendToHost(self, host)
         # TODO: Send any extra files here. These are the files that are required by all executions, whether they're seeding or leeching.
         # Seeding specific files are to be sent in sendToSeedingHost(...).
         #
@@ -134,7 +134,7 @@ class _skeleton_(core.file.file):
 
         @param  host        The host to which to send the files.
         """
-        core.file.file.sendToSeedingHost(host)
+        core.file.file.sendToSeedingHost(self, host)
         # TODO: Send the actual files to a seeding host. sendToHost(...) has already been called.
         # Note that self.getFileDir(...) is not guaranteed to exist yet. Example:
         #

@@ -1,6 +1,5 @@
 import os
 
-from core.parsing import *
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -23,6 +22,8 @@ class processor(coreObject):
         """
         coreObject.__init__(self, scenario)
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def parseSetting(self, key, value):
         """
         Parse a single setting for this object.
@@ -41,6 +42,7 @@ class processor(coreObject):
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
         parseError( 'Unknown parameter name: {0}'.format( key ) )
+    # pylint: enable-msg=W0613
 
     def checkSettings(self):
         """
@@ -53,6 +55,8 @@ class processor(coreObject):
         """
         pass
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def processLogs(self, execution, baseDir):
         """
         Process the raw and parsed logs found in the base directory.
@@ -68,6 +72,7 @@ class processor(coreObject):
         @param  outputDir   The path to the directory on the local machine where the processed logs are to be stored.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
     @staticmethod
     def getRawLogDir(execution, baseDir):

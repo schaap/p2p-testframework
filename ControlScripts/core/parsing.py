@@ -2,62 +2,62 @@ import re
 
 from core.campaign import Campaign
 
-def isSectionHeader( str ):
+def isSectionHeader( s ):
     """
     Returns whether str is a section header (i.e. starts with a [).
 
-    @param  str     A string containing a single line.
+    @param  s       A string containing a single line.
 
     @return True iff str is a section header.
     """
-    return str[0] == '['
+    return s[0] == '['
 
-def getSectionName( str ):
+def getSectionName( s ):
     """
     Returns the section name of the given section header.
 
     Will throw an exception if the section is not clean.
     
-    @param  str     A string containing a single line.
+    @param  s       A string containing a single line.
 
     @return The section name (i.e. the string between []).
     """
-    if not re.match( "\[.*\].", str ) is None:
+    if not re.match( "\[.*\].", s ) is None:
         raise Exception( "Found garbage after section header on line {0}".format( Campaign.currentLineNumber ) )
-    if not re.match( "\[.*\s.*\]", str ) is None:
+    if not re.match( "\[.*\s.*\]", s ) is None:
         raise Exception( "Section names are not allowd to have whitespace in them (line {0})".format( Campaign.currentLineNumber ) )
-    if str == '[]':
+    if s == '[]':
         raise Exception( "Empty section name on line {0}".format( Campaign.currentLineNumber ) )
-    return str[1:-1]
+    return s[1:-1]
 
-def getParameterName( str ):
+def getParameterName( s ):
     """
     Returns the parameter name of the given parameter line.
 
     Will throw an exception is the parameter is malformed.
 
-    @param  str     A string containing a single line.
+    @param  s       A string containing a single line.
 
     @return The parameter name (i.e. the string before =).
     """
-    m = re.match( "^([^=].*)=..*$", str )
+    m = re.match( "^([^=].*)=..*$", s )
     if m is None:
         raise Exception( "Malformed parameter on line {0}".format( Campaign.currentLineNumber ) )
     if not re.match( ".*\s.*", m.group(1) ) is None:
         raise Exception( "Parameter names are not allowed to have whitespace in them (line {0})".format( Campaign.currentLineNumber ) )
     return m.group(1)
 
-def getParameterValue( str ):
+def getParameterValue( s ):
     """
     Returns the parameter value of the given parameter line.
 
     Will throw an exception is the parameter is malformed.
 
-    @param  str     A string containing a single line.
+    @param  s       A string containing a single line.
 
     @return The parameter value (i.e. the string after =).
     """
-    m = re.match( "^[^=].*=(.*)$", str )
+    m = re.match( "^[^=].*=(.*)$", s )
     if m is None:
         raise Exception( "Malformed parameter on line {0}".format( Campaign.currentLineNumber ) )
     return m.group(1)

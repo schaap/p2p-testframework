@@ -1,4 +1,3 @@
-from core.parsing import *
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -21,6 +20,8 @@ class viewer(coreObject):
         """
         coreObject.__init__(self, scenario)
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def parseSetting(self, key, value):
         """
         Parse a single setting for this object.
@@ -39,6 +40,7 @@ class viewer(coreObject):
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
         parseError( 'Unknown parameter name: {0}'.format( key ) )
+    # pylint: enable-msg=W0613
 
     def checkSettings(self):
         """
@@ -51,6 +53,8 @@ class viewer(coreObject):
         """
         pass
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def createView(self, processedDir, viewDir):
         """
         Create the view from the processed data.
@@ -59,6 +63,7 @@ class viewer(coreObject):
         @param  viewDir         The path to the directory on the local machine where the view should be stored.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
     @staticmethod
     def APIVersion():

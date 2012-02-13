@@ -1,6 +1,6 @@
 import os
 
-from core.parsing import *
+from core.parsing import isPositiveInt
 from core.campaign import Campaign
 from core.client import client
 
@@ -56,7 +56,7 @@ class test__(client):
                 parseError( "The number of seconds to wait must be a non-zero positive integer" )
             self.testTime = value
         else:
-            host.parseSetting(self, key, value)
+            client.parseSetting(self, key, value)
 
     def checkSettings(self):
         """
@@ -172,7 +172,7 @@ class test__(client):
 
         @param  execution       The execution this client is to be run for.
         """
-        client.start(execution)
+        client.start(self, execution)
 
     def retrieveLogs(self, execution, localLogDestination):
         """

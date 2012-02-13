@@ -50,7 +50,7 @@ class _skeleton_(parser):
 
         @param  scenario        The ScenarioRunner object this parser object is part of.
         """
-        coreObject.__init__(self, scenario)
+        parser.__init__(self, scenario)
         # TODO: Your initialization, if any (not likely). Oh, and remove the next line.
         raise Exception( "DO NOT instantiate the skeleton implementation" )
 

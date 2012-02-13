@@ -48,7 +48,6 @@ class coreObject:
         
         @return True iff this object has started cleanup.
         """
-        res = False
         self.inCleanup__lock.acquire()
         res = self.inCleanup
         self.inCleanup__lock.release()

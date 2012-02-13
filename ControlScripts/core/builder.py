@@ -20,7 +20,9 @@ class builder(coreObject):
         @param  scenario        The ScenarioRunner object this builder object is part of.
         """
         coreObject.__init__(self, scenario)
-
+    
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def buildCommand(self, client):
         """
         Return the command to build the client.
@@ -33,6 +35,7 @@ class builder(coreObject):
         @param  client      The client for which the sources are to be built.
         """
         return None
+    # pylint: enable-msg=W0613
 
     def buildLocal(self, client):
         """
@@ -43,7 +46,7 @@ class builder(coreObject):
 
         @param  client      The client for which the sources are to be built locally.
         """
-        buildCommand = self.buildCommand()
+        buildCommand = self.buildCommand(client)
         if buildCommand:
             result = ''
             try:
@@ -54,7 +57,7 @@ class builder(coreObject):
                     proc.kill()
                     return
                 result = proc.communicate(buildCommand)
-            except Exception exc:
+            except Exception:
                 Campaign.logger.log( result )
                 raise Exception( "Could not build client {0} locally using builder {1}".format( client.name, self.__class__.__name__ ) )
     
@@ -68,7 +71,7 @@ class builder(coreObject):
         @param  client      The client for which the sources are to be built remotely.
         @param  host        The remote host on which the source are to be built.
         """
-        buildCommand = self.buildCommand()
+        buildCommand = self.buildCommand(client)
         if buildCommand:
             result = ''
             try:
@@ -78,8 +81,8 @@ class builder(coreObject):
                 if self.isInCleanup():
                     return
                 result = host.sendCommand(buildCommand)
-            except Exception exc:
-                Campaign.logger( result )
+            except Exception:
+                Campaign.logger.log( result )
                 raise Exception( "Could not build client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
 
     @staticmethod

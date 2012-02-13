@@ -7,7 +7,7 @@ from core.builder import builder
 # TODO: Change the name of the class. See the remark above about the names of the module and the class. Example:
 #
 #   class make(builder):
-class _skeleton_(coreObject):
+class _skeleton_(builder):
     """
     The skeleton implementation of the builder class.
 

@@ -4,6 +4,9 @@ import traceback
 
 class logger:
     fileObject = None       # The file to be logged to. None for stdout
+    
+    def __init__(self):
+        pass
 
     def log(self, msg):
         """
@@ -41,7 +44,7 @@ class logger:
         """
         self.closeLogFile()
         if os.path.exists( pathname ) and not os.path.isfile( pathname ):
-            raise Exception( 'Logging to "{0}" requested, but that already exists and is not a file' );
+            raise Exception( 'Logging to "{0}" requested, but that already exists and is not a file' )
         self.fileObject = open( pathname, 'a', 0 )
 
     def closeLogFile(self):
@@ -51,7 +54,7 @@ class logger:
         if not self.fileObject is None:
             try:
                 self.fileObject.close()
-            except IOError as err:
+            except IOError:
                 pass    # Ignore IOError on closing
             self.fileObject = None
 
@@ -77,4 +80,4 @@ class logger:
                 for line in traceback.format_tb( tb ):
                     self.logPre( line )
         finally:
-            bt = None
+            tb = None

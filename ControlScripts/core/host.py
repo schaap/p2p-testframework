@@ -1,7 +1,9 @@
 import os
 import threading
 
-from core.parsing import *
+from core.parsing import isPositiveInt
+from core.parsing import isPositiveFloat
+from core.parsing import isValidName
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -243,6 +245,8 @@ class host(coreObject):
         """
         raise Exception( "Not implemented" )
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def closeConnection(self, connection):
         """
         Close a previously created connection to the host.
@@ -252,7 +256,10 @@ class host(coreObject):
         @param  The connection to be closed.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def sendCommand(self, command, reuseConnection = True):
         """
         Sends a bash command to the remote host.
@@ -265,7 +272,10 @@ class host(coreObject):
         @return The result from the command.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
@@ -280,8 +290,9 @@ class host(coreObject):
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
     
-    def sendFiles(self, localSourcePath, remoteDestinationPath):
+    def sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection = True):
         """
         Sends a directory to the remote host.
 
@@ -314,9 +325,11 @@ class host(coreObject):
             if os.path.isdir( fullLocalPath ):
                 self.sendFiles( fullLocalPath, fullRemotePath, reuseConnection = reuseConnection )
             else:
-                self.sendFile( fullLocalPath, fullRemotePath, True, reuseConnection = reuseConncetion )
+                self.sendFile( fullLocalPath, fullRemotePath, True, reuseConnection = reuseConnection )
 
-    def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False):
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
+    def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
         Retrieves a file from the remote host.
 
@@ -330,6 +343,7 @@ class host(coreObject):
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
         raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
 
     def prepare(self):
         """
@@ -344,7 +358,7 @@ class host(coreObject):
         try:
             if self.connections[0]:
                 raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
-            self.connections[0] = setupNewConnection()
+            self.connections[0] = self.setupNewConnection()
         finally:
             self.connections__lock.release()
         if not self.remoteDirectory:
@@ -378,7 +392,7 @@ class host(coreObject):
         for conn in closeConns:
             try:
                 self.closeConnection( conn )
-            except Exception exc:
+            except Exception:
                 Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring".format( host.name ) )
                 Campaign.logger.exceptionTraceback()
         self.connections__lock.release()
