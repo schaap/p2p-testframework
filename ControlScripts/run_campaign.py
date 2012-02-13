@@ -33,7 +33,8 @@ def loadCoreModule( moduleType ):
     objectModule = __import__( 'core.' + moduleType, globals(), locals(), moduleType )
     objectClass = getattr( objectModule, moduleType )
     if objectClass.APIVersion() != APIVersion.'--core':
-        raise Exception
+        raise Exception( "The running core if version {0}, but core module {1} is written for verion {2}. This is a very clear signal for a broken translation which will hence break.".format( APIVersion, objectClass.APIVersion(), moduleType ) )
+    return objectClass
 
 def loadModule( moduleType, moduleSubType ):
     """
@@ -71,6 +72,7 @@ def loadModule( moduleType, moduleSubType ):
             if objectClass.APIVersion() == APIVersion.'--core':
                 raise Exception( "Module modules.{0}.{1} has not correctly overridden the APIVersion function. This is required for correctly functioning modules.".format( moduleType, moduleSubType ) )
             raise Exception( "Module modules.{0}.{1} was made for API version {2}, which is different from the core (version {3})".format( moduleType, moduleSubType, objectClass.APIVersion(), APIVersion ) )
+        return objectClass
 
 class BusyExecutionThread(threading.Thread):
     """A small extension for Thread that can be tested for the run method currently being active."""
@@ -249,6 +251,8 @@ class ScenarioRunner:
         # Check sanity
         if len( self.getObjects('execution') ) == 0:
             raise Exception( "No executions found in scenario {0}".format( self.name ) )
+        for execution in self.getObjects('execution'):
+            execution.resolveNames()
 
     def fallbackWarning(self, host, direction):
         """Log a warning that the host has to fall back to full traffic control in the given direction."""
