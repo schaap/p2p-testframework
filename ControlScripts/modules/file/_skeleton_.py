@@ -4,7 +4,7 @@ from core.parsing import *
 from core.campaign import Campaign
 import core.file
 
-# NOTE: The last import above (impor core.file) is different from usual. This is done to prevent trouble with python's
+# NOTE: The last import above (import core.file) is different from usual. This is done to prevent trouble with python's
 # builtin file type. The import
 #   from core.file import file
 # works perfectly, but hides the normal file type. The tradeoff is between a bit more typing (core.file.file instead of file)
