@@ -1,14 +1,17 @@
 import core.file
 
-class test__(core.file.file):
+class none(core.file.file):
     """
-    A test implementation of the file object.
+    A very empty file implementation.
 
-    The implementation uses the file testseedingfile, which contains "abcdef" as data. A testfile is also sent to each host, but never used.
+    This file module allows one to specify no file at all.
+    Including
+        [file:none]
+        name=none
+    is enough to be able to use file=none in an execution.
 
-    If no root hash is given a hardcoded root hash for the seeding file is used.
-
-    Use file:fakedata for more elaborate testing.
+    Meta data and root hashes are handled normally, just like anything for a generic file.
+    There just no real files that will be uploaded beyond that; which includes seeding executions.
     """
 
     def __init__(self, scenario):
@@ -49,9 +52,6 @@ class test__(core.file.file):
         """
         core.file.file.checkSettings(self)
 
-        if not self.rootHash:
-            self.rootHash = '97bb2117ad9bc68bc8bec3cca3a113ef30aebc37'
-
     def sendToHost(self, host):
         """
         Send any required file to the host.
@@ -71,20 +71,6 @@ class test__(core.file.file):
         """
         core.file.file.sendToHost(self, host)
 
-        if self.isInCleanup():
-            return
-        f, path = tempfile.mkstemp()
-        fileObj = os.fdopen( f )
-        for a in range( 0, 1024 ):
-            fileObj.write( 'hijklmn' )
-        fileObj.close()
-        if self.isInCleanup():
-            os.remove( path )
-            return
-        host.sendCommand( 'mkdir "{0}/files/"'.format( self.getFileDir( host ) ) )
-        host.sendFile( path, "{0}/files/testfile".format( self.getFileDir( host ) ) )
-        os.remove( path )
-
     def sendToSeedingHost(self, host):
         """
         Send any files required for seeding hosts.
@@ -98,19 +84,6 @@ class test__(core.file.file):
         @param  host        The host to which to send the files.
         """
         core.file.file.sendToSeedingHost(self, host)
-        if self.isInCleanup():
-            return
-        f, path = tempfile.mkstemp()
-        fileObj = os.fdopen( f )
-        for a in range( 0, 1024 ):
-            fileObj.write( 'abcdefg' )
-        fileObj.close()
-        if self.isInCleanup():
-            os.remove( path )
-            return
-        host.sendCommand( 'mkdir "{0}/files/"'.format( self.getFileDir( host ) ) )
-        host.sendFile( path, "{0}/files/testseedingfile".format( self.getFileDir( host ) ) )
-        os.remove( path )
 
     def getFile(self, host):
         """
@@ -129,7 +102,7 @@ class test__(core.file.file):
 
         @return The path to the (root of) the file(s) on the remote host, or None if they are not (yet) available.
         """
-        return "{0}/files/testseedingfile".format( self.getFileDir( host ) )
+        return None
 
     @staticmethod
     def APIVersion():
