@@ -1,6 +1,7 @@
 from subprocess import Popen
 from subprocess import STDOUT
 from subprocess import PIPE
+import threading
 
 # These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
 # the Campaign data object and the host parent class.
@@ -17,6 +18,47 @@ def parseError( msg ):
     A simple helper function to make parsing a lot of parameters a bit nicer.
     """
     raise Exception( "Parse error for host object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
+
+class ConnectionObject:
+    counter = 0
+    counter__lock = threading.Lock()
+
+    proc = None
+    closed = False
+    close__lock = None
+    ident = 0
+    def __init__(self, proc):
+        self.proc = proc
+        self.close__lock = threading.Lock()
+        ConnectionObject.counter__lock.acquire()
+        ConnectionObject.counter += 1
+        self.ident = ConnectionObject.counter
+        ConnectionObject.counter__lock.release()
+        self.counter__lock = None
+
+    def close(self):
+        self.close__lock.acquire()
+        self.closed = True
+        self.close__lock.release()
+
+    def isClosed(self):
+        self.close__lock.acquire()
+        self.closed = True
+        self.close__lock.release()
+
+    def closeIfNotClosed(self):
+        res = False
+        self.close__lock.acquire()
+        res = self.closed
+        self.closed = True
+        self.close__lock.release()
+        return res
+
+    def input(self):
+        return self.proc.stdin
+
+    def output(self):
+        return self.proc.stdout
 
 class local(host):
     """
@@ -77,11 +119,6 @@ class local(host):
 
         @return The connection object for a new connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        # Be sure to include the new connection in the self.connections list after acquiring self.connections__lock
         if self.isInCleanup():
             return
         proc = Popen('bash -l', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
@@ -89,7 +126,18 @@ class local(host):
         if self.isInCleanup():
             proc.communicate( 'exit' )
             return
-        # FIXME: CONTINUE
+        obj = ConnectionObject( proc )
+        self.connections__lock.acquire()
+        try:
+            self.connections.append( obj )
+            if self.isInCleanup():
+                self.connections.pop()
+                proc.communicate( 'exit' )
+                return
+        finally:
+            self.connections__lock.release()
+        self.sendCommand('echo "READY"', obj )
+        return obj
 
     def closeConnection(self, connection):
         """
@@ -99,12 +147,20 @@ class local(host):
 
         @param  The connection to be closed.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        # Be sure to remove the connection from the self.connections list after acquiring self.connections__lock
-        raise Exception( "Not implemented" )
+        if connection.closeIfNotClosed():
+            return
+        connection.proc.communicate( 'exit' )
+        self.connections__lock.acquire()
+        try:
+            index = 0
+            while index < len(self.connections):
+                if self.connections[index].ident = connection.ident:
+                    self.connections.pop(index)
+                    break
+            else:
+                raise Exception( "Closing connection that is not in the list of connections?" )
+        finally:
+            self.connections__lock.release()
 
     def sendCommand(self, command, reuseConnection = True):
         """
@@ -117,22 +173,38 @@ class local(host):
 
         @return The result from the command.
         """
-        # TODO: Implement this! Example:
-        #
-        #   connection = None
-        #   if not reuseConnection:
-        #       connection = self.setupNewConnection()
-        #   elif reuseConnection == True:
-        #       self.connections__lock.acquire()
-        #       connection = self.connections[0]
-        #       self.connections__lock.release()
-        #   else:
-        #       connection = reuseConnection
-        #   FIXME: WRITE MORE EXAMPLE
-        #   if not reuseConnection:
-        #       self.closeConnection( connection )
-        #
-        raise Exception( "Not implemented" )
+        connection = None
+        if not reuseConnection:
+            connection = self.setupNewConnection()
+        elif reuseConnection == True:
+            self.connections__lock.acquire()
+            try:
+                if self.isInCleanup():
+                    return
+                connection = self.connections[0]
+            finally:
+                self.connections__lock.release()
+        else:
+            connection = reuseConnection
+
+        if connection.isClosed():
+            raise Exception( "Trying to send a command over a closed connection." )
+
+        try:
+            # Send command
+            connection.input().write( command+'\necho "\\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            # Read output of command
+            out = connection.output()
+            res = ''
+            line = out.readline()
+            while line != '' and line != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework\n':
+                res += line
+                line = out.readline()
+            # Return output (ditch the last trailing \n)
+            return res[:-1]
+        finally:
+            if not reuseConnection:
+                self.closeConnection( connection )
 
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
