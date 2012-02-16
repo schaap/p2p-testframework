@@ -1,4 +1,6 @@
 import core.file
+import tempfile
+import os
 
 class test__(core.file.file):
     """
@@ -75,7 +77,7 @@ class test__(core.file.file):
             return
         f, path = tempfile.mkstemp()
         fileObj = os.fdopen( f )
-        for a in range( 0, 1024 ):
+        for _ in range( 0, 1024 ):
             fileObj.write( 'hijklmn' )
         fileObj.close()
         if self.isInCleanup():
@@ -102,7 +104,7 @@ class test__(core.file.file):
             return
         f, path = tempfile.mkstemp()
         fileObj = os.fdopen( f )
-        for a in range( 0, 1024 ):
+        for _ in range( 0, 1024 ):
             fileObj.write( 'abcdefg' )
         fileObj.close()
         if self.isInCleanup():

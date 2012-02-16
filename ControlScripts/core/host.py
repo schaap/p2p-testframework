@@ -359,6 +359,12 @@ class host(coreObject):
             if self.connections[0]:
                 raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
             self.connections[0] = self.setupNewConnection()
+            if not self.connections[0]:
+                if not self.isInCleanup():
+                    raise Exception( "Could not create default connection" )
+                del self.connections[0]
+            if self.isInCleanup():
+                return
         finally:
             self.connections__lock.release()
         if not self.remoteDirectory:

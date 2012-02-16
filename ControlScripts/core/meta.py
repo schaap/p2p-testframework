@@ -2,16 +2,20 @@ import os
 import math
 import hashlib
 
+import external.bencode
+
 # ZERO contains 20 zero bytes. It's basically a zeroed SHA1 hash.
 ZERO = '\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0'
 
+# pylint thinks I'm a a bad boy for using python's possibilities. I don't agree, especially since these functions are internal.
+# pylint: disable-msg=W0102,W0142,W0141
 def buildFileList( path, subdirs = [] ):
     fullpath = os.path.join( path, *subdirs )
     if os.path.isfile( fullpath ):
         return [{'length': os.stat(fullpath).st_size, 'path': subdirs}]
     else:
-        names = os.listdir(fullpath)
         return reduce(lambda x,y: x+y, map(lambda x: buildFileList(path, subdirs+[x]), os.listdir(fullpath)))
+# pylint: enable-msg=W0102,W0142,W0141
 
 def buildPieces( path, fileList_, blocksize ):
     fileList = list(fileList_)
@@ -41,6 +45,12 @@ class meta:
     A fully static class with a number of methods to help you build
     meta data on the fly.
     """
+    
+    def __init__(self):
+        """
+        Do not instantiate.
+        """
+        raise Exception( "Do not instantiate" )
 
     @staticmethod
     def calculateMerkleRootHash( path, compact = False, blocksize = 1 ):
@@ -104,7 +114,7 @@ class meta:
 
         if compact:
             st = os.stat( path )
-            size = math.ceil( st.st_size / ( 1024.0 * blocksize ) );
+            size = math.ceil( st.st_size / ( 1024.0 * blocksize ) )
             maxLevel = 0
             while maxLevel < 64 and 2**maxLevel < size:
                 maxLevel += 1
@@ -257,7 +267,7 @@ class meta:
         if not os.path.exists( path ):
             raise ValueError( "The file or directory '{0}' does not exist.".format( path ) )
         if os.path.exists( torrentPath ) and os.path.isdir( torrentPath ):
-            raise ValueError( "{0} is a directory".format( torrentPath )
+            raise ValueError( "{0} is a directory".format( torrentPath ) )
 
         torrent = {'encoding': 'UTF-8'}
         multiFile = os.path.isdir( path )
@@ -273,7 +283,7 @@ class meta:
                     if len( announceTier ) < 1:
                         raise ValueError( "No sublists of the announce list may be empty." )
                     for announceURI in announceTier:
-                        if not isinstance( announceURI, basestring )
+                        if not isinstance( announceURI, basestring ):
                             raise TypeError( "Announce may be None, an URI string or a list of lists of URI strings." )
                         if not oneAnnounce:
                             oneAnnounce = announceURI
@@ -326,7 +336,7 @@ class meta:
         else:
             if path[-1:] == '/':
                 infodict['name'] = os.path.basename( path[:-1] )
-            else
+            else:
                 infodict['name'] = os.path.basename( path )
         if not isinstance( blocksize, int ) or blocksize < 1:
             raise ValueError( "blocksize must be a positive integer" )
@@ -336,30 +346,12 @@ class meta:
             infodict['length'] = st.st_size
             infodict['pieces'] = buildPieces( path, [{'length': st.st_size, 'path': []}], blocksize )
         else:
-            infodict['files'] = buildFileDict( path )
+            infodict['files'] = buildFileList( path )
             infodict['pieces'] = buildPieces( path, infodict['files'], blocksize )
-        # FIXME: Check correctness of pieces function
-        # FIXME: CONTINUE
+        torrent['info'] = infodict
 
-        # - info
-        #   Dictionary of
-        #   - name
-        #       Purely advisory suggested file name to use when saving the file or directory.
-        #   - piece length
-        #       Number of bytes per chunk. Almost always power of 2.
-        #   - pieces
-        #       String, len of which multiple of 20, each 20-byte piece index i is
-        #       SHA1 hash of piece i in the file.
-        #   - one of:
-        #       - length
-        #           The size in bytes of the single file in the torrent.
-        #       - files
-        #           Indicates multiple files in the torrent. This is the list giving each of those
-        #           files. For purpose of other keys in the info dict, all files are concatenated.
-        #           List of dictionaries of
-        #           - length
-        #               The size in bytes of the file.
-        #           - path
-        #               List of UTF-8 encoded names corresponding to the path, e.g. ['foo','bar',
-        #               'baz.txt'] for file foo/bar/baz.txt
+        torrentFileContent = external.bencode.bencode( torrent )
+        f = open( torrentPath, 'w' )
+        f.write( torrentFileContent )
+        f.close()
 

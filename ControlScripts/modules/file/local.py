@@ -1,3 +1,5 @@
+import os
+
 # These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
 # the Campaign data object and the file parent class.
 from core.parsing import *
