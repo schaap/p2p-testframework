@@ -1,0 +1,3 @@
+The external packages in this directory are:
+- bencode
+    The original bencode implementation of BitTorrent 5.0.8, distributed under the BitTorrent Open Source License.
