@@ -2,16 +2,11 @@ from subprocess import Popen
 from subprocess import STDOUT
 from subprocess import PIPE
 import threading
+import subprocess
 
-# These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
-# the Campaign data object and the host parent class.
 from core.parsing import *
 from core.campaign import Campaign
 from core.host import host
-
-# You can define anything you like in the scope of your own module: the only thing that will be imported from it
-# is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
-# suppose you copy this file to modules/host/rudeHost.py then the name of your class would be rudeHost.
 
 def parseError( msg ):
     """
@@ -64,10 +59,6 @@ class local(host):
     """
     A local host implementation.
     """
-
-    # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
-    # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
-    # and bail out if that returns True.
 
     def __init__(self, scenario):
         """
@@ -162,16 +153,9 @@ class local(host):
         finally:
             self.connections__lock.release()
 
-    def sendCommand(self, command, reuseConnection = True):
+    def __chooseConnection(self, reuseConnection):
         """
-        Sends a bash command to the remote host.
-
-        @param  command             The command to be executed on the remote host.
-        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
-                                    False to build a new connection for this command and use that.
-                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
-
-        @return The result from the command.
+        Internal method
         """
         connection = None
         if not reuseConnection:
@@ -189,6 +173,20 @@ class local(host):
 
         if connection.isClosed():
             raise Exception( "Trying to send a command over a closed connection." )
+
+
+    def sendCommand(self, command, reuseConnection = True):
+        """
+        Sends a bash command to the remote host.
+
+        @param  command             The command to be executed on the remote host.
+        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
+                                    False to build a new connection for this command and use that.
+                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+
+        @return The result from the command.
+        """
+        connection = self.__chooseConnection(reuseConnection)
 
         try:
             # Send command
@@ -219,14 +217,20 @@ class local(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        raise Exception( "Not implemented" )
-    
-    # TODO: If you have a more effective way of sending multiple files at once, override sendFiles as well.
+        connection = self.__chooseConnection(reuseConnection)
 
+        try:
+            if not os.path.exists( localSourcePath ) or not os.path.isfile( localSourcePath ):
+                raise Exception( "Sending local file {0} to remote file {1}: local source should point to an existing file".format( localSourcePath, remoteDestinationPath ) )
+            if not overwrite and os.path.exists( remoteDestinationPath ):
+                raise Exception( "Sending local file {0} to remote file {1}: destination already exists".format( localSourcePath, remoteDestinationPath ) )
+            elif os.path.isdir( remoteDestinationPath ):
+                raise Exception( "Sending local file {0} to remote file {1}: destination would be overwritten, but is a directory".format( localSourcePath, remoteDestinationPath ) )
+            subprocess.check_output( 'cp "{0}" "{1}"'.format( localSourcePath, remoteDestinationPath ) )
+        finally:
+            if not reuseConnection:
+                self.closeConnection( connection )
+    
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
         Retrieves a file from the remote host.
@@ -240,11 +244,19 @@ class local(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        raise Exception( "Not implemented" )
+        connection = self.__chooseConnection(reuseConnection)
+
+        try:
+            if not os.path.exists( remoteSourcePath ) or not os.path.isfile( remoteSourcePath ):
+                raise Exception( "Getting remote file {0} to local file {1}: remote source should point to an existing file".format( remoteSourcePath, localDestinationPath ) )
+            if not overwrite and os.path.exists( localDestinationPath ):
+                raise Exception( "Getting remote file {0} to local file {1}: destination already exists".format( remoteSourcePath, localDestinationPath ) )
+            elif os.path.isdir( localDestinationPath ):
+                raise Exception( "Getting remote file {0} to local file {1}: destination would be overwritten, but is a directory".format( remoteSourcePath, localDestinationPath ) )
+            subprocess.check_output( 'cp "{0}" "{1}"'.format( remoteSourcePath, localDestinationPath ) )
+        finally:
+            if not reuseConnection:
+                self.closeConnection( connection )
 
     def prepare(self):
         """
@@ -252,13 +264,7 @@ class local(host):
 
         The default implementation simply ensures the existence of a remote directory.
         """
-        # TODO: Prepare anything you may need before being able to set up a connection, first.
-        #
-        # Then do this call, and definitely do this call unless you know what you're doing:
         host.prepare(self)
-        # After that you can do any other less-important host-specific preparation
-        #
-        # Usually this one call will be enough if you just need to set up the connection.
 
     def cleanup(self):
         """
@@ -268,18 +274,7 @@ class local(host):
 
         Subclassers are advised to first call this implementation and then proceed with their own steps.
         """
-        # Be symmetrical with prepare(), clean up the less-important host-specific stuff here
-        # Then do this call, and definitely do this call unless you know what you're doing:
         host.cleanup(self)
-        # TODO: Cleanup all of the host, be sure to check what has and what has not been done and needs cleanup.
-        # Don't just assume you're at the end of everything. Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-
-    # TODO: If you need a separate location to store data to ensure that data survives until the end of the test,
-    # override getPersistentTestDir() and make sure to initialize correctly to have both the test dir and the
-    # persistent test dir set up on the remote host
 
     def getSubNet(self):
         """
@@ -287,11 +282,7 @@ class local(host):
 
         @return The subnet of the host(s).
         """
-        # TODO: Implement this! Example:
-        #
-        #   return self.hostname
-        #
-        raise Exception( "Not implemented" )
+        return "127.0.0.1"
 
     def getAddress(self):
         """
@@ -305,13 +296,8 @@ class local(host):
 
         @return The address of the remote host, or '' if no such address can be given.
         """
-        # TODO: Implement this, if possible. Example:
-        #
-        #   return self.hostname
-        #
-        return ''
+        return '127.0.0.1'
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version.
         return "2.0.0"

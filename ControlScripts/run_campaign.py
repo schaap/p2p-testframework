@@ -711,10 +711,14 @@ class CampaignRunner:
     currentCampaign = None  # The campaign object currently running
 
     @staticmethod
-    def usage():
+    def usage( msg = None ):
         """
         Prints a simple message informing the user how to use this script.
+
+        @param  msg     If given, the message is printed first.
         """
+        if msg:
+            print msg
         print """
 P2P Testing Framework campaign runner
 Run a test campaign, scenario by scenario.

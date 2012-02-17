@@ -1,4 +1,4 @@
-import core
+import core.logger
 
 # We have unused arguments; that's fine
 # pylint: disable-msg=W0613
