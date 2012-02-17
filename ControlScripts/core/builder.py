@@ -45,21 +45,24 @@ class builder(coreObject):
         Otherwise it starts a local bash instance and gives the buildCommand(...) as input to that.
 
         @param  client      The client for which the sources are to be built locally.
+        
+        @return True iff the building was succesful.
         """
         buildCommand = self.buildCommand(client)
         if buildCommand:
             result = ''
             try:
                 if self.isInCleanup():
-                    return
+                    return False
                 proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=client.sourceObj.localLocation() )
                 if self.isInCleanup():
                     proc.kill()
-                    return
+                    return False
                 result = proc.communicate(buildCommand)
             except Exception:
                 Campaign.logger.log( result )
                 raise Exception( "Could not build client {0} locally using builder {1}".format( client.name, self.__class__.__name__ ) )
+        return True
     
     def buildRemote(self, client, host):
         """
@@ -70,20 +73,39 @@ class builder(coreObject):
 
         @param  client      The client for which the sources are to be built remotely.
         @param  host        The remote host on which the source are to be built.
+        
+        @return True iff the building was succesful.
         """
         buildCommand = self.buildCommand(client)
         if buildCommand:
             result = ''
             try:
                 if self.isInCleanup():
-                    return
+                    return False
                 host.sendCommand( 'cd "{0}"'.format( client.sourceObj.remoteLocation() ) )
                 if self.isInCleanup():
-                    return
+                    return False
                 result = host.sendCommand(buildCommand)
             except Exception:
                 Campaign.logger.log( result )
                 raise Exception( "Could not build client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
+        return True
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'builder'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.__class__.__name__
 
     @staticmethod
     def APIVersion():

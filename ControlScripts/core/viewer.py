@@ -12,6 +12,11 @@ class viewer(coreObject):
     When subclassing viewer be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
+    number = None           # The number of this execution
+
+    # @static
+    viewerCount = 0         # The total number of executions
+
     def __init__(self, scenario):
         """
         Initialization of a generic viewer object.
@@ -19,6 +24,8 @@ class viewer(coreObject):
         @param  scenario        The ScenarioRunner object this viewer object is part of.
         """
         coreObject.__init__(self, scenario)
+        self.number = viewer.viewerCount
+        viewer.viewerCount += 1
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
@@ -64,6 +71,22 @@ class viewer(coreObject):
         """
         raise Exception( "Not implemented" )
     # pylint: enable-msg=W0613
+    
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'viewer'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.number
 
     @staticmethod
     def APIVersion():

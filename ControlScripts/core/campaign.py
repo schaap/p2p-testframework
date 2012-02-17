@@ -20,6 +20,10 @@ class Campaign:
 
     currentLineNumber = 0   # Global variable for easy tracking of the line number when parsing files
     
+    testEnvDir = None       # Global location of the testing environment directory (the one containing
+                            # the ControlScripts directory
+    resultsDir = None       # Global location of the results for any campaign
+    
     def __init__(self):
         raise Exception( "Do not instantiate" )
     

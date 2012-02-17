@@ -106,7 +106,7 @@ class execution(coreObject):
         if not self.fileName:
             raise Exception( "Execution defined at line {0} must have a file.".format( self.declarationLine ) )
 
-    def resolveName(self):
+    def resolveNames(self):
         """
         Resolve the names as given for host, client and file.
 
@@ -171,6 +171,22 @@ class execution(coreObject):
         else:
             p = self.client.loadDefaultParser(self)
             p.parseLogs(self, logDir, outputDir)
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'execution'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.number
 
     @staticmethod
     def APIVersion():

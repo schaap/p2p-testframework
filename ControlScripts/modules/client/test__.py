@@ -126,7 +126,7 @@ class test__(client):
         host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'extraParameters', self.extraParameters) )
         if self.isInCleanup():
             return
-        host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'defaultParser', self.defaultParser) )
+        host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'parser', self.parser) )
         if self.isInCleanup():
             return
         host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'source', self.source) )

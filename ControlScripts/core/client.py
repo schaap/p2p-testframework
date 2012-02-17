@@ -21,7 +21,6 @@ class client(coreObject):
     """
 
     extraParameters = ''        # String with extra parameters to be passed on to the client
-    defaultParser = None        # String with the name of the parser object to be used with this client if no other parser is given in the execution; defaults to None which will use the default parser for the client (which is the parser module named the same as the client, with the default settings of that module)
 
     source = None               # String with the name of the source module to use to retrieve the client; defaults to directory which is just an on-disk accessible directory
     isRemote = False            # True iff the client source is on the remote host; this means either having the source available there or retrieving it from there
@@ -59,6 +58,7 @@ class client(coreObject):
         """
         coreObject.__init__(self, scenario)
         self.pid__lock = threading.Lock()
+        self.pids = {}
 
     def parseSetting(self, key, value):
         """
@@ -94,8 +94,8 @@ class client(coreObject):
                 parseError( 'Location already set: {0}'.format( self.location ) )
             self.location = value
         elif key == 'parser':
-            if self.defaultParser:
-                parseError( 'Parser already set for client: {0}'.format( self.defaultParser ) )
+            if self.parser:
+                parseError( 'Parser already set for client: {0}'.format( self.parser ) )
             if not isValidName( value ):
                 parseError( 'Parser name given is not a valid name: {0}'.format( value ) )
             self.parser = value
@@ -104,14 +104,14 @@ class client(coreObject):
                 parseError( 'Builder already set for client: {0}'.format( self.builder ) )
             if not isValidName( value ):
                 parseError( 'Builder name given is not a valid name: {0}'.format( value ) )
-            __import__( 'module.builder.'+value, globals(), locals(), value )
+            __import__( 'modules.builder.'+value, globals(), locals(), value )
             self.builder = value
         elif key == 'source':
             if self.source:
                 parseError( 'Source already set for client: {0}'.format( self.source ) )
             if not isValidName( value ):
                 parseError( 'Source name given is not a valid name: {0}'.format( value ) )
-            __import__( 'module.source.'+value, globals(), locals(), value )
+            __import__( 'modules.source.'+value, globals(), locals(), value )
             self.source = value
         elif key == 'remoteClient':
             self.isRemote = ( value != '' )
@@ -128,33 +128,43 @@ class client(coreObject):
         An Exception is raised in the case of insanity.
         """
         if self.name == '':
-            raise Exception( "Client object declared at line {0} was not given a name".format( self.declarationLine ) )
-        if self.defaultParser:
-            if self.defaultParser not in self.scenario.getObjectsDict( 'parser' ):
-                raise Exception( "Client {0} refers to parser named {1}, but that is not declared".format( self.name, self.defaultParser ) )
+            if self.__class__.__name__ in self.scenario.getObjectsDict( 'client' ):
+                raise Exception( "Client object declared at line {0} was not given a name and default name {1} was already taken".format( self.declarationLine, self.__class__.__name__ ) )
+            else:
+                self.name = self.__class__.__name__
+        if self.parser:
+            if self.parser not in self.scenario.getObjectsDict( 'parser' ):
+                raise Exception( "Client {0} refers to parser named {1}, but that is not declared".format( self.name, self.parser ) )
         else:
             try:
-                __import__( 'module.parser.'+self.__class__.__name__, globals(), locals(), self.__class__.__name__ )
+                __import__( 'modules.parser.'+self.__class__.__name__, globals(), locals(), self.__class__.__name__ )
                 Campaign.loadModule( 'parser', self.__class__.__name__ )
             except ImportError:
-                raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{0} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
+                raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{1} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
         if not self.builder:
             self.builder = 'none'
             try:
-                __import__( 'module.builder.none', globals(), locals(), 'none' )
+                __import__( 'modules.builder.none', globals(), locals(), 'none' )
             except ImportError:
                 raise Exception( "The default builder module builder:none can't be imported. This means your installation is broken." )
         builderClass = Campaign.loadModule( 'builder', self.builder )
-        self.builderObj = builderClass()
+        # PyLint really doesn't understand dynamic loading ('too many positional arguments')
+        # pylint: disable-msg=E1121
+        self.builderObj = builderClass(self.scenario)
+        # pylint: enable-msg=E1121
         if not self.builderObj:
             raise Exception( "Could not instantiate builder module builder:{0} for client {1}".format( self.builder, self.name ) )
         if not self.source:
             self.source = 'directory'
             try:
-                __import__( 'module.source.directory', globals(), locals(), 'directory' )
+                __import__( 'modules.source.directory', globals(), locals(), 'directory' )
             except ImportError:
                 raise Exception( "The default source module source:directory can't be imported. This means your installation is broken." )
-        self.sourceObj = Campaign.loadModule( 'souce', self.source )()
+        sourceClass = Campaign.loadModule( 'source', self.source )
+        # PyLint really doesn't understand dynamic loading ('too many positional arguments')
+        # pylint: disable-msg=E1121
+        self.sourceObj = sourceClass(self.scenario)
+        # pylint: enable-msg=E1121
         if not self.sourceObj:
             raise Exception( "Could not instantiate source module source:{0} for client {1}".format( self.source, self.name ) )
 
@@ -172,10 +182,14 @@ class client(coreObject):
                 # Only say we're compiling if a builder was given
                 print "Locally compiling client {0}".format( self.name )
             if not self.sourceObj.prepareLocal( self ):
+                if self.isInCleanup():
+                    return
                 raise Exception( "The source of client {0} could not be prepared locally".format( self.name ) )
             if self.isInCleanup():
                 return
             if not self.builderObj.buildLocal( self ):
+                if self.isInCleanup():
+                    return
                 raise Exception( "A local build of client {0} failed".format( self.name ) )
 
     def prepareHost(self, host):
@@ -204,10 +218,14 @@ class client(coreObject):
                 # Only say we're compiling if a builder was given
                 print "Remotely compiling client {0}".format( self.name )
             if not self.sourceObj.prepareRemote( self, host ):
+                if self.isInCleanup():
+                    return
                 raise Exception( "The source of client {0} could not be prepared remotely on host {1}".format( self.name, host.name ) )
             if self.isInCleanup():
                 return
             if not self.builderObj.buildRemote( self, host ):
+                if self.isInCleanup():
+                    return
                 raise Exception( "A remote build of client {0} failed on host {1}".format( self.name, host.name ) )
 
     def getClientDir(self, host, persistent = False):
@@ -325,7 +343,7 @@ class client(coreObject):
             if simpleCommandLine and complexCommandLine:
                 raise Exception( "The documentation explicitly states: do NOT use both simpleCommandLine and complexCommandLine together." )
             crf, clientRunner = tempfile.mkstemp()
-            fileObj = os.fdopen( crf )
+            fileObj = os.fdopen( crf, 'w' )
             remoteClientDir = self.getClientDir( execution.host )
             if self.isRemote:
                 remoteClientDir = self.sourceObj.getRemoteLocation()
@@ -360,13 +378,11 @@ class client(coreObject):
         @param  execution       The execution this client is to be run for.
         """
         self.pid__lock.acquire()
-        if self.isInCleanup():
-            self.pid__lock.release()
-            return
-        if execution.getNumber() in self.pids:
-            self.pid__lock.release()
-            raise Exception( "Execution number {0} already present in list PIDs".format( execution.getNumber() ) )
         try:
+            if self.isInCleanup():
+                return
+            if execution.getNumber() in self.pids:
+                raise Exception( "Execution number {0} already present in list PIDs".format( execution.getNumber() ) )
             result = execution.host.sendCommand( '{0}/clientRunner'.format( self.getClientDir( execution.host ) ) )
             m = re.match( '^([0-9][0-9]*)', result )
             if not m:
@@ -386,12 +402,12 @@ class client(coreObject):
 
         @return True iff the client is running.
         """
-        self.pid__lock.acquire()
-        if execution.getNumber() not in self.pids:
-            self.pid__lock.release()
-            raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         res = False
+        self.pid__lock.acquire()
         try:
+            if execution.getNumber() not in self.pids:
+                raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            print "DEBUG: Checking for PID {0}".format( self.pids[execution.getNumber()] )
             result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( self.pids[execution.getNumber()] ) )
             res = re.match( '^Y', result ) is not None
         finally:
@@ -414,12 +430,13 @@ class client(coreObject):
         # we're not going to try. Child processes started by this method MUST behave correctly when sent the signals
         # to stop. This means that wrapper scripts need to trap on signals and pass them on to their detected children.
         self.pid__lock.acquire()
-        if execution.getNumber() not in self.pids:
-            # An execution for which no PID has been found is assumed dead and hence kill 'succeeded'
+        try:
+            if execution.getNumber() not in self.pids:
+                # An execution for which no PID has been found is assumed dead and hence kill 'succeeded'
+                return
+            theProgramPID = self.pids[execution.getNumber()]
+        finally:
             self.pid__lock.release()
-            return
-        theProgramPID = self.pids[execution.getNumber()]
-        self.pid__lock.release()
         isRunning = True
         # Signal sent by kill to the process to try and stop it (0 for no signal)
         killActions = ('TERM', 0, 0, 0, 0, 0, 0, 0, 'INT', 'INT', 'KILL')
@@ -442,8 +459,10 @@ class client(coreObject):
             result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgramPID ) )
             if re.match( '^Y', result ) is not None:
                 self.pid__lock.acquire()
-                del self.pids[execution.getNumber()]
-                self.pid__lock.release()
+                try:
+                    del self.pids[execution.getNumber()]
+                finally:
+                    self.pid__lock.release()
                 break
 
     def retrieveLogs(self, execution, localLogDestination):
@@ -486,8 +505,8 @@ class client(coreObject):
 
         @return The parser instance.
         """
-        if self.defaultParser:
-            return self.scenario.getObjectsDict( 'parser' )[self.defaultParser]
+        if self.parser:
+            return self.scenario.getObjectsDict( 'parser' )[self.parser]
         elif self.__class__.__name__ in self.scenario.getObjectsDict( 'parser' ):
             return self.scenario.getObjectsDict( 'parser' )[self.__class__.__name__]
         else:
@@ -554,6 +573,22 @@ class client(coreObject):
         @return A list of all ports from which outgoing traffic can come, or [] if no such list can be given.
         """
         return []
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'client'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.name
 
     @staticmethod
     def APIVersion():

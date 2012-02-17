@@ -57,13 +57,15 @@ class source(coreObject):
         If self.prepareCommand(...) returns None the default implementation does nothing.
 
         @param  client      The client for which the sources are to be prepared.
+        
+        @return True iff the preparation was succesful.
         """
         prepareCommand = self.prepareCommand(client)
         if prepareCommand:
             self.localSourceDir__lock.acquire()
             try:
                 if self.isInCleanup():
-                    return
+                    return False
                 if self.localSourceDir:
                     raise Exception( "prepareLocal(...) of a source object should really be called only once!" )
                 self.localSourceDir = tempfile.mkdtemp( )
@@ -72,13 +74,13 @@ class source(coreObject):
                 if self.isInCleanup():
                     shutil.rmtree( self.localSourceDir )
                     self.localSourceDir = ''
-                    return
+                    return False
                 proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=self.localSourceDir )
                 if self.isInCleanup():
                     shutil.rmtree( self.localSourceDir )
                     self.localSourceDir = ''
                     proc.kill()
-                    return
+                    return False
                 try:
                     result = proc.communicate(prepareCommand)
                 except Exception:
@@ -86,6 +88,7 @@ class source(coreObject):
                     raise Exception( "Could not prepare sources for client {0} locally using source {1}".format( client.name, self.__class__.__name__ ) )
             finally:
                 self.localSourceDir__lock.release()
+        return True
 
     def prepareRemote(self, client, host):
         """
@@ -98,19 +101,22 @@ class source(coreObject):
 
         @param  client      The client for which the sources are to be prepared.
         @param  host        The host on which the sources are to be prepared.
+        
+        @return True iff the preparation was succesful.
         """
         prepareCommand = self.prepareCommand(client)
         if prepareCommand:
             try:
                 if self.isInCleanup():
-                    return
+                    return False
                 host.sendCommand( 'mkdir "{0}"; cd "{0}"'.format( self.remoteLocation(client, host) ) )
                 if self.isInCleanup():
-                    return
+                    return False
                 result = host.sendCommand(prepareCommand)
             except Exception:
                 Campaign.logger.log( result )
                 raise Exception( "Could not prepare sources for client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
+        return True
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
@@ -153,6 +159,22 @@ class source(coreObject):
                 self.localSourceDir = ''
         finally:
             self.localSourceDir__lock.release()
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'source'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.__class__.__name__
 
     @staticmethod
     def APIVersion():

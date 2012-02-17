@@ -187,6 +187,22 @@ class file(coreObject):
         """
         return self.rootHash
 
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'file'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.name
+
     @staticmethod
     def APIVersion():
         return "2.0.0-core"

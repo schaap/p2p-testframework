@@ -3,8 +3,9 @@ from subprocess import STDOUT
 from subprocess import PIPE
 import threading
 import subprocess
+import os
+import re
 
-from core.parsing import *
 from core.campaign import Campaign
 from core.host import host
 
@@ -42,23 +43,25 @@ class ConnectionObject:
         self.close__lock.release()
 
     def closeIfNotClosed(self):
-        res = False
         self.close__lock.acquire()
         res = self.closed
         self.closed = True
         self.close__lock.release()
         return res
 
-    def input(self):
+    def stdin(self):
         return self.proc.stdin
 
-    def output(self):
+    def stdout(self):
         return self.proc.stdout
 
 class local(host):
     """
     A local host implementation.
     """
+    
+    # @static
+    bashProgram = None              # Holds the path to bash
 
     def __init__(self, scenario):
         """
@@ -67,6 +70,16 @@ class local(host):
         @param  scenario        The ScenarioRunner object this host object is part of.
         """
         host.__init__(self, scenario)
+        if not local.bashProgram:
+            if os.path.exists( '/bin/bash' ):
+                local.bashProgram = '/bin/bash'
+            elif os.path.exists( '/usr/bin/bash' ):
+                local.bashProgram = '/usr/bin/bash'
+            else:
+                out, _ = Popen( 'which bash', stdout = PIPE, shell = True ).communicate()
+                if out is None or out == '' or not os.path.exists( 'out' ):
+                    raise Exception( "host:local requires bash to be present" )
+                local.bashProgram = out
 
     def parseSetting(self, key, value):
         """
@@ -112,7 +125,7 @@ class local(host):
         """
         if self.isInCleanup():
             return
-        proc = Popen('bash -l', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        proc = Popen(['{0}'.format(local.bashProgram), '-l'], bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
         self.connections__lock.acquire()
         if self.isInCleanup():
             proc.communicate( 'exit' )
@@ -145,7 +158,7 @@ class local(host):
         try:
             index = 0
             while index < len(self.connections):
-                if self.connections[index].ident = connection.ident:
+                if self.connections[index].ident == connection.ident:
                     self.connections.pop(index)
                     break
             else:
@@ -157,6 +170,8 @@ class local(host):
         """
         Internal method
         """
+        if reuseConnection is None:
+            raise ValueError( "reuseConnection may never be None" )
         connection = None
         if not reuseConnection:
             connection = self.setupNewConnection()
@@ -171,9 +186,18 @@ class local(host):
         else:
             connection = reuseConnection
 
+        if not connection:
+            if reuseConnection == False:
+                raise Exception( "Could not create a new connection on host {0}".format( self.name ) )
+            elif reuseConnection == True:
+                raise Exception( "Could not use default connection on host {0}".format( self.name ) )
+            else:
+                raise Exception( "Could not use connection {1} on host {0}".format( self.name, reuseConnection.ident ) )
+
         if connection.isClosed():
             raise Exception( "Trying to send a command over a closed connection." )
-
+        
+        return connection
 
     def sendCommand(self, command, reuseConnection = True):
         """
@@ -184,25 +208,35 @@ class local(host):
                                     False to build a new connection for this command and use that.
                                     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
 
-        @return The result from the command.
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         connection = self.__chooseConnection(reuseConnection)
+        if not connection and self.isInCleanup():
+            return
 
         try:
             # Send command
-            connection.input().write( command+'\necho "\\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.stdin().write( command+'\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.stdin().flush()
             # Read output of command
-            out = connection.output()
+            out = connection.stdout()
             res = ''
             line = out.readline()
             while line != '' and line != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework\n':
                 res += line
                 line = out.readline()
             # Return output (ditch the last trailing \n)
-            return res[:-1]
+            return res.strip()
         finally:
             if not reuseConnection:
                 self.closeConnection( connection )
+    
+    def escapeFileName(self,f):
+        """
+        Internal function.
+        """
+        return re.sub( '\"', '\\\"', re.sub( '\\\\', '\\\\\\\\', f ) )
+        
 
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -226,7 +260,11 @@ class local(host):
                 raise Exception( "Sending local file {0} to remote file {1}: destination already exists".format( localSourcePath, remoteDestinationPath ) )
             elif os.path.isdir( remoteDestinationPath ):
                 raise Exception( "Sending local file {0} to remote file {1}: destination would be overwritten, but is a directory".format( localSourcePath, remoteDestinationPath ) )
-            subprocess.check_output( 'cp "{0}" "{1}"'.format( localSourcePath, remoteDestinationPath ) )
+            try:
+                subprocess.check_output( 'cp "{0}" "{1}"'.format( self.escapeFileName( localSourcePath ), self.escapeFileName( remoteDestinationPath ) ), shell=True, stderr=STDOUT )
+            except subprocess.CalledProcessError as cpe:
+                Campaign.logger.log( cpe.output )
+                raise cpe
         finally:
             if not reuseConnection:
                 self.closeConnection( connection )
@@ -253,7 +291,11 @@ class local(host):
                 raise Exception( "Getting remote file {0} to local file {1}: destination already exists".format( remoteSourcePath, localDestinationPath ) )
             elif os.path.isdir( localDestinationPath ):
                 raise Exception( "Getting remote file {0} to local file {1}: destination would be overwritten, but is a directory".format( remoteSourcePath, localDestinationPath ) )
-            subprocess.check_output( 'cp "{0}" "{1}"'.format( remoteSourcePath, localDestinationPath ) )
+            try:
+                subprocess.check_output( 'cp "{0}" "{1}"'.format( self.escapeFileName( remoteSourcePath ), self.escapeFileName( localDestinationPath ) ), shell=True, stderr=STDOUT )
+            except subprocess.CalledProcessError as cpe:
+                Campaign.logger.log( cpe.output )
+                raise cpe
         finally:
             if not reuseConnection:
                 self.closeConnection( connection )

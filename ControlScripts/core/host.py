@@ -49,12 +49,16 @@ class host(coreObject):
     tcParamsSet = False         # True iff any of the tc attributes have been set by settings
 
     tcObj = None                # The instance of the requested TC module; will be loaded by the ScenarioRunner
-    tcInboundPortList = []      # The list of incoming ports that will be restricted using TC; [] for no restrictions, -1 for all ports
-    tcOutboundPortList = []     # The list of outgoing ports that will be restricted using TC; [] for no restrictions, -1 for all ports
+    tcInboundPortList = None    # The list of incoming ports that will be restricted using TC; [] for no restrictions, -1 for all ports
+    tcOutboundPortList = None   # The list of outgoing ports that will be restricted using TC; [] for no restrictions, -1 for all ports
     tcProtocol = ''             # The name of the protocol on which port-based restrictions will be placed, '' for multi-protocol (tcInboundPortList or tcOutboundPortList will be -1 in this case)
 
-    connections = []            # The list of connections created for this host. self.connections[0] should always be the default connection. Do not access this list from outside a host class.
+    connections = None          # The list of connections created for this host. self.connections[0] should always be the default connection. Do not access this list from outside a host class.
     connections__lock = None    # The threading.RLock() guarding access to the connections list.
+    
+    clients = None              # List of clients that are to be run on this host. Will be filled when all executions are known.
+    files = None                # List of files that are to be used on this host. Will be filled when all executions are known.
+    seedingFiles = None         # List of files that are to be seeded from this host. Will be filled when all executions are known.
 
     def __init__(self, scenario):
         """
@@ -64,6 +68,12 @@ class host(coreObject):
         """
         coreObject.__init__(self, scenario)
         self.connections__lock = threading.RLock()
+        self.tcInboundPortList = []
+        self.tcOutboundPortList = []
+        self.connections = []
+        self.clients = []
+        self.files = []
+        self.seedingFiles = []
 
     def parseSetting(self, key, value):
         """
@@ -133,7 +143,7 @@ class host(coreObject):
                 return
             if not isValidName( value ):
                 parseError( 'Name given as name of TC module is not a valid name: {0}'.format( value ) )
-            __import__( 'module.tc.'+value, globals(), locals(), value )    # Just checks availability
+            __import__( 'modules.tc.'+value, globals(), locals(), value )    # Just checks availability
             self.tc = value
         elif key == 'tc_loss' or key == 'tcLossChance':
             if self.tcLoss != 0:
@@ -269,7 +279,7 @@ class host(coreObject):
                                     False to build a new connection for this command and use that.
                                     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
 
-        @return The result from the command.
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         raise Exception( "Not implemented" )
     # pylint: enable-msg=W0613
@@ -356,13 +366,14 @@ class host(coreObject):
             return
         self.connections__lock.acquire()
         try:
-            if self.connections[0]:
+            if len(self.connections) > 0:
                 raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
             self.connections[0] = self.setupNewConnection()
-            if not self.connections[0]:
+            if len(self.connections) == 0 or not self.connections[0]:
                 if not self.isInCleanup():
                     raise Exception( "Could not create default connection" )
-                del self.connections[0]
+                if len(self.connections) > 0:
+                    del self.connections[0]
             if self.isInCleanup():
                 return
         finally:
@@ -386,22 +397,32 @@ class host(coreObject):
         implementation starts with that call (which may be made multiple times without harm).
         """
         coreObject.cleanup(self)
-        if self.tempDirectory:
-            self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ) )
-            if self.sendCommand( '[ -d {0} ] && echo "N" || echo "E"'.format( self.tempDirectory ) )[0] != 'E':
-                Campaign.logger.log( "Warning: Could not remove temporary directory {0} from host {1} during cleanup.".format( self.tempDirectory, self.name ) )
-            self.tempDirectory = None
         self.connections__lock.acquire()
-        closeConns = []     # Copy self.connections first: it will be modified while iterating over all connections to close them
-        for conn in self.connections:
-            closeConns = conn
-        for conn in closeConns:
-            try:
-                self.closeConnection( conn )
-            except Exception:
-                Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring".format( host.name ) )
-                Campaign.logger.exceptionTraceback()
-        self.connections__lock.release()
+        try:
+            if self.tempDirectory:
+                if len(self.connections) < 1:
+                    Campaign.logger.log( "Warning: no connections open for host {0}, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
+                    return
+                conn = self.connections[0]
+                if not conn:
+                    Campaign.logger.log( "Warning: default connection for host {0} seems unavailable, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
+                    return
+                self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ), conn )
+                res = self.sendCommand( '[ -d {0} ] && echo "N" || echo "E"'.format( self.tempDirectory ), conn )
+                if res[0] != 'E':
+                    Campaign.logger.log( "Warning: Could not remove temporary directory {0} from host {1} during cleanup.".format( self.tempDirectory, self.name ) )
+                self.tempDirectory = None
+            closeConns = []     # Copy self.connections first: it will be modified while iterating over all connections to close them
+            for conn in self.connections:
+                closeConns = conn
+            for conn in closeConns:
+                try:
+                    self.closeConnection( conn )
+                except Exception:
+                    Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring".format( host.name ) )
+                    Campaign.logger.exceptionTraceback()
+        finally:
+            self.connections__lock.release()
 
     def getTestDir(self):
         """
@@ -458,6 +479,22 @@ class host(coreObject):
         @return The address of the remote host, or '' if no such address can be given.
         """
         return ''
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'host'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.name
 
     @staticmethod
     def APIVersion():

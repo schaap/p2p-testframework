@@ -52,3 +52,19 @@ class coreObject:
         res = self.inCleanup
         self.inCleanup__lock.release()
         return res
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        raise Exception( "Not implemented!" )
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        raise Exception( "Not implemented!" )

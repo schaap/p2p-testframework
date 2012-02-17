@@ -103,7 +103,7 @@ class test__(host):
         try:
             theIndex = None
             for index in range(0, len(self.connections)):
-                if self.connections.connID == connection.connID:
+                if self.connections[index].connID == connection.connID:
                     theIndex = index
                     break
             if theIndex:
@@ -146,7 +146,7 @@ class test__(host):
                                     False to build a new connection for this command and use that.
                                     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
 
-        @return The result from the command.
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         if command == '':
             Campaign.logger.log( "Empty command to host {0}?".format( self.name ) )

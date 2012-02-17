@@ -51,6 +51,22 @@ class tc(coreObject):
         raise Exception( "Not implemented" )
     # pylint: enable-msg=W0613
 
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'tc'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.__class__.__name__
+
     @staticmethod
     def APIVersion():
         return "2.0.0-core"

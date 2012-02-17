@@ -147,7 +147,7 @@ class _skeleton_(host):
                                     False to build a new connection for this command and use that.
                                     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
 
-        @return The result from the command.
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         # TODO: Implement this! Example:
         #

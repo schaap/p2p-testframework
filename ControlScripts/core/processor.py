@@ -14,6 +14,11 @@ class processor(coreObject):
     When subclassing processor be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
+    number = None           # The number of this execution
+
+    # @static
+    processorCount = 0      # The total number of executions
+
     def __init__(self, scenario):
         """
         Initialization of a generic processor object.
@@ -21,6 +26,8 @@ class processor(coreObject):
         @param  scenario        The ScenarioRunner object this processor object is part of.
         """
         coreObject.__init__(self, scenario)
+        self.number = processor.processorCount
+        processor.processorCount += 1
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
@@ -97,6 +104,22 @@ class processor(coreObject):
         @return The path to the directory with the parsed logs.
         """
         return os.path.join( baseDir, 'exec_{0}'.format( execution.getNumber() ), 'parsedLogs' )
+
+    def getModuleType(self):
+        """
+        Return the moduleType string.
+        
+        @return    The module type.
+        """
+        return 'processor'
+    
+    def getName(self):
+        """
+        Return the name of the object.
+        
+        @return    The name.
+        """
+        return self.number
 
     @staticmethod
     def APIVersion():

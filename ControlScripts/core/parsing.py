@@ -22,6 +22,7 @@ def getSectionName( s ):
 
     @return The section name (i.e. the string between []).
     """
+    s = s.strip()
     if not re.match( "\[.*\].", s ) is None:
         raise Exception( "Found garbage after section header on line {0}".format( Campaign.currentLineNumber ) )
     if not re.match( "\[.*\s.*\]", s ) is None:
@@ -83,7 +84,10 @@ def getModuleType( section ):
     @return The module type in the section name.
     """
     m = re.match( '^(.*):.*$', section )
-    return m.group( 1 )
+    if m:
+        return m.group( 1 )
+    else:
+        return section
 
 def getModuleSubType( section ):
     """
@@ -108,7 +112,7 @@ def isValidName( name ):
 
     @return True iff the name is valid.
     """
-    return not re.match( '^[a-zA-Z][a-zA-Z0-9_-\.]*$', name ) is None
+    return not re.match( '^[a-zA-Z][a-zA-Z0-9_\\-\\.]*$', name ) is None
 
 def isPositiveInt( value, nonZero = False ):
     """

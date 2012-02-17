@@ -6,10 +6,11 @@ import os
 import time
 import shutil
 import threading
+import re
 
 # P2P Testing Framework imports
 from core.campaign import Campaign
-from core.parsing import *
+from core.parsing import isSectionHeader, getModuleType, getSectionName, getModuleSubType, getParameterName, getParameterValue, isPositiveInt, isValidName
 
 # Global API version of the core
 APIVersion="2.0.0"
@@ -30,8 +31,8 @@ def loadCoreModule( moduleType ):
     """
     objectModule = __import__( 'core.' + moduleType, globals(), locals(), moduleType )
     objectClass = getattr( objectModule, moduleType )
-    if objectClass.APIVersion() != APIVersion + '--core':
-        raise Exception( "The running core if version {0}, but core module {1} is written for verion {2}. This is a very clear signal for a broken translation which will hence break.".format( APIVersion, objectClass.APIVersion(), moduleType ) )
+    if objectClass.APIVersion() != APIVersion + '-core':
+        raise Exception( "The running core is version {0}, but core module {2} is written for version {1}. This is a very clear signal for a broken translation which will hence break.".format( APIVersion, objectClass.APIVersion(), moduleType ) )
     return objectClass
 
 def loadModule( moduleType, moduleSubType ):
@@ -53,7 +54,7 @@ def loadModule( moduleType, moduleSubType ):
 
     @return The class with the name moduleSubType in the module modules.moduleType.moduleSubType
     """
-    if moduleType == 'host' or moduleType == 'client' or moduleType == 'file' or moduleType == 'parser' or moduleType == 'processor' or moduleType == 'viewer':
+    if moduleType == 'host' or moduleType == 'client' or moduleType == 'file' or moduleType == 'parser' or moduleType == 'processor' or moduleType == 'viewer' or moduleType == 'tc' or moduleType == 'builder' or moduleType =='source':
         if moduleSubType == '':
             raise Exception( "A {0} must have a subtype (line {1}".format( moduleType, Campaign.currentLineNumber ) )
     elif moduleType == 'execution':
@@ -145,15 +146,15 @@ class ScenarioRunner:
     """
 
     name = ''               # Name of the scenario
-    files = []              # List of files that make up the scenario description
+    files = None            # List of files that make up the scenario description
     timelimit = 0           # The time in seconds the scenario may at most be running
     doParallel = True       # Whether the scenario should be made sequential
     resultsDir = ''         # The directory where the results of this scenario will be placed
 
     campaign = None         # The campaignRunner object this scenario is part of
 
-    objects = {}            # A dictionary from all module types to dictionaries of those objects by name
-    threads = []            # Threads that do simple tasks, such as running a client. All these have the cleanup method and the isBusy method.
+    objects = None          # A dictionary from all module types to dictionaries of those objects by name
+    threads = None          # Threads that do simple tasks, such as running a client. All these have the cleanup method and the isBusy method.
 
     def __init__(self, scenarioName, scenarioFiles, scenarioTime, scenarioParallel, campaign):
         """
@@ -175,6 +176,8 @@ class ScenarioRunner:
         self.doParallel = scenarioParallel
         self.campaign = campaign
         self.resultsDir = os.path.join( campaign.campaignResultsDir, 'scenarios', scenarioName )
+        self.objects = {}
+        self.threads = []
 
     def getObjects(self, moduleType):
         """
@@ -210,6 +213,7 @@ class ScenarioRunner:
             fObj = open( f, 'r' )
             scenarioLines.append( '# {0}'.format( f ) )
             for line in fObj:
+                line = line.strip()
                 scenarioLines.append( line )
             fObj.close()
 
@@ -226,15 +230,20 @@ class ScenarioRunner:
             # Filter comments and empty lines
             if line == '' or re.match( '^\s*#', line ) is not None:
                 continue
-            print "Parsing " + line
             if isSectionHeader( line ):
                 # Create the object and have it parse the settings
                 if obj is not None:
                     obj.checkSettings()
-                    self.objects[obj.moduleType][obj.name] = obj
+                    if not obj.getModuleType() in self.objects:
+                        self.objects[obj.getModuleType()] = {}
+                    elif obj.getName() in self.objects[obj.getModuleType()]:
+                        raise Exception( "Element {0} in objects list of type {1} already present. Maybe you used the same name twice?".format( obj.getName(), obj.getModuleType() ) ) 
+                    self.objects[obj.getModuleType()][obj.getName()] = obj
+                print "Parsing " + line
                 objectClass = loadModule( getModuleType( getSectionName( line ) ), getModuleSubType( getSectionName( line ) ) )
-                obj = objectClass()
+                obj = objectClass( self )
             else:
+                print "Parsing " + line
                 if obj is None:
                     raise Exception( "No parameters expected before any object headers. Line {0}.".format( Campaign.currentLineNumber ) )
                 parameterName = getParameterName( line )
@@ -243,13 +252,26 @@ class ScenarioRunner:
         if obj is None:
             raise Exception( "No objects found in scenario {0}".format( self.name ) )
         obj.checkSettings()
-        self.objects[obj.moduleType][obj.name] = obj
+        if not obj.getModuleType() in self.objects:
+            self.objects[obj.getModuleType()] = {}
+        elif obj.getName() in self.objects[obj.getModuleType()]:
+            raise Exception( "Element {0} in objects list of type {1} already present. Maybe you used the same name twice?".format( obj.getName(), obj.getModuleType() ) ) 
+        self.objects[obj.getModuleType()][obj.getName()] = obj
 
         # Check sanity
         if len( self.getObjects('execution') ) == 0:
             raise Exception( "No executions found in scenario {0}".format( self.name ) )
         for execution in self.getObjects('execution'):
             execution.resolveNames()
+        
+        # Fill in extra cross-object data
+        for execution in self.getObjects('execution'):
+            if execution.client not in execution.host.clients:
+                execution.host.clients.append( execution.client )
+            if execution.file not in execution.host.files:
+                execution.host.files.append( execution.file )
+            if execution.isSeeder() and execution.file not in execution.host.seedingFiles:
+                execution.host.seedingFiles.append( execution.file )
 
     def fallbackWarning(self, host, direction):
         """Log a warning that the host has to fall back to full traffic control in the given direction."""
@@ -275,14 +297,14 @@ class ScenarioRunner:
         if not os.path.exists( os.path.join( self.resultsDir, 'executions' ) ):
             os.makedirs( os.path.join( self.resultsDir, 'executions' ) )
         # All hosts that are actually used in executions
-        executionHosts = set([execution.host for execution in self.objects['execution']])
+        executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Prepare all hosts
         for host in executionHosts:
             host.prepare()
         # Executions may by now have been altered by the host.prepare() calls, so rebuild the host list
         # All executions must refer to prepared hosts, which means that any host.prepare() that alters the executions
         # must take precautions to ensure this.
-        executionHosts = set([execution.host for execution in self.objects['execution']])
+        executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Prepare all clients
         for client in self.getObjects('client'):
             client.prepare()
@@ -305,7 +327,7 @@ class ScenarioRunner:
                     tcoutbound = 0
                 inboundrestrictedlist = []
                 outboundrestrictedlist = []
-                for client in set([execution.client for execution in self.objects['execution'] if execution.host == host]):
+                for client in host.clients:
                     # Go over all clients to see how they think they should be restricted. Aggregate data to be saved in the host.
                     if host.tcProtocol == '':
                         host.tcProtocol = client.trafficProtocol()
@@ -394,10 +416,10 @@ class ScenarioRunner:
         Clients will be prepared for execution, TC will be applied and the clients then run.
         """
         # Prepare all clients for execution
-        for execution in self.objects['execution']:
+        for execution in self.getObjects('execution'):
             execution.client.prepareExecution( execution )
         # All hosts that are part of an execution
-        executionHosts = set([execution.host for execution in self.objects['execution']])
+        executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Apply traffic control to all hosts requiring it
         for host in executionHosts:
             if host.tc == '':
@@ -405,7 +427,7 @@ class ScenarioRunner:
             host.tcObj.install( host, list(set([host.getSubnet() for host in executionHosts])) )
         # Start all clients
         execThreads = []
-        for execution in self.objects['execution']:
+        for execution in self.getObjects('execution'):
             execThreads.append( ClientRunner( execution ) )
         self.threads += execThreads
         print "Starting all clients"
@@ -421,10 +443,14 @@ class ScenarioRunner:
         endTime = time.time() + self.timelimit
         sleepTime = min( 5, self.timelimit )
         while sleepTime > 0:
+            print "DEBUG: Sleeping for {0} seconds".format( sleepTime )
             time.sleep( sleepTime )
-            for execution in self.objects['execution']:
-                if execution.client.isRunning():
+            for execution in self.getObjects('execution'):
+                print "DEBUG: Checking whether client {0} still runs on host {1}".format( execution.client.name, execution.host.name )
+                if execution.client.isRunning(execution):
+                    print "DEBUG: Nope"
                     break
+                print "DEBUG: Yep"
             else:
                 print "All client have finished before time is up"
                 break
@@ -433,7 +459,7 @@ class ScenarioRunner:
         print "All clients should be done now, checking and killing if needed."
         
         killThreads = []
-        for execution in self.objects['execution']:
+        for execution in self.getObjects('execution'):
             killThreads.append( ClientKiller( execution ) )
         self.threads += killThreads
         if self.doParallel:
@@ -461,7 +487,7 @@ class ScenarioRunner:
         This function should be called after all executions have finished.
         """
         logThreads = []
-        for execution in self.objects['execution']:
+        for execution in self.getObjects('execution'):
             execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.name ) )
             os.makedirs( os.path.join( execdir, 'logs' ) )
             os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
@@ -601,6 +627,8 @@ class CampaignRunner:
     campaignID = ''         # The campaign ID, which is really just a timestamp
     campaignName = ''       # The full campaign name, which will be used as the name for the directory the results end up in
     campaignResultsDir = '' # The path to the results directory for this campaign
+    
+    scenarios = []          # List of scenarios to run
 
     def __init__(self, campaign_file):
         """
@@ -631,12 +659,12 @@ class CampaignRunner:
         Campaign.currentLineNumber = 1
         scenarioName = ''
         scenarioFiles = []
-        scenarioLine = Campaign.currentLineNumber
+        scenarioLine = 0
         scenarioTimeLimit = 300
         scenarioParallel = True
         for line in fileObj:
+            line = line.strip()
             print "Parsing {0}".format(line)
-            line = line[:-1]
             if line == '':
                 Campaign.currentLineNumber += 1
                 continue
@@ -794,13 +822,13 @@ When neither --check nor --nocheck is given, a test run is conducted first, foll
         for campaign_file in campaign_files:
             try:
                 Campaign.currentCampaign = CampaignRunner(campaign_file)
-                Campaign.currentCampaign.readCampaignFile()
+                Campaign.getCurrentCampaign().readCampaignFile()
             except Exception as exc:
-                Campaign.logger.log( exc.__str__() )
+                Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
                 Campaign.logger.exceptionTraceback()
                 if Campaign.logger.loggingToFile():
                     Campaign.logger.closeLogFile()
-                    Campaign.logger.log( exc.__str__() )
+                    Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
                     Campaign.logger.exceptionTraceback()
 
 if __name__ == "__main__":
