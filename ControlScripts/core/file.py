@@ -126,7 +126,7 @@ class file(coreObject):
 
         @param  host        The host to which to send the files.
         """
-        return
+        pass
     # pylint: enable-msg=W0613
 
     # There's an unused argument host here; that's fine

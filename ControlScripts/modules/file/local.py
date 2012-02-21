@@ -1,20 +1,8 @@
 import os
+import tempfile
 
-# These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
-# the Campaign data object and the file parent class.
-from core.parsing import *
 from core.campaign import Campaign
 import core.file
-
-# NOTE: The last import above (import core.file) is different from usual. This is done to prevent trouble with python's
-# builtin file type. The import
-#   from core.file import file
-# works perfectly, but hides the normal file type. The tradeoff is between a bit more typing (core.file.file instead of file)
-# and possible errors with regard to file and file (??).
-
-# You can define anything you like in the scope of your own module: the only thing that will be imported from it
-# is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
-# suppose you copy this file to modules/file/empty.py then the name of your class would be empty.
 
 def parseError( msg ):
     """
@@ -22,10 +10,7 @@ def parseError( msg ):
     """
     raise Exception( "Parse error for file object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
-# TODO: Change the name of the class. See the remark above about the names of the module and the class. Example:
-#
-#   class empty(core.file.file):
-class _skeleton_(core.file.file):
+class local(core.file.file):
     """
     File implementation for local files or directories.
 
@@ -114,12 +99,14 @@ class _skeleton_(core.file.file):
                 raise Exception( "file:local {0} has requested automated root hash calculation, but {1} is a directory, for which root hashes aren't supported".format( self.name, self.path ) )
             if self.renameFile:
                 raise Exception( "file:local {0} has requested the uploaded file to be renamed, but {1} is a directory, for which this is not supported".format( self.name, self.path ) )
-
-        # FIXME: CONTINUE
-        # TODO: Check your settings. Example:
-        #
-        #   if not self.filename:
-        #       raise Exception( "An dummy file still needs a filename, dummy." )
+        meta = Campaign.loadCoreModule('meta')()
+        if self.generateRootHash:
+            self.rootHash = meta.calculateMerkleRootHash( self.path )
+        if self.generateTorrent:
+            if self.isInCleanup():
+                return
+            _, self.metaFile = tempfile.mkstemp()
+            meta.generateTorrentFile( self.path, self.metaFile)
 
     def sendToHost(self, host):
         """
@@ -139,10 +126,6 @@ class _skeleton_(core.file.file):
         @param  host        The host to which to send the files.
         """
         core.file.file.sendToHost(self, host)
-        # TODO: Send any extra files here. These are the files that are required by all executions, whether they're seeding or leeching.
-        # Seeding specific files are to be sent in sendToSeedingHost(...).
-        #
-        # Just having the default implementation send the meta file is usually enough.
 
     def sendToSeedingHost(self, host):
         """
@@ -157,10 +140,11 @@ class _skeleton_(core.file.file):
         @param  host        The host to which to send the files.
         """
         core.file.file.sendToSeedingHost(self, host)
-        # TODO: Send the actual files to a seeding host. sendToHost(...) has already been called.
-        # Note that self.getFileDir(...) is not guaranteed to exist yet. Example:
-        #
-        #   host.sendCommand( 'mkdir -p "{0}/files/"; touch "{0}/files/{1}"'.format( self.getFileDir(host), self.filename ) )
+        host.sendCommand( 'mkdir -p "{0}/files/"'.format( self.getFileDir(host) ) )
+        if os.path.isdir( self.path ):
+            host.sendFiles( self.path, '{0}'.format( self.getFile(host) ) )
+        else:
+            host.sendFile( self.path, '{0}'.format( self.getFile(host) ) )
 
     def getFile(self, host):
         """
@@ -179,18 +163,18 @@ class _skeleton_(core.file.file):
 
         @return The path to the (root of) the file(s) on the remote host, or None if they are not (yet) available.
         """
-        # Note that this is the new name of getName(...), which made no sense in naming
-        #
-        # TODO: Send the path to the file uploaded to a seeding host. Example:
-        #
-        #   "{0}/files/{1}".format( self.getFileDir(host), self.filename )
-        #
-        # This implementation assumes you don't really have files, which is unlikely but possible:
-        return None
-
-    # TODO: More methods exist, but they are pretty standard and you're unlikely to want to change them. Look at core.file for more details.
+        if os.path.isdir( self.path ):
+            if self.path[-1:] == '/':
+                name = os.path.basename( self.path[:-1] )
+            else:
+                name = os.path.basename( self.path )
+            return '{0}/files/{1}'.format( self.getFileDir(host), name )
+        else:
+            name = os.path.basename( self.path )
+            if self.renameFile:
+                name = 'inputFile'
+            return '{0}/files/{1}'.format( self.getFileDir(host), name )
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
         return "2.0.0"

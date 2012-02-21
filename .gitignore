@@ -1,0 +1,5 @@
+*.pyc
+*.swp
+
+TestSpecs/*
+Results
