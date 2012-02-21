@@ -308,7 +308,7 @@ class host(coreObject):
 
         This will recursively send the local directory and all its contents to the remote host.
 
-        Example:    sendFile( '/home/me/myLocalDir', '/tmp/myTmpDir/newRemoteDir' )
+        Example:    sendFiles( '/home/me/myLocalDir', '/tmp/myTmpDir/newRemoteDir' )
         If newRemoteDir does not already exist then it will be created. A file /home/me/myLocalDir/x will end up
         on the remote host as /tmp/myTmpDir/newRemoteDir/x .
 

@@ -46,9 +46,12 @@ class _skeleton_(source):
         what they are supposed to do.
 
         The default implementation returns None, which will tell prepareLocal(...) and prepareRemote(...) not to do
-        anything.
+        anything. It is also possible to return '', in which case temporary directories will be created, but no
+        command will be executed.
 
         @param  client      The client for which the sources are to be prepared.
+        
+        @return The command line to prepare the sources.
         """
         # TODO: Return the command you'd like to have executed to build the sources. Example:
         #   return 'svn co {0}'.format( client.location )

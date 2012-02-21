@@ -15,6 +15,12 @@ def parseError( msg ):
     """
     raise Exception( "Parse error for host object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
+def escapeFileName(f):
+    """
+    Internal function.
+    """
+    return re.sub( '\"', '\\\"', re.sub( '\\\\', '\\\\\\\\', f ) )
+        
 class ConnectionObject:
     counter = 0
     counter__lock = threading.Lock()
@@ -239,13 +245,6 @@ class local(host):
             if not reuseConnection:
                 self.closeConnection( connection )
     
-    def escapeFileName(self,f):
-        """
-        Internal function.
-        """
-        return re.sub( '\"', '\\\"', re.sub( '\\\\', '\\\\\\\\', f ) )
-        
-
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
@@ -269,7 +268,7 @@ class local(host):
             elif os.path.isdir( remoteDestinationPath ):
                 raise Exception( "Sending local file {0} to remote file {1}: destination would be overwritten, but is a directory".format( localSourcePath, remoteDestinationPath ) )
             try:
-                subprocess.check_output( 'cp "{0}" "{1}"'.format( self.escapeFileName( localSourcePath ), self.escapeFileName( remoteDestinationPath ) ), shell=True, stderr=STDOUT )
+                subprocess.check_output( 'cp "{0}" "{1}"'.format( escapeFileName( localSourcePath ), escapeFileName( remoteDestinationPath ) ), shell=True, stderr=STDOUT )
             except subprocess.CalledProcessError as cpe:
                 Campaign.logger.log( cpe.output )
                 raise cpe
@@ -300,7 +299,7 @@ class local(host):
             elif os.path.isdir( localDestinationPath ):
                 raise Exception( "Getting remote file {0} to local file {1}: destination would be overwritten, but is a directory".format( remoteSourcePath, localDestinationPath ) )
             try:
-                subprocess.check_output( 'cp "{0}" "{1}"'.format( self.escapeFileName( remoteSourcePath ), self.escapeFileName( localDestinationPath ) ), shell=True, stderr=STDOUT )
+                subprocess.check_output( 'cp "{0}" "{1}"'.format( escapeFileName( remoteSourcePath ), escapeFileName( localDestinationPath ) ), shell=True, stderr=STDOUT )
             except subprocess.CalledProcessError as cpe:
                 Campaign.logger.log( cpe.output )
                 raise cpe

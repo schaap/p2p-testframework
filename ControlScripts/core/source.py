@@ -40,9 +40,12 @@ class source(coreObject):
         what they are supposed to do.
 
         The default implementation returns None, which will tell prepareLocal(...) and prepareRemote(...) not to do
-        anything.
+        anything. It is also possible to return '', in which case temporary directories will be created, but no
+        command will be executed.
 
         @param  client      The client for which the sources are to be prepared.
+        
+        @return The command line to prepare the sources.
         """
         return None
     # pylint: enable-msg=W0613
@@ -52,7 +55,7 @@ class source(coreObject):
         Prepare the source code of the client on the local machine.
 
         The default implementation creates a local temporary directory and runs self.prepareCommand(...) in that
-        directory.
+        directory if it was specified.
 
         If self.prepareCommand(...) returns None the default implementation does nothing.
 
@@ -61,7 +64,7 @@ class source(coreObject):
         @return True iff the preparation was succesful.
         """
         prepareCommand = self.prepareCommand(client)
-        if prepareCommand:
+        if prepareCommand is not None:
             try:
                 self.localSourceDir__lock.acquire()
                 if self.isInCleanup():
@@ -75,17 +78,18 @@ class source(coreObject):
                     shutil.rmtree( self.localSourceDir )
                     self.localSourceDir = ''
                     return False
-                proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=self.localSourceDir )
-                if self.isInCleanup():
-                    shutil.rmtree( self.localSourceDir )
-                    self.localSourceDir = ''
-                    proc.kill()
-                    return False
-                try:
-                    result = proc.communicate(prepareCommand)
-                except Exception:
-                    Campaign.logger.log( result )
-                    raise Exception( "Could not prepare sources for client {0} locally using source {1}".format( client.name, self.__class__.__name__ ) )
+                if prepareCommand != '':
+                    proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=self.localSourceDir )
+                    if self.isInCleanup():
+                        shutil.rmtree( self.localSourceDir )
+                        self.localSourceDir = ''
+                        proc.kill()
+                        return False
+                    try:
+                        result = proc.communicate(prepareCommand)
+                    except Exception:
+                        Campaign.logger.log( result )
+                        raise Exception( "Could not prepare sources for client {0} locally using source {1}".format( client.name, self.__class__.__name__ ) )
             finally:
                 try:
                     self.localSourceDir__lock.release()
@@ -112,10 +116,11 @@ class source(coreObject):
             try:
                 if self.isInCleanup():
                     return False
-                host.sendCommand( 'mkdir "{0}"; cd "{0}"'.format( self.remoteLocation(client, host) ) )
+                host.sendCommand( 'mkdir -p "{0}"'.format( self.remoteLocation(client, host) ) )
                 if self.isInCleanup():
                     return False
-                result = host.sendCommand(prepareCommand)
+                if prepareCommand != '':
+                    result = host.sendCommand("( cd {0}; {1} )".format( self.remoteLocation(client, host), prepareCommand ) )
             except Exception:
                 Campaign.logger.log( result )
                 raise Exception( "Could not prepare sources for client {0} remotely on host {2} using builder {1}".format( client.name, self.__class__.__name__, host.name ) )
