@@ -29,6 +29,8 @@ class execution(coreObject):
     seeder = False          # True iff this execution is a seeder
 
     number = None           # The number of this execution
+    
+    runnerConnection = None # A specific connection to use for running a client
 
     # @static
     executionCount = 0      # The total number of executions
@@ -187,6 +189,24 @@ class execution(coreObject):
         @return    The name.
         """
         return self.number
+
+    def createRunnerConnection(self):
+        """
+        Creates a new connection on the included host that can be used to run clients.
+        
+        The connection will be held internally and requested for use through getRunnerConnection().
+        """
+        self.runnerConnection = self.host.setupNewConnection()
+    
+    def getRunnerConnection(self):
+        """
+        Returns a separate connection to be used to run a client.
+        
+        Creates a new connection if needed.
+        """
+        if not self.runnerConnection:
+            self.createRunnerConnection()
+        return self.runnerConnection
 
     @staticmethod
     def APIVersion():

@@ -81,3 +81,14 @@ class logger:
                     self.logPre( line )
         finally:
             tb = None
+    
+    def localTraceback(self):
+        """
+        Logs the stacktrace of the current stack (including this call).
+        
+        This method can be called from a function to have the current calling stack logged.
+        Note that this is for debugging purposes only!
+        """
+        self.log( "DEBUG TRACEBACK: " )
+        for line in traceback.format_stack():
+            self.logPre( line )

@@ -99,8 +99,8 @@ class test__(host):
         """
         if connection.closed:
             raise Exception( "Trying to close an already closed connection" )
-        self.connections__lock.acquire()
         try:
+            self.connections__lock.acquire()
             theIndex = None
             for index in range(0, len(self.connections)):
                 if self.connections[index].connID == connection.connID:
@@ -111,7 +111,10 @@ class test__(host):
                     raise Exception( "Can't close the default connection while others are still open" )
                 del self.connections[theIndex]
         finally:
-            self.connections__lock.release()
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
         connection.closed = True
 
     def decideConnection(self, reuseConnection):
@@ -119,9 +122,14 @@ class test__(host):
         if not reuseConnection:
             connection = self.setupNewConnection()
         elif reuseConnection == True:
-            self.connections__lock.acquire()
-            connection = self.connections[0]
-            self.connections__lock.release()
+            try:
+                self.connections__lock.acquire()
+                connection = self.connections[0]
+            finally:
+                try:
+                    self.connections__lock.release()
+                except RuntimeError:
+                    pass
         else:
             connection = reuseConnection
         if connection.closed:
@@ -129,13 +137,16 @@ class test__(host):
         return connection
 
     def writeCommandLog(self, log):
-        self.the__lock.acquire()
         try:
+            self.the__lock.acquire()
             f = open( os.path.join( Campaign.getCurrentCampaign().campaignResultsDir, '__host__test__{0}__.log'.format( self.name ) ), 'a' )
             f.write( log )
             f.close()
         finally:
-            self.the__lock.release()
+            try:
+                self.the__lock.release()
+            except RuntimeError:
+                pass
 
     def sendCommand(self, command, reuseConnection = True):
         """

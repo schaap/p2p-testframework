@@ -126,20 +126,22 @@ class local(host):
         if self.isInCleanup():
             return
         proc = Popen(['{0}'.format(local.bashProgram), '-l'], bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-        self.connections__lock.acquire()
-        if self.isInCleanup():
-            proc.communicate( 'exit' )
-            return
-        obj = ConnectionObject( proc )
-        self.connections__lock.acquire()
         try:
+            self.connections__lock.acquire()
+            if self.isInCleanup():
+                proc.communicate( 'exit' )
+                return
+            obj = ConnectionObject( proc )
             self.connections.append( obj )
             if self.isInCleanup():
                 self.connections.pop()
                 proc.communicate( 'exit' )
                 return
         finally:
-            self.connections__lock.release()
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
         self.sendCommand('echo "READY"', obj )
         return obj
 
@@ -154,8 +156,8 @@ class local(host):
         if connection.closeIfNotClosed():
             return
         connection.proc.communicate( 'exit' )
-        self.connections__lock.acquire()
         try:
+            self.connections__lock.acquire()
             index = 0
             while index < len(self.connections):
                 if self.connections[index].ident == connection.ident:
@@ -164,7 +166,10 @@ class local(host):
             else:
                 raise Exception( "Closing connection that is not in the list of connections?" )
         finally:
-            self.connections__lock.release()
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
 
     def __chooseConnection(self, reuseConnection):
         """
@@ -176,13 +181,16 @@ class local(host):
         if not reuseConnection:
             connection = self.setupNewConnection()
         elif reuseConnection == True:
-            self.connections__lock.acquire()
             try:
+                self.connections__lock.acquire()
                 if self.isInCleanup():
                     return
                 connection = self.connections[0]
             finally:
-                self.connections__lock.release()
+                try:
+                    self.connections__lock.release()
+                except RuntimeError:
+                    pass
         else:
             connection = reuseConnection
 

@@ -175,9 +175,7 @@ class _skeleton_(client):
         # here as well, of course, and/or check their availability to make sure the client will run.
         #
 
-    # That's right, 2 arguments less.
-    # pylint: disable-msg=W0221
-    def prepareExecution(self, execution):
+    def prepareExecution(self, execution, simpleCommandLine = None, complexCommandLine = None):
         """
         Client specific preparations for a specific execution.
 
@@ -223,7 +221,6 @@ class _skeleton_(client):
         # use either the simpleCommandLine or complexCommandLine named arguments to client.prepareExecution(...) to
         # have a runner script built that will be used by the default implementation of start(...).
         client.prepareExecution(self, execution)
-    # pylint: enable-msg=W0221
 
     def start(self, execution):
         """

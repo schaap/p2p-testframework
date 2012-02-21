@@ -62,8 +62,8 @@ class source(coreObject):
         """
         prepareCommand = self.prepareCommand(client)
         if prepareCommand:
-            self.localSourceDir__lock.acquire()
             try:
+                self.localSourceDir__lock.acquire()
                 if self.isInCleanup():
                     return False
                 if self.localSourceDir:
@@ -87,7 +87,10 @@ class source(coreObject):
                     Campaign.logger.log( result )
                     raise Exception( "Could not prepare sources for client {0} locally using source {1}".format( client.name, self.__class__.__name__ ) )
             finally:
-                self.localSourceDir__lock.release()
+                try:
+                    self.localSourceDir__lock.release()
+                except RuntimeError:
+                    pass
         return True
 
     def prepareRemote(self, client, host):
@@ -152,13 +155,16 @@ class source(coreObject):
         """
         Cleans up the sources.
         """
-        self.localSourceDir__lock.acquire()
         try:
+            self.localSourceDir__lock.acquire()
             if self.localSourceDir:
                 shutil.rmtree( self.localSourceDir )
                 self.localSourceDir = ''
         finally:
-            self.localSourceDir__lock.release()
+            try:
+                self.localSourceDir__lock.release()
+            except RuntimeError:
+                pass
 
     def getModuleType(self):
         """

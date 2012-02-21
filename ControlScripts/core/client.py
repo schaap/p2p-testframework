@@ -377,19 +377,24 @@ class client(coreObject):
 
         @param  execution       The execution this client is to be run for.
         """
-        self.pid__lock.acquire()
         try:
+            self.pid__lock.acquire()
             if self.isInCleanup():
                 return
             if execution.getNumber() in self.pids:
                 raise Exception( "Execution number {0} already present in list PIDs".format( execution.getNumber() ) )
-            result = execution.host.sendCommand( '{0}/clientRunner'.format( self.getClientDir( execution.host ) ) )
+            print "DEBUG: Sending command clientRunner for client {0} on host {1}".format( self.name, execution.host.name )
+            result = execution.host.sendCommand( '{0}/clientRunnerScript'.format( self.getExecutionClientDir( execution ) ), execution.getRunnerConnection() )
+            print "DEBUG: Sent command clientRunner for client {0} on host {1}, result:\n{2}".format( self.name, execution.host.name, result )
             m = re.match( '^([0-9][0-9]*)', result )
             if not m:
                 raise Exception( "Could not retrieve PID for execution {0} of client {1} on host {2} from result:\n{3}".format( execution.getNumber(), execution.client.name, execution.host.name, result ) )
             self.pids[execution.getNumber()] = m.group( 1 )
         finally:
-            self.pid__lock.release()
+            try:
+                self.pid__lock.release()
+            except RuntimeError:
+                pass
 
     def isRunning(self, execution):
         """
@@ -403,15 +408,18 @@ class client(coreObject):
         @return True iff the client is running.
         """
         res = False
-        self.pid__lock.acquire()
         try:
+            self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
                 raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
             print "DEBUG: Checking for PID {0}".format( self.pids[execution.getNumber()] )
             result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( self.pids[execution.getNumber()] ) )
             res = re.match( '^Y', result ) is not None
         finally:
-            self.pid__lock.release()
+            try:
+                self.pid__lock.release()
+            except RuntimeError:
+                pass
         return res
 
     def kill(self, execution):
@@ -429,14 +437,17 @@ class client(coreObject):
         # stinks, basically. In other words: it is not possible to track all children recursively of this process, so
         # we're not going to try. Child processes started by this method MUST behave correctly when sent the signals
         # to stop. This means that wrapper scripts need to trap on signals and pass them on to their detected children.
-        self.pid__lock.acquire()
         try:
+            self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
                 # An execution for which no PID has been found is assumed dead and hence kill 'succeeded'
                 return
             theProgramPID = self.pids[execution.getNumber()]
         finally:
-            self.pid__lock.release()
+            try:
+                self.pid__lock.release()
+            except RuntimeError:
+                pass
         isRunning = True
         # Signal sent by kill to the process to try and stop it (0 for no signal)
         killActions = ('TERM', 0, 0, 0, 0, 0, 0, 0, 'INT', 'INT', 'KILL')
@@ -458,11 +469,14 @@ class client(coreObject):
             killCounter += 1
             result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgramPID ) )
             if re.match( '^Y', result ) is not None:
-                self.pid__lock.acquire()
                 try:
+                    self.pid__lock.acquire()
                     del self.pids[execution.getNumber()]
                 finally:
-                    self.pid__lock.release()
+                    try:
+                        self.pid__lock.release()
+                    except RuntimeError:
+                        pass
                 break
 
     def retrieveLogs(self, execution, localLogDestination):

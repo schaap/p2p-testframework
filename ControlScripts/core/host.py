@@ -364,8 +364,8 @@ class host(coreObject):
         """
         if self.isInCleanup():
             return
-        self.connections__lock.acquire()
         try:
+            self.connections__lock.acquire()
             if len(self.connections) > 0:
                 raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
             self.connections[0] = self.setupNewConnection()
@@ -377,7 +377,10 @@ class host(coreObject):
             if self.isInCleanup():
                 return
         finally:
-            self.connections__lock.release()
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
         if not self.remoteDirectory:
             self.tempDirectory = self.sendCommand( 'mktemp -d' )
             if self.tempDirectory == '' or self.sendCommand( '[ -d {0} ] || echo "E"'.format( self.tempDirectory ) ) == 'E':
@@ -414,7 +417,7 @@ class host(coreObject):
                 self.tempDirectory = None
             closeConns = []     # Copy self.connections first: it will be modified while iterating over all connections to close them
             for conn in self.connections:
-                closeConns = conn
+                closeConns.append( conn )
             for conn in closeConns:
                 try:
                     self.closeConnection( conn )

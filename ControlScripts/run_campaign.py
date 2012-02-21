@@ -115,17 +115,20 @@ class BusyExecutionThread(threading.Thread):
 class ClientRunner(BusyExecutionThread):
     """Simple runner for client.start()"""
     def doTask(self):
-        self.execution.client.start( self.execution.host )
+        self.execution.client.start( self.execution )
+    
+    def prepareConnection(self):
+        self.execution.createRunnerConnection( )
 
     def cleanup(self):
-        if self.execution.client.isRunning( self.execution.host ):
-            self.execution.client.kill( self.execution.host )
+        if self.execution.client.isRunning( self.execution ):
+            self.execution.client.kill( self.execution )
 
 class ClientKiller(BusyExecutionThread):
     """Simple runner for client.kill()"""
     def doTask(self):
-        if self.execution.client.isRunning( self.execution.host ):
-            self.execution.client.kill( self.execution.host )
+        if self.execution.client.isRunning( self.execution ):
+            self.execution.client.kill( self.execution )
 
 class LogProcessor(BusyExecutionThread):
     """Simple runner for client.retrieveLogs() and execution.runParsers()."""
@@ -135,7 +138,7 @@ class LogProcessor(BusyExecutionThread):
         BusyExecutionThread.__init__(self, execution)
 
     def doTask(self):
-        self.execution.client.retrieveLogs( self.execution.host, os.path.join( self.execdir, 'logs' ) )
+        self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
         if self.inCleanup:
             return
         self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
@@ -432,6 +435,10 @@ class ScenarioRunner:
         self.threads += execThreads
         print "Starting all clients"
         if self.doParallel:
+            # First prepare all connections (has to be done consecutively in order to allow throttling to prevent overloading)
+            for thread in execThreads:
+                thread.prepareConnection()
+            # Then do the actual running as parallel as possible
             for thread in execThreads:
                 thread.start()
         else:
@@ -448,9 +455,9 @@ class ScenarioRunner:
             for execution in self.getObjects('execution'):
                 print "DEBUG: Checking whether client {0} still runs on host {1}".format( execution.client.name, execution.host.name )
                 if execution.client.isRunning(execution):
-                    print "DEBUG: Nope"
+                    print "DEBUG: Yep"
                     break
-                print "DEBUG: Yep"
+                print "DEBUG: Nope"
             else:
                 print "All client have finished before time is up"
                 break
@@ -491,7 +498,7 @@ class ScenarioRunner:
             execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.name ) )
             os.makedirs( os.path.join( execdir, 'logs' ) )
             os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
-            logThreads = LogProcessor( execution )
+            logThreads.append( LogProcessor( execution, execdir ) )
         self.threads += logThreads
         print "Retrieving logs and parsing them"
         if self.doParallel:
@@ -733,11 +740,6 @@ class CampaignRunner:
     # Static part of the class: initialization and option parsing
     ######
 
-    doCheckRun = True       # True iff a checking run is to be done
-    doRealRun = True        # True iff a real run is to be done
-
-    currentCampaign = None  # The campaign object currently running
-
     @staticmethod
     def usage( msg = None ):
         """
@@ -755,7 +757,7 @@ Usage:
 --check will check the correctness of the settings as well as try and see if what was requested is possible.
 The checks made by --check may not be all-inclusive, but should eliminate a lot of possible errors during runs, andhence a lot of frustration when setting up tests.
 --nocheck will skip the checking run and only do an actual run (useful for already tested setups)
-When neither --check nor --nocheck is given, a test run is conducted first, followed by an actual run.
+When neither --check nor --nocheck is given, an actual run is done.
 """.format( sys.argv[0] )
 
     @staticmethod
@@ -791,6 +793,10 @@ When neither --check nor --nocheck is given, a test run is conducted first, foll
                     return CampaignRunner.usage( "Only one of --check and --nocheck may be specified" )
             else:
                 return CampaignRunner.usage( "Unknown option: {0}".format( opt ) )
+        
+        # Set default if neither --check nor --nocheck was given
+        if Campaign.doCheckRun and Campaign.doRealRun:
+            Campaign.doCheckRun = False
 
         # Check for existence of campaign files
         for campaign_file in campaign_files:

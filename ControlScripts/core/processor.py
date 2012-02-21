@@ -64,7 +64,7 @@ class processor(coreObject):
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
-    def processLogs(self, execution, baseDir):
+    def processLogs(self, baseDir, outputDir):
         """
         Process the raw and parsed logs found in the base directory.
 

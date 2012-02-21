@@ -139,3 +139,12 @@ def isPositiveFloat( value, nonZero = False ):
     if value == '' or re.search( "[^0-9\\.]", value ) is not None:
         return False
     return (not nonZero) or (float(value) != 0)
+
+def containsSpace( value ):
+    """
+    Returns whether the specified value contains any space characters.
+    
+    @return True iff value contains whitespace.
+    """
+    m = re.match( '[ \t\r\n]', value )
+    return m is not None

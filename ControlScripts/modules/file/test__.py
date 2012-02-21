@@ -76,14 +76,14 @@ class test__(core.file.file):
         if self.isInCleanup():
             return
         f, path = tempfile.mkstemp()
-        fileObj = os.fdopen( f )
+        fileObj = os.fdopen( f, 'w' )
         for _ in range( 0, 1024 ):
             fileObj.write( 'hijklmn' )
         fileObj.close()
         if self.isInCleanup():
             os.remove( path )
             return
-        host.sendCommand( 'mkdir "{0}/files/"'.format( self.getFileDir( host ) ) )
+        host.sendCommand( 'mkdir -p "{0}/files/"'.format( self.getFileDir( host ) ) )
         host.sendFile( path, "{0}/files/testfile".format( self.getFileDir( host ) ) )
         os.remove( path )
 
