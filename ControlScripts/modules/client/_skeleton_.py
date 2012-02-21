@@ -152,22 +152,22 @@ class _skeleton_(client):
         #   if self.isRemote:
         #       # If any fiels on the remote host need to be moved around, be sure to do so here.
         #       # Example that moves the binary if it was built from source on the remote host:
-        #       host.sendCommand( '[ -d "{0}/src" ] && mv "{0}/src/yourClientBinary" "{0}/src/"'.format(
-        #                                   self.sourceObj.remoteLocation() ) )
+        #       host.sendCommand( '[ -d "{0}/src" ] && mv "{0}/src/yourClientBinary" "{0}/"'.format(
+        #                                   self.sourceObj.remoteLocation(self, host) ) )
         #   else:
         #       # Send your client files here, either from the source location (where building took place) or the
         #       # location where the binaries already reside.
         #
         #       # The following is a version for a simple, single-binary client, which is compiled in-place:
-        #       # host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation() ),
+        #       # host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
         #       #                '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
         #
         #       # A more extended example, which takes the source structure into account:
-        #       if os.path.exists( '{0}/src'.format( self.sourceObj.localLocation() ) ):
-        #           host.sendFile( '{0}/src/yourClientBinary'.format( self.sourceObj.localLocation() ),
+        #       if os.path.exists( '{0}/src'.format( self.sourceObj.localLocation(self) ) ):
+        #           host.sendFile( '{0}/src/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
         #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
         #       else:
-        #           host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation() ),
+        #           host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
         #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
         #
         # This is quite an elaborate method, but it is important to take into account all four cases. That will

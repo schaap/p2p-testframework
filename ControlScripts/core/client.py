@@ -346,7 +346,7 @@ class client(coreObject):
             fileObj = os.fdopen( crf, 'w' )
             remoteClientDir = self.getClientDir( execution.host )
             if self.isRemote:
-                remoteClientDir = self.sourceObj.getRemoteLocation()
+                remoteClientDir = self.sourceObj.remoteLocation(self, execution.host)
             fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
             if simpleCommandLine:
                 fileObj.write( '{0} &\n'.format( simpleCommandLine ) )

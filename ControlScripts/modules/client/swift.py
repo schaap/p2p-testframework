@@ -1,12 +1,6 @@
-# These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
-# the Campaign data object and the client parent class.
-from core.parsing import *
+from core.parsing import isPositiveInt, containsSpace
 from core.campaign import Campaign
 from core.client import client
-
-# You can define anything you like in the scope of your own module: the only thing that will be imported from it
-# is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
-# suppose you copy this file to modules/client/rudeClient.py then the name of your class would be rudeClient.
 
 def parseError( msg ):
     """
@@ -14,36 +8,45 @@ def parseError( msg ):
     """
     raise Exception( "Parse error for client object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
-# TODO: Change the name of the class. See the remark above about the names of the module and the class. Example:
-#
-#   class rudeClient(client):
-class _skeleton_(client):
+class swift(client):
     """
-    A skeleton implementation of a client subclass.
-
-    Please use this file as a basis for your subclasses but DO NOT actually instantiate it.
-    It will fail.
-
-    Look at the TODO in this file to know where you come in.
+    libswift command line client implementation.
+    
+    Extra parameters:
+                        
+    - listenAddress     Which address to listen on
+                        (i.e. --listen to swift, together with listenPort)
+    - listenPort        Which port to listen on
+                        (i.e. --listen to swift, together with listenAddress)
+    - tracker           Specifies a tracker address (i.e. --tracker to swift);
+                        the tracker may be specified as @name or @name:port to load
+                        the named host inside the testing framework after all hosts
+                        have been prepared, and use that host's address.
+    - wait              Specified the number of seconds to wait
+                        (i.e. --wait to swift in seconds)
+    
+    The libswift client will require --wait for seeders. By default it is set to 900s for seeders.
+    
+    Example using dynamic tracker addressing:
+    
+        [host:ssh]
+        name=yourSeeder
+        hostname=seeder.host.org
+        
+        [client:swift]
+        name=leeching_swift_client
+        tracker=@yourSeeder:2000
+    
+    This will have all instances of leeching_swift_client use yourSeeder as its tracker,
+    whatever address is actually used for that host. This function is extremely useful
+    with host modules like the DAS4, for which the address of the host isn't known before
+    you're actually running the test.
     """
-    # TODO: Update the description above. Example:
-    #
-    #   """
-    #   Client object for rudeClient programs.
-    #
-    #   Extra parameters:
-    #   - postFixParams     Extra parameters to be placed at the end of the command line. At most protocolVersion characters long.
-    #   - protocolVersion   A non-zero positive integer indicating the ProtRude version.
-    #   """
 
-    # The parent class handles most of the interactions between source, isRemote, location and builder; where needed
-    # the comments in this skeleton implementation will guide you enough for a simple implementation. If you plan on
-    # building more complex implementations that override part of the parent functionality, please make sure to read
-    # the comments in the parent class very carefully.
-
-    # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
-    # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
-    # and bail out if that returns True.
+    listenAddress = None        # Address to listen on
+    listenPort = None           # Port to listen on
+    tracker = None              # Tracker address
+    wait = None                 # Time to wait
 
     def __init__(self, scenario):
         """
@@ -52,8 +55,6 @@ class _skeleton_(client):
         @param  scenario        The ScenarioRunner object this client object is part of.
         """
         client.__init__(self, scenario)
-        # TODO: Your initialization, if any (not likely). Oh, and remove the next line.
-        raise Exception( "DO NOT instantiate the skeleton implementation" )
 
     def parseSetting(self, key, value):
         """
@@ -72,23 +73,32 @@ class _skeleton_(client):
         @param  key     The name of the parameter, i.e. the key from the key=value pair.
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
-        # TODO: Parse your settings. Example:
-        #
-        #   if key == 'postFixParams':
-        #       if self.postFixParams:
-        #           parseError( 'Seriously. How many parameters do you need? Go clean up your stuff!' )
-        #       self.postFixParams = value
-        #   elif key == 'protocolVersion':
-        #       if not isPositiveInt( value, False ):
-        #           parseError( 'Can you even count? Because {0} is definitely not a valid protocol number.'.format( value ) )
-        #       self.protocolVersion = value
-        #   else:
-        #       client.parseSetting( self, key, value )
-        #
-        # Do not forget that last case!
-        #
-        # The following implementation assumes you have no parameters specific to your client:
-        client.parseSetting(self, key, value)
+        if key == 'listenAddress':
+            if self.listenAddress:
+                parseError( "listenAddress is already set: {0}".format( self.listenAddress ) )
+            if containsSpace(value):
+                parseError( "listenAddress may not contain any whitespace" )
+            self.listenAddress = value
+        elif key == 'listenPort':
+            if self.listenPort:
+                parseError( "listenPort is already set: {0}".format( self.listenPort ) )
+            if not isPositiveInt( value, True ):
+                parseError( "listenPort must be a positive integer" )
+            self.listenPort = int(value)
+        elif key == 'tracker':
+            if self.tracker:
+                parseError( "tracker is already set: {0}".format( self.tracker ) )
+            if containsSpace(value):
+                parseError( "tracker may not contain any whitespace" )
+            self.tracker = value
+        elif key == 'wait':
+            if self.wait:
+                parseError( "wait is already set: {0}".format( self.wait ) )
+            if not isPositiveInt( value, True ):
+                parseError( "wait must be a positive integer" )
+            self.wait = int(value)
+        else:
+            client.parseSetting(self, key, value)
 
     def checkSettings(self):
         """
@@ -100,18 +110,17 @@ class _skeleton_(client):
         An Exception is raised in the case of insanity.
         """
         client.checkSettings(self)
-        # TODO: Check your settings. Example:
-        #
-        #   if self.postFixParams and len(self.postFixParams) > self.protocolVersion:
-        #       raise Exception( "You really don't know how this client works, do you? ... Do I, actually?" )
+        if self.listenPort:
+            if self.listenAddress:
+                self.listenAddress = "{0}:{1}".format( self.listenAddress, self.listenPort )
+            else:
+                self.listenAddress = ":{0}".format( self.listenPort )
 
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.
         """
-        # The default implementation takes care of local compilation of the client, if needed. Be sure to call it.
         client.prepare(self)
-        # TODO: Add any additional preparations if needed. You're not likely to need those, though.
 
     def prepareHost(self, host):
         """
@@ -129,53 +138,16 @@ class _skeleton_(client):
         client.prepareHost(self, host)
         # The client specific directories on the remote host can be found using self.getClientDir(...) and
         # self.getLogsDir(...)
-        #
-        # TODO: Prepare the host for running your client. This usually includes uploading the binaries from local,
-        # or moving some things around remotely. The end goal of this method is that the method start() works, no
-        # matter how the client was built or sent. Four cases are to be considered:
-        #   -   The client binaries are available locally; they have to be sent to the remote host
-        #   -   The client sources have been built locally; the binaries have to be sent to the remote host
-        #   -   The client binaries are available remotely; no action should be required
-        #   -   The client sources have been built remotely; the binaries may need to be moved around
-        # The thing to keep in mind is that, when using the default implementation with the runner script made by
-        # prepareExecution(...), the script will first change directory as follows:
-        #   -   Local binaries or sources:      self.getClientDir( host, False )
-        #   -   Remote binaries or sources:     self.sourceObj.remoteLocation()
-        # From that point on the client should be runnable with the same commands. This will most likely mean that
-        # the client binaries have to end up in the same place (relative to the used remote directory), no matter
-        # where they came from (local or remote) and how they were provided at first (binary or source).
-        #
-        # Example:
-        #
-        #   if self.isInCleanup():      # Don't make a mess while cleaning up
-        #       return
-        #   if self.isRemote:
-        #       # If any fiels on the remote host need to be moved around, be sure to do so here.
-        #       # Example that moves the binary if it was built from source on the remote host:
-        #       host.sendCommand( '[ -d "{0}/src" ] && mv "{0}/src/yourClientBinary" "{0}/src/"'.format(
-        #                                   self.sourceObj.remoteLocation() ) )
-        #   else:
-        #       # Send your client files here, either from the source location (where building took place) or the
-        #       # location where the binaries already reside.
-        #
-        #       # The following is a version for a simple, single-binary client, which is compiled in-place:
-        #       # host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation() ),
-        #       #                '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #
-        #       # A more extended example, which takes the source structure into account:
-        #       if os.path.exists( '{0}/src'.format( self.sourceObj.localLocation() ) ):
-        #           host.sendFile( '{0}/src/yourClientBinary'.format( self.sourceObj.localLocation() ),
-        #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #       else:
-        #           host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation() ),
-        #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #
-        # This is quite an elaborate method, but it is important to take into account all four cases. That will
-        # ensure that your client runs well. If you need extra files available on the remote host you can copy them
-        # here as well, of course, and/or check their availability to make sure the client will run.
-        #
 
-    def prepareExecution(self, execution, simpleCommandLine = None, complexCommandLine = None):
+        if self.isInCleanup():
+            return
+        if not self.isRemote:
+            host.sendFile( '{0}/swift'.format( self.sourceObj.localLocation(self) ),
+                           '{0}/swift'.format( self.getClientDir(host) ) )
+
+    # That's right, 2 arguments less.
+    # pylint: disable-msg=W0221
+    def prepareExecution(self, execution):
         """
         Client specific preparations for a specific execution.
 
@@ -191,36 +163,40 @@ class _skeleton_(client):
         # implementation. Subclassers are encouraged to use this possibility when they don't need much more elaborate
         # ways of running their client.
         #
-        # The runner script can be created in two ways, both are well documented at client.prepareExecution(...).
-        # This example below shows the most common use:
-        #
-        #   client.prepareExecution(self, execution, simpleCommandLine =
-        #       "./yourClientBinary > {0}/log.log".format( self.getExecutionLogDir( execution ) ))
-        #
-        # This example is a bit more elaborate; the complexCommandLine is to be used if any but the last command
-        # in the sequence takes significant time to run:
-        #
-        #   allParams = '{0} --logdir {1}'.format( self.extraParameters, self.getExecutionLogDir( execution ) )
-        #   if self.protocolVersion:
-        #       allParams += " --prot {0}".format(self.protocolVersion)
-        #   if self.postFixParams:
-        #       allParams += " {0}".format(self.postFixParams)
-        #   if execution.isSeeder():
-        #       client.prepareExecution(self, execution, simpleCommandLine =
-        #           "./yourClientBinary --seed {0}".format( allParams ) )
-        #   else:
-        #       client.prepareExecution(self, execution, complexCommandLine =
-        #           "./yourClientBinary --leech {0} && ./yourClientBinary --seed {0}".format( allParams ) )
-        #
-        # Be sure to take self.extraParameters and your own parameters into account when building the command line
-        # for the runner script. Also don't forget to make sure logs end up where you want them.
-        #
-        # The following implementation assumes you won't be using the runner script and is hence highly discouraged.
-        #
-        # TODO: Prepare the execution/client specific part on the host; specifically subclassers are encouraged to
-        # use either the simpleCommandLine or complexCommandLine named arguments to client.prepareExecution(...) to
-        # have a runner script built that will be used by the default implementation of start(...).
-        client.prepareExecution(self, execution)
+        allParams = ""
+        if execution.isSeeder():
+            allParams += ' --file {0}'.format( execution.file.getFile() )
+            if not self.wait:
+                allParams += ' --wait 900s'
+        else:
+            roothash = execution.file.getRootHash()
+            if not roothash:
+                raise Exception( "The swift client, when leeching, requires the root hash of the file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set.".format( execution.getNumber(), self.name, execution.host.name, execution.file.name ) )        
+            allParams += ' --hash {0} --file "{1}/outputFile"'.format( roothash, self.getExecutionClientDir(execution) )
+        if self.wait:
+            allParams += ' --wait {0}s'.format( self.wait )
+        if self.listenAddress:
+            allParams += ' --listen {0}'.format( self.listenAddress )
+        if self.tracker:
+            if self.tracker[0] == '@':
+                indirecttracker = self.tracker[1:]
+                colonindex = self.tracker.find(':')
+                if colonindex != -1:
+                    indirecttracker = self.tracker[1:colonindex]
+                if indirecttracker not in self.scenario.getObjectsDict('host'):
+                    raise Exception( "Swift client {0} has specified {1} as its indirect tracker, but host {2} does not exist.".format( self.name, self.tracker, indirecttracker ) )
+                trackeraddress = self.scenario.getObjectsDict('host')[indirecttracker].getAddress()
+                if trackeraddress == '':
+                    raise Exception( "Swift client {0} has specified {1} as its indirect tracker, but host {2} can't give a specific address.".format( self.name, self.tracker, indirecttracker ) )
+                if colonindex != -1:
+                    trackeraddress += indirecttracker[colonindex:]
+                allParams += ' --tracker {0}'.format( trackeraddress )
+            else:
+                allParams += ' --tracker {0}'.format( self.tracker )
+        if self.extraParameters:
+            allParams += ' {0}'.format( self.extraParameters )
+        client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:. ./swift --progress {0} 2> "{1}/log.log"'.format( allParams, self.getExecutionLogDir(execution) ) )
+    # pylint: enable-msg=W0221
 
     def start(self, execution):
         """
@@ -234,43 +210,7 @@ class _skeleton_(client):
 
         @param  execution       The execution this client is to be run for.
         """
-        # The default implementation is very well usable is you have created a runner script in
-        # prepareExecution(...). If not, this is where you should run your client. A small example that assumes a lot
-        # of preparation has been done elsewhere (which is not done in the examples above):
-        #
-        #   try:
-        #       self.pid__lock.acquire()
-        #       if self.isInCleanup():
-        #           self.pid__lock.release()
-        #           return
-        #       if execution.getNumber() in self.pids:
-        #           self.pid__lock.release()
-        #           raise Exception( "Don't run twice!" )
-        #       resp = execution.host.sendCommand(
-        #           'cd "{0}"; ./yourClientBinary --pidFile "{1}/pidFile" &; cat "{1}/pidFile"'.format(
-        #               self.getClientDir( execution.host ), self.getExecutionClientDir( execution ) ) )
-        #       m = re.match( "^([0-9][0-9]*)", resp )
-        #       if not m:
-        #           raise Exception( "Failure to start... or get PID, anyway." )
-        #       self.pids[execution.getNumber()] = m.group( 1 )
-        #   finally:
-        #       try:
-        #           self.pid__lock.release()
-        #       except RuntimeError:
-        #           pass
-        #
-        # As you can see the start(...) method quite quickly becomes quite elaborate with quite some possibilities
-        # for errors. That is why all of the above is highly discouraged: please use the simpleCommandLine or
-        # complexCommandLine named parameters to client.prepareExecution(...) in your implementation of
-        # prepareExecution(...) above and just use the following implementation:
         client.start(self, execution)
-        #
-        # TODO: If you really, really must: override this implementation. Your risk.
-        #
-
-    # TODO: If you really need a different detection whether your client is running, override isRunning(...)
-
-    # TODO: If you can kill your client more effectively than sending a signal, override kill(...)
 
     def retrieveLogs(self, execution, localLogDestination):
         """
@@ -281,12 +221,7 @@ class _skeleton_(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        # TODO: Implement this in order to get your logs out. Example:
-        #
-        #   host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ),
-        #       '{0}/log.log'.format( localLogDestination ) )
-        #
-        pass
+        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ) )
 
     def cleanupHost(self, host):
         """
@@ -296,11 +231,6 @@ class _skeleton_(client):
 
         @param  host            The host on which to clean up the client.
         """
-        # Just calling the default implementation is usually enough, here. Be sure to be symmetrical with
-        # prepareHost(...).
-        #
-        # TODO: Add any cleanup on the host you might need.
-        #
         client.cleanupHost(self, host)
 
     def cleanup(self):
@@ -309,9 +239,6 @@ class _skeleton_(client):
 
         The default calls any required cleanup on the sources.
         """
-        #
-        # TODO: Implement this if needed, be symmetrical with prepare(...)
-        #
         client.cleanup(self)
 
     def trafficProtocol(self):
@@ -328,10 +255,7 @@ class _skeleton_(client):
 
         @return The protocol the client uses for communication.
         """
-        #
-        # TODO: Reimplement this if possible.
-        #
-        return client.trafficProtocol(self)
+        return ''
 
     def trafficInboundPorts(self):
         """
@@ -348,10 +272,9 @@ class _skeleton_(client):
 
         @return A list of all ports on which incoming traffic can come, or [] if no such list can be given.
         """
-        #
-        # TODO: Reimplement this if possible
-        #
-        return client.trafficInboundPorts(self)
+        if self.listenPort:
+            return [self.listenPort]
+        return []
 
     def trafficOutboundPorts(self):
         """
@@ -368,12 +291,10 @@ class _skeleton_(client):
 
         @return A list of all ports from which outgoing traffic can come, or [] if no such list can be given.
         """
-        #
-        # TODO: Reimplement this if possible
-        #
-        return client.trafficOutboundPorts(self)
+        if self.listenPort:
+            return [self.listenPort]
+        return []
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
         return "2.0.0"

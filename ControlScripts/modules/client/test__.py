@@ -90,8 +90,8 @@ class test__(client):
         """
         client.prepareHost(self, host)
 
-        theDir = self.location
-        if client.isRemote:
+        theDir = self.sourceObj.remoteLocation(self, host)
+        if not client.isRemote:
             theDir = self.getClientDir(host)
 
         if self.isInCleanup():
