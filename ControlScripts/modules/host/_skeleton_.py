@@ -2,7 +2,7 @@
 # the Campaign data object and the host parent class.
 from core.parsing import *
 from core.campaign import Campaign
-from core.host import host
+from core.host import host, connectionObject
 
 # You can define anything you like in the scope of your own module: the only thing that will be imported from it
 # is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
@@ -13,6 +13,49 @@ def parseError( msg ):
     A simple helper function to make parsing a lot of parameters a bit nicer.
     """
     raise Exception( "Parse error for host object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
+
+# TODO: Change the name of the class. Example:
+#
+#    class rudeConnectionObject(connectionObject):
+#
+# As a sidenote, one can also just subclass counterConnectionObject to basically get the example
+# without implementing it, that is, a connection object with an identifying counter.
+class _skeleton_connectionObject(connectionObject):
+    """
+    A skeleton implementaion of a connectionObject subclass.
+    
+    Please use a connectionObject subclass for your connection object needs.
+    """
+    # TODO: Update the description above
+    
+    def __init__(self):
+        """
+        Initialization of the connection object.
+        """
+        connectionObject.__init__(self)
+        # Really call the parent constructor!
+        # TODO: Extend this, most likely. Example:
+        #
+        #    rudeConnectionObject.staticCounter__lock.acquire()
+        #    rudeConnectionObject.staticCounter += 1
+        #    self.counter = rudeConnectionObject.staticCounter
+        #    rudeConnectionObject.staticCounter__lock.release()
+    
+    def getIdentification(self):
+        """
+        Returns a unique identification for this connection object.
+        
+        This may be a number of a string, or anything really. As long as
+        it can be compared with == it's fine.
+        
+        @return The unique identification of this connection object.
+        """
+        # TODO: Implement this. Example:
+        #
+        #    return self.counter
+        #
+        # This implementation assumes you're too lazy:
+        raise Exception( "Not implemented" )
 
 # TODO: Change the name of the class. See the remark above about the names of the module and the class. Example:
 #
@@ -114,7 +157,7 @@ class _skeleton_(host):
         Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
         connections will automatically closed and, hence, any calls using those connections will then fail.
 
-        @return The connection object for a new connection.
+        @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
         """
         # TODO: Implement this! Example:
         #
@@ -128,15 +171,21 @@ class _skeleton_(host):
         Close a previously created connection to the host.
 
         Any calls afterwards to methods of this host with the close connection will fail.
+        
+        The default implementation will close the connection if it wasn't already closed
+        and remove it from self.connections.
 
         @param  The connection to be closed.
         """
-        # TODO: Implement this! Example:
+        # TODO: Actually close the connection. Then call host.closeConnection(connection). Example:
         #
-        #   FIXME: WRITE EXAMPLE
+        #    FIXME: WRITE EXAMPLE
         #
-        # Be sure to remove the connection from the self.connections list after acquiring self.connections__lock
-        raise Exception( "Not implemented" )
+        # Always include the next call:
+        host.closeConnection(self, connection)
+
+    # TODO: If you really must you can override getConnection. This is needed in case your connection object
+    # is not a subclass of core.host.connectionObject. There is no real need for that, though.
 
     def sendCommand(self, command, reuseConnection = True):
         """
@@ -152,17 +201,11 @@ class _skeleton_(host):
         # TODO: Implement this! Example:
         #
         #   connection = None
-        #   if not reuseConnection:
-        #       connection = self.setupNewConnection()
-        #   elif reuseConnection == True:
-        #       self.connections__lock.acquire()
-        #       connection = self.connections[0]
-        #       self.connections__lock.release()
-        #   else:
-        #       connection = reuseConnection
+        #   try:
+        #       connection = self.getConnection( reuseConnection )
         #   FIXME: WRITE MORE EXAMPLE
-        #   if not reuseConnection:
-        #       self.closeConnection( connection )
+        #   finally:
+        #       self.releaseConnection( reuseConnection, connection )
         #
         raise Exception( "Not implemented" )
 
@@ -220,17 +263,19 @@ class _skeleton_(host):
         #
         # Usually this one call will be enough if you just need to set up the connection.
 
-    def cleanup(self):
+    def cleanup(self, reuseConnection = None):
         """
         Executes commands to do host specific cleanup.
         
         The default implementation removes the remote temporary directory, if one was created.
 
         Subclassers are advised to first call this implementation and then proceed with their own steps.
+        
+        @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
         # Be symmetrical with prepare(), clean up the less-important host-specific stuff here
         # Then do this call, and definitely do this call unless you know what you're doing:
-        host.cleanup(self)
+        host.cleanup(self, reuseConnection)
         # TODO: Cleanup all of the host, be sure to check what has and what has not been done and needs cleanup.
         # Don't just assume you're at the end of everything. Example:
         #

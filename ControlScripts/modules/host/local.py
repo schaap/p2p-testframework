@@ -1,13 +1,13 @@
 from subprocess import Popen
 from subprocess import STDOUT
 from subprocess import PIPE
-import threading
 import subprocess
 import os
 import re
+import errno
 
 from core.campaign import Campaign
-from core.host import host
+from core.host import host, countedConnectionObject
 
 def parseError( msg ):
     """
@@ -21,39 +21,11 @@ def escapeFileName(f):
     """
     return re.sub( '\"', '\\\"', re.sub( '\\\\', '\\\\\\\\', f ) )
         
-class ConnectionObject:
-    counter = 0
-    counter__lock = threading.Lock()
-
+class localConnectionObject(countedConnectionObject):
     proc = None
-    closed = False
-    close__lock = None
-    ident = 0
     def __init__(self, proc):
+        countedConnectionObject.__init__(self)
         self.proc = proc
-        self.close__lock = threading.Lock()
-        ConnectionObject.counter__lock.acquire()
-        ConnectionObject.counter += 1
-        self.ident = ConnectionObject.counter
-        ConnectionObject.counter__lock.release()
-        self.counter__lock = None
-
-    def close(self):
-        self.close__lock.acquire()
-        self.closed = True
-        self.close__lock.release()
-
-    def isClosed(self):
-        self.close__lock.acquire()
-        self.closed = True
-        self.close__lock.release()
-
-    def closeIfNotClosed(self):
-        self.close__lock.acquire()
-        res = self.closed
-        self.closed = True
-        self.close__lock.release()
-        return res
 
     def stdin(self):
         return self.proc.stdin
@@ -127,7 +99,7 @@ class local(host):
         Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
         connections will automatically closed and, hence, any calls using those connections will then fail.
 
-        @return The connection object for a new connection.
+        @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
         """
         if self.isInCleanup():
             return
@@ -135,13 +107,21 @@ class local(host):
         try:
             self.connections__lock.acquire()
             if self.isInCleanup():
-                proc.communicate( 'exit' )
+                try:
+                    proc.communicate( 'exit' )
+                except OSError as e:
+                    if not e.errno == errno.EPIPE: # This one is expected
+                        raise e
                 return
-            obj = ConnectionObject( proc )
+            obj = localConnectionObject( proc )
             self.connections.append( obj )
             if self.isInCleanup():
                 self.connections.pop()
-                proc.communicate( 'exit' )
+                try:
+                    proc.communicate( 'exit' )
+                except OSError as e:
+                    if not e.errno == errno.EPIPE: # This one is expected
+                        raise e
                 return
         finally:
             try:
@@ -161,57 +141,13 @@ class local(host):
         """
         if connection.closeIfNotClosed():
             return
-        connection.proc.communicate( 'exit' )
         try:
-            self.connections__lock.acquire()
-            index = 0
-            while index < len(self.connections):
-                if self.connections[index].ident == connection.ident:
-                    self.connections.pop(index)
-                    break
-            else:
-                raise Exception( "Closing connection that is not in the list of connections?" )
+            connection.proc.communicate( 'exit' ) # FIXME: This breaks. It hangs.
+        except OSError as e:
+            if not e.errno == errno.EPIPE: # This one is expected
+                raise e
         finally:
-            try:
-                self.connections__lock.release()
-            except RuntimeError:
-                pass
-
-    def __chooseConnection(self, reuseConnection):
-        """
-        Internal method
-        """
-        if reuseConnection is None:
-            raise ValueError( "reuseConnection may never be None" )
-        connection = None
-        if not reuseConnection:
-            connection = self.setupNewConnection()
-        elif reuseConnection == True:
-            try:
-                self.connections__lock.acquire()
-                if self.isInCleanup():
-                    return
-                connection = self.connections[0]
-            finally:
-                try:
-                    self.connections__lock.release()
-                except RuntimeError:
-                    pass
-        else:
-            connection = reuseConnection
-
-        if not connection:
-            if reuseConnection == False:
-                raise Exception( "Could not create a new connection on host {0}".format( self.name ) )
-            elif reuseConnection == True:
-                raise Exception( "Could not use default connection on host {0}".format( self.name ) )
-            else:
-                raise Exception( "Could not use connection {1} on host {0}".format( self.name, reuseConnection.ident ) )
-
-        if connection.isClosed():
-            raise Exception( "Trying to send a command over a closed connection." )
-        
-        return connection
+            host.closeConnection(self, connection)
 
     def sendCommand(self, command, reuseConnection = True):
         """
@@ -224,11 +160,9 @@ class local(host):
 
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
-        connection = self.__chooseConnection(reuseConnection)
-        if not connection and self.isInCleanup():
-            return
-
+        connection = None
         try:
+            connection = self.getConnection(reuseConnection)
             # Send command
             connection.stdin().write( command+'\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
             connection.stdin().flush()
@@ -242,8 +176,7 @@ class local(host):
             # Return output (ditch the last trailing \n)
             return res.strip()
         finally:
-            if not reuseConnection:
-                self.closeConnection( connection )
+            self.releaseConnection(reuseConnection, connection)
     
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -258,9 +191,9 @@ class local(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        connection = self.__chooseConnection(reuseConnection)
-
+        connection = None
         try:
+            connection = self.getConnection(reuseConnection)
             if not os.path.exists( localSourcePath ) or not os.path.isfile( localSourcePath ):
                 raise Exception( "Sending local file {0} to remote file {1}: local source should point to an existing file".format( localSourcePath, remoteDestinationPath ) )
             if not overwrite and os.path.exists( remoteDestinationPath ):
@@ -273,8 +206,7 @@ class local(host):
                 Campaign.logger.log( cpe.output )
                 raise cpe
         finally:
-            if not reuseConnection:
-                self.closeConnection( connection )
+            self.releaseConnection(reuseConnection, connection)
     
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -289,9 +221,9 @@ class local(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        connection = self.__chooseConnection(reuseConnection)
-
+        connection = None
         try:
+            connection = self.getConnection(reuseConnection)
             if not os.path.exists( remoteSourcePath ) or not os.path.isfile( remoteSourcePath ):
                 raise Exception( "Getting remote file {0} to local file {1}: remote source should point to an existing file".format( remoteSourcePath, localDestinationPath ) )
             if not overwrite and os.path.exists( localDestinationPath ):
@@ -304,8 +236,7 @@ class local(host):
                 Campaign.logger.log( cpe.output )
                 raise cpe
         finally:
-            if not reuseConnection:
-                self.closeConnection( connection )
+            self.releaseConnection(reuseConnection, connection)
 
     def prepare(self):
         """
@@ -315,15 +246,17 @@ class local(host):
         """
         host.prepare(self)
 
-    def cleanup(self):
+    def cleanup(self, reuseConnection = None):
         """
         Executes commands to do host specific cleanup.
         
         The default implementation removes the remote temporary directory, if one was created.
 
         Subclassers are advised to first call this implementation and then proceed with their own steps.
+        
+        @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
-        host.cleanup(self)
+        host.cleanup(self, reuseConnection)
 
     def getSubNet(self):
         """

@@ -2,7 +2,7 @@ import threading
 import os
 
 from core.campaign import Campaign
-from core.host import host
+from core.host import host, countedConnectionObject
 
 def parseError( msg ):
     """
@@ -10,12 +10,16 @@ def parseError( msg ):
     """
     raise Exception( "Parse error for host object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
-class connObj:
-    connID = None
-    closed = False
+class connObj(countedConnectionObject):
+    """
+    A very simple connection object that is nothing more than just a counter, really.
+    """
 
-    def __init__(self, connID):
-        self.connID = connID
+    def __init__(self):
+        """
+        Initialization of the connection object.
+        """
+        countedConnectionObject.__init__(self)
 
 class test__(host):
     """
@@ -78,63 +82,16 @@ class test__(host):
         Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
         connections will automatically closed and, hence, any calls using those connections will then fail.
 
-        @return The connection object for a new connection.
+        @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
         """
-        self.connections__lock.acquire()
         co = None
         try:
-            co = connObj(len(self.connections))
+            self.connections__lock.acquire()
+            co = connObj()
             self.connections.append(co)
         finally:
             self.connections__lock.release()
         return co
-
-    def closeConnection(self, connection):
-        """
-        Close a previously created connection to the host.
-
-        Any calls afterwards to methods of this host with the close connection will fail.
-
-        @param  The connection to be closed.
-        """
-        if connection.closed:
-            raise Exception( "Trying to close an already closed connection" )
-        try:
-            self.connections__lock.acquire()
-            theIndex = None
-            for index in range(0, len(self.connections)):
-                if self.connections[index].connID == connection.connID:
-                    theIndex = index
-                    break
-            if theIndex:
-                if theIndex == 0 and len(self.connections) > 1:
-                    raise Exception( "Can't close the default connection while others are still open" )
-                del self.connections[theIndex]
-        finally:
-            try:
-                self.connections__lock.release()
-            except RuntimeError:
-                pass
-        connection.closed = True
-
-    def decideConnection(self, reuseConnection):
-        connection = None
-        if not reuseConnection:
-            connection = self.setupNewConnection()
-        elif reuseConnection == True:
-            try:
-                self.connections__lock.acquire()
-                connection = self.connections[0]
-            finally:
-                try:
-                    self.connections__lock.release()
-                except RuntimeError:
-                    pass
-        else:
-            connection = reuseConnection
-        if connection.closed:
-            raise Exception( "Trying to use closed connection {0} for host {1}".format( connection.connID, self.name ) )
-        return connection
 
     def writeCommandLog(self, log):
         try:
@@ -161,10 +118,12 @@ class test__(host):
         """
         if command == '':
             Campaign.logger.log( "Empty command to host {0}?".format( self.name ) )
-        connection = self.decideConnection(reuseConnection)
-        self.writeCommandLog( "CONN {0}: ".format(connection.connID) + command + "\n" )
-        if not reuseConnection:
-            self.closeConnection( connection )
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            self.writeCommandLog( "CONN {0}: ".format(connection.getIdentification()) + command + "\n" )
+        finally:
+            self.releaseConnection(reuseConnection, connection)
         return ""
 
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
@@ -184,10 +143,12 @@ class test__(host):
             raise Exception( "Local source file '{0}' seems not to exist or is not a file".format( localSourcePath ) )
         if remoteDestinationPath == '' or not isinstance( remoteDestinationPath, basestring ):
             raise Exception( "Insane remote destination '{0}'".format( remoteDestinationPath ) )
-        connection = self.decideConnection(reuseConnection)
-        self.writeCommandLog( "CONN {0} SEND {1} TO {2}\n".format( connection.connID, localSourcePath, remoteDestinationPath ) )
-        if not reuseConnection:
-            self.closeConnection( connection )
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            self.writeCommandLog( "CONN {0} SEND {1} TO {2}\n".format( connection.getIdentification(), localSourcePath, remoteDestinationPath ) )
+        finally:
+            self.releaseConnection(reuseConnection, connection)
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -209,10 +170,11 @@ class test__(host):
                 raise Exception( "localDestinationPath '{0}' is a directory".format( localDestinationPath ) )
             elif not overwrite:
                 raise Exception( "localDestinationPath '{0}' already exists and overwrite is not specified".format( localDestinationPath ) )
-        connection = self.decideConnection(reuseConnection)
-        self.writeCommandLog( "CONN {0} GET {1} TO {2}\n".format( connection.connID, remoteSourcePath, localDestinationPath ) )
-        if not reuseConnection:
-            self.closeConnection( connection )
+        try:
+            connection = self.getConnection(reuseConnection)
+            self.writeCommandLog( "CONN {0} GET {1} TO {2}\n".format( connection.getIdentification(), remoteSourcePath, localDestinationPath ) )
+        finally:
+            self.releaseConnection(reuseConnection, connection)
 
     def prepare(self):
         """
@@ -222,15 +184,17 @@ class test__(host):
         """
         host.prepare(self)
 
-    def cleanup(self):
+    def cleanup(self, reuseConnection = None):
         """
         Executes commands to do host specific cleanup.
         
         The default implementation removes the remote temporary directory, if one was created.
 
         Subclassers are advised to first call this implementation and then proceed with their own steps.
+        
+        @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
-        host.cleanup(self)
+        host.cleanup(self, reuseConnection)
 
     def getSubNet(self):
         """

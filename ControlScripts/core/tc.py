@@ -42,11 +42,12 @@ class tc(coreObject):
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
-    def remove(self, host):
+    def remove(self, host, reuseConnection = None):
         """
         Removes the traffic control from the host.
 
-        @param  host    The host from which to remove TC.
+        @param  host            The host from which to remove TC.
+        @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
         raise Exception( "Not implemented" )
     # pylint: enable-msg=W0613

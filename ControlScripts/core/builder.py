@@ -54,7 +54,7 @@ class builder(coreObject):
             try:
                 if self.isInCleanup():
                     return False
-                proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=client.sourceObj.localLocation() )
+                proc = Popen('bash', bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT, cwd=client.sourceObj.localLocation(client) )
                 if self.isInCleanup():
                     proc.kill()
                     return False
@@ -82,7 +82,7 @@ class builder(coreObject):
             try:
                 if self.isInCleanup():
                     return False
-                host.sendCommand( 'cd "{0}"'.format( client.sourceObj.remoteLocation() ) )
+                host.sendCommand( 'cd "{0}"'.format( client.sourceObj.remoteLocation(client, host) ) )
                 if self.isInCleanup():
                     return False
                 result = host.sendCommand(buildCommand)

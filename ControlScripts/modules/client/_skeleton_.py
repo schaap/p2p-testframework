@@ -291,20 +291,21 @@ class _skeleton_(client):
         #
         pass
 
-    def cleanupHost(self, host):
+    def cleanupHost(self, host, reuseConnection = None):
         """
         Client specific cleanup for a host, irrespective of execution.
 
         Should also remove the client from the host as far as it wasn't already there.
 
         @param  host            The host on which to clean up the client.
+        @param  reuseConnection If not None, force the use of this connection for command to the host.
         """
         # Just calling the default implementation is usually enough, here. Be sure to be symmetrical with
         # prepareHost(...).
         #
         # TODO: Add any cleanup on the host you might need.
         #
-        client.cleanupHost(self, host)
+        client.cleanupHost(self, host, reuseConnection)
 
     def cleanup(self):
         """

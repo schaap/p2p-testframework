@@ -495,7 +495,7 @@ class ScenarioRunner:
         """
         logThreads = []
         for execution in self.getObjects('execution'):
-            execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.name ) )
+            execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.getNumber() ) )
             os.makedirs( os.path.join( execdir, 'logs' ) )
             os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
             logThreads.append( LogProcessor( execution, execdir ) )
@@ -540,6 +540,17 @@ class ScenarioRunner:
                 except Exception as exc:
                     Campaign.logger.log( "Exception while cleaning up thread, will be discarded: {0}".format( exc.__str__() ) )
                     Campaign.logger.exceptionTraceback()
+        cleanupConnections = {}
+        print "Setting up cleanup connections"
+        for h in self.getObjects( 'host' ):
+            cleanupConnections[h] = h.setupNewConnection()
+        print "Checking and killing clients"
+        for e in self.getObjects('execution'):
+            try:
+                if e.client.hasStarted( e ) and e.client.isRunning( e, cleanupConnections[e.host] ):
+                    e.client.kill( e, cleanupConnections[e.host] )
+            except Exception as exc:
+                Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
         print "Cleaning up files"
         for f in self.getObjects('file'):
             try:
@@ -551,7 +562,7 @@ class ScenarioRunner:
         for host in self.getObjects('host'):
             for client in host.clients:
                 try:
-                    client.cleanupHost( host )
+                    client.cleanupHost( host, cleanupConnections[host] )
                 except Exception as exc:
                     Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
                     Campaign.logger.exceptionTraceback()
@@ -565,12 +576,12 @@ class ScenarioRunner:
         for host in self.getObjects('host'):
             if host.tc != '' and host.tcObj:
                 try:
-                    host.tcObj.remove( host )
+                    host.tcObj.remove( host, cleanupConnections[host] )
                 except Exception as exc:
                     Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
                     Campaign.logger.exceptionTraceback()
             try:
-                host.cleanup()
+                host.cleanup( cleanupConnections[host] )
             except Exception as exc:
                 Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
                 Campaign.logger.exceptionTraceback()
@@ -655,9 +666,11 @@ class CampaignRunner:
 
         Campaign.logger.logToFile( os.path.join( self.campaignResultsDir, 'err.log' ) )
 
-    def readCampaignFile(self):
+    def readCampaignFile(self, justScenario = None):
         """
         Reads and parses the campaign file.
+        
+        @param  justScenario    A list of scenario names to run, or None to run all scenarios.
         """
         print "Reading campaign from campaign file {0}".format( self.campaignFile )
         print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
@@ -726,15 +739,26 @@ class CampaignRunner:
                     raise Exception( 'Unsupported parameter "{0}" found on line {1}'.format( parameterName, Campaign.currentLineNumber ) )
             Campaign.currentLineNumber += 1
         self.scenarios.append( ScenarioRunner( scenarioName, scenarioFiles, scenarioTimeLimit, scenarioParallel, self ) )
+        
+        if justScenario:
+            for scName in justScenario:
+                for sc in self.scenarios:
+                    if sc.name == scName:
+                        break
+                else:
+                    return CampaignRunner.usage("Scenario {0} is to be run, but does not exist.".format(scName))
 
         for scenario in self.scenarios:
-            scenario.read()
+            if scenario.name in justScenario:
+                scenario.read()
         if Campaign.doCheckRun:
             for scenario in self.scenarios:
-                scenario.test()
+                if scenario.name in justScenario:
+                    scenario.test()
         if Campaign.doRealRun:
             for scenario in self.scenarios:
-                scenario.run()
+                if scenario.name in justScenario:
+                    scenario.run()
 
     ######
     # Static part of the class: initialization and option parsing
@@ -753,11 +777,12 @@ class CampaignRunner:
 P2P Testing Framework campaign runner
 Run a test campaign, scenario by scenario.
 Usage:
-    {0} [--check|--nocheck] your_campaign_file
+    {0} [--check|--nocheck] [--scenario=name [...]] your_campaign_file
 --check will check the correctness of the settings as well as try and see if what was requested is possible.
 The checks made by --check may not be all-inclusive, but should eliminate a lot of possible errors during runs, andhence a lot of frustration when setting up tests.
---nocheck will skip the checking run and only do an actual run (useful for already tested setups)
+--nocheck will skip the checking run and only do an actual run (useful for already tested setups).
 When neither --check nor --nocheck is given, an actual run is done.
+--scenario=name will only run the named scenario; --scenario= can be given multiple times for a list of scenarios.
 """.format( sys.argv[0] )
 
     @staticmethod
@@ -769,6 +794,7 @@ When neither --check nor --nocheck is given, an actual run is done.
         """
         campaign_files = []
         options = []
+        justScenario = None
         # Split arguments in options and campaign files
         for arg in argv[1:]:
             if arg[:2] == '--':
@@ -791,6 +817,11 @@ When neither --check nor --nocheck is given, an actual run is done.
                     Campaign.doCheckRun = False
                 else:
                     return CampaignRunner.usage( "Only one of --check and --nocheck may be specified" )
+            elif opt[:11] == '--scenario=':
+                if justScenario:
+                    justScenario.append( opt[11:] )
+                else:
+                    justScenario = [opt[11:]]
             else:
                 return CampaignRunner.usage( "Unknown option: {0}".format( opt ) )
         
@@ -828,7 +859,7 @@ When neither --check nor --nocheck is given, an actual run is done.
         for campaign_file in campaign_files:
             try:
                 Campaign.currentCampaign = CampaignRunner(campaign_file)
-                Campaign.getCurrentCampaign().readCampaignFile()
+                Campaign.getCurrentCampaign().readCampaignFile(justScenario)
             except Exception as exc:
                 Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
                 Campaign.logger.exceptionTraceback()

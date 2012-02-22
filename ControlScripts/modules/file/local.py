@@ -99,7 +99,9 @@ class local(core.file.file):
                 raise Exception( "file:local {0} has requested automated root hash calculation, but {1} is a directory, for which root hashes aren't supported".format( self.name, self.path ) )
             if self.renameFile:
                 raise Exception( "file:local {0} has requested the uploaded file to be renamed, but {1} is a directory, for which this is not supported".format( self.name, self.path ) )
-        meta = Campaign.loadCoreModule('meta')()
+        meta = Campaign.loadCoreModule('meta')
+        # PyLint really doesn't understand dynamic loading
+        # pylint: disable-msg=E1101
         if self.generateRootHash:
             self.rootHash = meta.calculateMerkleRootHash( self.path )
         if self.generateTorrent:
@@ -107,6 +109,7 @@ class local(core.file.file):
                 return
             _, self.metaFile = tempfile.mkstemp()
             meta.generateTorrentFile( self.path, self.metaFile)
+        # pylint: enable-msg=E1101
 
     def sendToHost(self, host):
         """

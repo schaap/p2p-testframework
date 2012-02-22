@@ -395,8 +395,28 @@ class client(coreObject):
                 self.pid__lock.release()
             except RuntimeError:
                 pass
+    
+    def hasStarted(self, execution):
+        """
+        Returns whether the client has actually been started.
+        
+        If this method returns True, then no problems should arise when calling isRunning.
+        
+        @return True iff the client has been started in the past.
+        """
+        res = False
+        try:
+            self.pid__lock.acquire()
+            if execution.getNumber() in self.pids:
+                res = True
+        finally:
+            try:
+                self.pid__lock.release()
+            except RuntimeError:
+                pass
+        return res
 
-    def isRunning(self, execution):
+    def isRunning(self, execution, reuseConnection = None ):
         """
         Return whether the client is running for the provided execution.
 
@@ -404,6 +424,7 @@ class client(coreObject):
         self.pids[execution.getNumber()] is still running.
 
         @param  execution       The execution for which to check if the client is running.
+        @param  reuseConnection If not None, force use of the specified connection object.
 
         @return True iff the client is running.
         """
@@ -413,7 +434,10 @@ class client(coreObject):
             if execution.getNumber() not in self.pids:
                 raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
             print "DEBUG: Checking for PID {0}".format( self.pids[execution.getNumber()] )
-            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( self.pids[execution.getNumber()] ) )
+            connection = reuseConnection
+            if not connection:
+                connection = execution.getRunnerConnection()
+            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( self.pids[execution.getNumber()] ), connection )
             res = re.match( '^Y', result ) is not None
         finally:
             try:
@@ -422,7 +446,7 @@ class client(coreObject):
                 pass
         return res
 
-    def kill(self, execution):
+    def kill(self, execution, reuseConnection = None ):
         """
         End the execution of the client for the provided execution.
 
@@ -430,6 +454,7 @@ class client(coreObject):
         self.pids[execution.getNumber()] is still running and while it is send signals to have it stop.
 
         @param  execution       The execution for which to kill the client.
+        @param  reuseConnection If not None, force use of the specified connection object.
         """
         # Important note: it is NOT doable to get a trace on all forks of subprocesses. One MAY be able to trace the
         # direct child, but that is inefficient (ptrace creates actual traps, not just simple notifications,
@@ -462,12 +487,15 @@ class client(coreObject):
         # The first line tries and kill the process using signal INT (killActions[8]).
         # The second line gives the process 5 second time (killDelays[8]).
         # The third line checks whether the process died.
+        connection = reuseConnection
+        if not connection:
+            connection = execution.getRunnerConnection()
         while isRunning and killCounter < len(killActions):
             if killActions[killCounter] == 0:
-                execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ) )
+                execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ), connection )
             time.sleep( killDelays[killCounter] )
             killCounter += 1
-            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgramPID ) )
+            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgramPID ), connection )
             if re.match( '^Y', result ) is not None:
                 try:
                     self.pid__lock.acquire()
@@ -492,15 +520,19 @@ class client(coreObject):
         """
         pass
 
-    def cleanupHost(self, host):
+    def cleanupHost(self, host, reuseConnection = None):
         """
         Client specific cleanup for a host, irrespective of execution.
 
         Should also remove the client from the host as far as it wasn't already there.
 
         @param  host            The host on which to clean up the client.
+        @param  reuseConnection If not None, force the use of this connection for command to the host.
         """
-        host.sendCommand( 'rm -rf "{0}/clients/{2}" "{0}/logs/{2}" "{1}/clients/{2}" "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ) )
+        connection = True
+        if reuseConnection:
+            connection = reuseConnection
+        host.sendCommand( 'rm -rf "{0}/clients/{2}" "{0}/logs/{2}" "{1}/clients/{2}" "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ), connection )
 
     # This method has unused argument execution; that's fine
     # pylint: disable-msg=W0613

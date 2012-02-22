@@ -66,7 +66,7 @@ class local(source):
         if not source.prepareLocal(self, client):
             return False
         try:
-            subprocess.check_output( 'cp -r "{0}/*" "{1}/"'.format( escapeFileName( client.location ), escapeFileName( self.localLocation( client ) ) ), shell=True, stderr=STDOUT )
+            subprocess.check_output( 'cp -r "{0}/"* "{1}/"'.format( escapeFileName( client.location ), escapeFileName( self.localLocation( client ) ) ), shell=True, stderr=STDOUT )
         except subprocess.CalledProcessError as cpe:
             Campaign.logger.log( "Could not locally prepare source for client {0}: {1}".format( client.name, cpe.output ) )
             raise cpe
@@ -95,5 +95,4 @@ class local(source):
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
         return "2.0.0"

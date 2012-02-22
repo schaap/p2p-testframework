@@ -165,7 +165,7 @@ class swift(client):
         #
         allParams = ""
         if execution.isSeeder():
-            allParams += ' --file {0}'.format( execution.file.getFile() )
+            allParams += ' --file {0}'.format( execution.file.getFile(execution.host) )
             if not self.wait:
                 allParams += ' --wait 900s'
         else:
@@ -223,7 +223,7 @@ class swift(client):
         """
         execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ) )
 
-    def cleanupHost(self, host):
+    def cleanupHost(self, host, reuseConnection = None):
         """
         Client specific cleanup for a host, irrespective of execution.
 
@@ -231,7 +231,7 @@ class swift(client):
 
         @param  host            The host on which to clean up the client.
         """
-        client.cleanupHost(self, host)
+        client.cleanupHost(self, host, reuseConnection)
 
     def cleanup(self):
         """

@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 
 from core.parsing import isPositiveInt
 from core.parsing import isPositiveFloat
@@ -22,6 +23,163 @@ def checkSpeedValue( value, speedName ):
     if not isPositiveInt( intValue ):
         parseError( '{1} should be a positive integer, possibly postfixed by kbit or mbit (default: mbit), found "{0}"'.format( origValue, speedName ) )
     return value
+
+class connectionObject():
+    """
+    The parent class for all connection objects.
+    
+    Unless subclassers override about every method in host it is highly advised to subclass this
+    class for specific connection objects.
+    """
+    
+    closeFlag = True        # True iff this connection was closed
+    closeFlag__lock = None  # Lock to protect closeFlag. DO NOT USE! Use isClosed(), close() and closeIfNotClosed() instead.
+    
+    use__lock = None        # Lock for usage. DO NOT USE! Use lockForUse() and unlockForUse() instead.
+    
+    def __init__(self):
+        """
+        Initialization of the core connectionObject.
+        
+        Be sure to call this when subclassing the connection object!
+        """
+        self.closeFlag__lock = threading.RLock()
+        self.closeFlag = False
+        self.use__lock = threading.Lock()
+    
+    def getIdentification(self):
+        """
+        Returns a unique identification for this connection object.
+        
+        This may be a number of a string, or anything really. As long as
+        it can be compared with == it's fine.
+        
+        @return The unique identification of this connection object.
+        """
+        raise Exception( "Not implemented" )
+    
+    def isClosed(self):
+        """
+        Returns whether this connection object was closed.
+        
+        @return True iff this connection object was closed.
+        """
+        res = True
+        try:
+            self.closeFlag__lock.acquire()
+            res = self.closeFlag
+        finally:
+            self.closeFlag__lock.release()
+        return res
+    
+    def close(self):
+        """
+        Close this connection object.
+        """
+        try:
+            self.closeFlag__lock.acquire()
+            self.closeFlag = True
+        finally:
+            self.closeFlag__lock.release()
+    
+    def closeIfNotClosed(self):
+        """
+        Closes the object if it wasn't closed already and returns whether it was closed already.
+        
+        @return True iff the object was already closed.
+        """
+        res = True
+        try:
+            self.closeFlag__lock.acquire()
+            if not self.closeFlag:
+                res = False
+                self.close()
+        finally:
+            self.closeFlag__lock.release()
+        return res
+    
+    def lockForUse(self):
+        """
+        Locks this connection object for use.
+        
+        This method will return whether object was locked. Be sure to check!
+        This method will always fail if the object is closed.
+        
+        Advised usage:
+            try:
+                while not connection.lockForUse():
+                    Campaign.logger.log( "Warning! Can't lock connection {0} for use.".format( connection.getIdentification() ) )
+                    if self.isInCleanup():
+                        return
+                    time.sleep( 5 )
+                # Use your connection here
+            finally:
+                connection.tryUnlockForUse()
+
+        @return True iff the object was locked.
+        """
+        if self.closeFlag:
+            return False
+        return self.use__lock.acquire(False)
+    
+    def unlockForUse(self):
+        """
+        Unlocks this connection object for later use.
+        
+        This method will raise a RuntimeError if a lock has not been acquired using lockForUse earlier on.
+        """
+        self.use__lock.release()
+    
+    def tryUnlockForUse(self):
+        """
+        If this connection object was locked for use, unlock it.
+        
+        This method is equal to unlockForUse, but will not throw a RuntimeError if a lock was not acquired.
+        """
+        try:
+            self.unlockForUse()
+        except RuntimeError:
+            pass
+
+class countedConnectionObject(connectionObject):
+    """
+    A small extension to connectionObject that fills in the identification part with a simple counter.
+    """
+    
+    # @static
+    staticCounter = 0                       # Static counter for all countedConnectionObject instances DO NOT TOUCH!
+    # @static
+    staticCounter__lock = threading.Lock()  # Lock for the static counter. DO NOT USE!
+    
+    counter = 0                             # The specific counter of this countedConnectionObject. This identifies the object.
+    
+    def __init__(self):
+        """
+        Initialization of the core connectionObject.
+        
+        This also initializes self.counter, the identifying counter.
+        
+        Be sure to call this when subclassing the connection object!
+        """
+        connectionObject.__init__(self)
+        countedConnectionObject.staticCounter__lock.acquire()
+        countedConnectionObject.staticCounter += 1
+        self.counter = countedConnectionObject.staticCounter
+        countedConnectionObject.staticCounter__lock.release()
+        self.staticCounter__lock = None
+    
+    def getIdentification(self):
+        """
+        Returns a unique identification for this connection object.
+        
+        This may be a number of a string, or anything really. As long as
+        it can be compared with == it's fine.
+        
+        This specific implementation uses self.counter.
+        
+        @return The unique identification of this connection object.
+        """
+        return self.counter
 
 class host(coreObject):
     """
@@ -251,22 +409,112 @@ class host(coreObject):
         Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
         connections will automatically closed and, hence, any calls using those connections will then fail.
 
-        @return The connection object for a new connection.
+        @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
         """
         raise Exception( "Not implemented" )
 
-    # This method has unused arguments; that's fine
-    # pylint: disable-msg=W0613
     def closeConnection(self, connection):
         """
         Close a previously created connection to the host.
 
         Any calls afterwards to methods of this host with the close connection will fail.
+        
+        The default implementation will close the connection if it wasn't already closed
+        and remove it from self.connections.
 
         @param  The connection to be closed.
         """
-        raise Exception( "Not implemented" )
-    # pylint: enable-msg=W0613
+        if not connection:
+            return
+        
+        connection.closeIfNotClosed()
+        
+        index = 0
+        try:
+            self.connections__lock.acquire()
+            ident = connection.getIdentification()
+            maxlen = len(self.connections)
+            while index < maxlen:
+                if self.connections[index].getIdentification() == ident:
+                    self.connections.pop(index)
+                    break
+                index += 1
+        finally:
+            self.connections__lock.release()
+    
+    def getConnection(self, reuseConnection):
+        """
+        Internal method for acquiring the right connection to use.
+        
+        This method will decide what connection to use depending on the value of reuseConnection
+        (as passed on through e.g. sendCommand(...)). This includes creating a new connection
+        when reuseConnection is False. In the latter case the connection will NOT be destroyed
+        automatically, so that is one step that still needs to be done by the caller.
+        
+        This method will also try and lock the connection object to prevent multiple threads from
+        using the same connection at the same time. Warnings will be emitted when the lock can't
+        be acquired.
+        
+        Advised usage:
+        
+            connection = None
+            try:
+                connection = self.getConnection( reuseConnection )
+                # Use the connection
+            finally:
+                self.releaseConnection( reuseConnection, connection )
+
+        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
+                                    False to build a new connection for this command and use that.
+                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+        
+        @return A usable connection. Be sure to close it iff reuseConnection was False.
+        """
+        connection = None
+        if reuseConnection == False:
+            connection = self.setupNewConnection()
+            if connection.isClosed():
+                raise Exception( "A new connection is already closed." )
+        elif reuseConnection == True:
+            try:
+                self.connections__lock.acquire()
+                if len(self.connections) < 1:
+                    raise Exception( "Reuse of the default connection was requested, but no default connection exists." )
+                connection = self.connections[0]
+            finally:
+                self.connections__lock.release()
+            if connection.isClosed():
+                raise Exception( "The default connection is already closed." )
+        else:
+            if not isinstance(reuseConnection, connectionObject):
+                raise Exception( "Trying to reuse a connection that is not a connection." )
+            connection = reuseConnection
+            if connection.isClosed():
+                raise Exception( "Trying to reuse already closed connectino {0}".format( connection.getIdentification() ) )
+        while not connection.lockForUse():
+            Campaign.logger.log( "Trying to lock connection {0}, but it seems to be locked already. Sleeping.".format( connection.getIdentification() ) )
+            if connection.isClosed():
+                raise Exception( "Could not lock connection {0}, which now turns out to be closed.".format( connection.getIdentification() ) )
+            time.sleep( 1 )
+        return connection
+    
+    def releaseConnection(self, reuseConnection, connection):
+        """
+        Release a connection retrieved through getConnection().
+        
+        This method provides symmetry to self.getConnection() without the need for much boilerplate code.
+        
+        Do not attempt to use the connection after calling this method!
+        
+        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
+                                    False to build a new connection for this command and use that.
+                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+        @param  connection          The connection as returned by self.getConnnection().
+        """
+        if connection:
+            connection.tryUnlockForUse()
+            if reuseConnection == False:
+                self.closeConnection(connection)
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
@@ -388,7 +636,9 @@ class host(coreObject):
                 self.tempDirectory = None
                 raise Exception( "Could not correctly create a remote temporary directory on host {1}. Response: {0}".format( res, self.name ) )
 
-    def cleanup(self):
+    # Indeed, PyLint, host.cleanup() has more arguments than coreObject.cleanup(). This is actually CORRECT in normal OO.
+    # pylint: disable-msg=W0221
+    def cleanup(self, reuseConnection = None):
         """
         Executes commands to do host specific cleanup.
         
@@ -398,18 +648,22 @@ class host(coreObject):
         Subclassers are advised to first call this implementation and then proceed with their own steps.
         Whatever is done, however, it is important to call coreObject.cleanup(self) as soon as possible; this
         implementation starts with that call (which may be made multiple times without harm).
+        
+        @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
         coreObject.cleanup(self)
         self.connections__lock.acquire()
         try:
             if self.tempDirectory:
-                if len(self.connections) < 1:
-                    Campaign.logger.log( "Warning: no connections open for host {0}, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
-                    return
-                conn = self.connections[0]
+                conn = reuseConnection
                 if not conn:
-                    Campaign.logger.log( "Warning: default connection for host {0} seems unavailable, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
-                    return
+                    if len(self.connections) < 1:
+                        Campaign.logger.log( "Warning: no connections open for host {0}, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
+                        return
+                    conn = self.connections[0]
+                    if not conn:
+                        Campaign.logger.log( "Warning: default connection for host {0} seems unavailable, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
+                        return
                 self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ), conn )
                 res = self.sendCommand( '[ -d {0} ] && echo "N" || echo "E"'.format( self.tempDirectory ), conn )
                 if res[0] != 'E':
@@ -421,11 +675,12 @@ class host(coreObject):
             for conn in closeConns:
                 try:
                     self.closeConnection( conn )
-                except Exception:
-                    Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring".format( host.name ) )
+                except Exception as exc:
+                    Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring: ".format( self.name, exc.__str__() ) )
                     Campaign.logger.exceptionTraceback()
         finally:
             self.connections__lock.release()
+    # pylint: enable-msg=W0221
 
     def getTestDir(self):
         """

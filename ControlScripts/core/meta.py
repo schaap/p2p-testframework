@@ -355,3 +355,6 @@ class meta:
         f.write( torrentFileContent )
         f.close()
 
+    @staticmethod
+    def APIVersion():
+        return "2.0.0-core"

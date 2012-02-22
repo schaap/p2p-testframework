@@ -1,5 +1,4 @@
 import os
-import sys
 import traceback
 
 class logger:
@@ -73,14 +72,8 @@ class logger:
         This method should be called from a function currently handling an exception (e.g. in an except block).
         When no exception is currently being handled, this function does nothing.
         """
-        tb = None
-        try:
-            _, _, tb = sys.exc_info()
-            if not tb is None:
-                for line in traceback.format_tb( tb ):
-                    self.logPre( line )
-        finally:
-            tb = None
+        for line in traceback.format_exc( ):
+            self.logPre( line )
     
     def localTraceback(self):
         """
