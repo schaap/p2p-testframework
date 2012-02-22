@@ -103,7 +103,7 @@ class local(core.file.file):
         # PyLint really doesn't understand dynamic loading
         # pylint: disable-msg=E1101
         if self.generateRootHash:
-            self.rootHash = meta.calculateMerkleRootHash( self.path )
+            self.rootHash = meta.calculateMerkleRootHash( self.path ).encode( 'hex' )
         if self.generateTorrent:
             if self.isInCleanup():
                 return

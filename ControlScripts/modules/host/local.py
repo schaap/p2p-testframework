@@ -32,6 +32,13 @@ class localConnectionObject(countedConnectionObject):
 
     def stdout(self):
         return self.proc.stdout
+    
+    def close(self):
+        countedConnectionObject.close(self)
+        self.proc.stdin.close()
+        self.proc.stdout.close()
+        del self.proc
+        self.proc = None
 
 class local(host):
     """
@@ -141,13 +148,7 @@ class local(host):
         """
         if connection.closeIfNotClosed():
             return
-        try:
-            connection.proc.communicate( 'exit' ) # FIXME: This breaks. It hangs.
-        except OSError as e:
-            if not e.errno == errno.EPIPE: # This one is expected
-                raise e
-        finally:
-            host.closeConnection(self, connection)
+        host.closeConnection(self, connection)
 
     def sendCommand(self, command, reuseConnection = True):
         """

@@ -210,6 +210,7 @@ class ScenarioRunner:
         """
         Read the scenario files, parse them and set up the scenario accordingly.
         """
+        print "Reading scenario setup for scenario {0}".format( self.name )
         # Read all the scenario files and take them together
         scenarioLines = []
         for f in self.files:
@@ -223,7 +224,7 @@ class ScenarioRunner:
         # Write the scenario file to the results dir
         fObj = open( os.path.join( self.resultsDir, 'scenarioFile' ), 'w' )
         for l in scenarioLines:
-            fObj.write( l )
+            fObj.write( l + "\n" )
         fObj.close()
 
         # Parse scenario file
@@ -232,6 +233,7 @@ class ScenarioRunner:
             line = scenarioLines[Campaign.currentLineNumber]
             # Filter comments and empty lines
             if line == '' or re.match( '^\s*#', line ) is not None:
+                print "Parsing " + line
                 continue
             if isSectionHeader( line ):
                 # Create the object and have it parse the settings
@@ -547,8 +549,14 @@ class ScenarioRunner:
         print "Checking and killing clients"
         for e in self.getObjects('execution'):
             try:
+                print "DEBUG: checking exec {0} (client {1}, host {2})".format( e.getNumber(), e.client.name, e.host.name )
                 if e.client.hasStarted( e ) and e.client.isRunning( e, cleanupConnections[e.host] ):
+                    print "DEBUG: hasStarted and isRunning"
                     e.client.kill( e, cleanupConnections[e.host] )
+                elif e.client.hasStarted( e ):
+                    print "DEBUG: hasStarted and not isRunning"
+                else:
+                    print "DEBUG: not hasStarted"
             except Exception as exc:
                 Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
         print "Cleaning up files"
@@ -747,6 +755,8 @@ class CampaignRunner:
                         break
                 else:
                     return CampaignRunner.usage("Scenario {0} is to be run, but does not exist.".format(scName))
+        
+        print ""
 
         for scenario in self.scenarios:
             if scenario.name in justScenario:

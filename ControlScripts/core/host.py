@@ -37,6 +37,9 @@ class connectionObject():
     
     use__lock = None        # Lock for usage. DO NOT USE! Use lockForUse() and unlockForUse() instead.
     
+    badFlag = False         # Internal flag to DEBUG locking. DO NOT USE!
+    badFlag__lock = None    # Internal flag to DEBUG locking. DO NOT USE!
+    
     def __init__(self):
         """
         Initialization of the core connectionObject.
@@ -46,6 +49,7 @@ class connectionObject():
         self.closeFlag__lock = threading.RLock()
         self.closeFlag = False
         self.use__lock = threading.Lock()
+        self.badFlag__lock = threading.Lock()
     
     def getIdentification(self):
         """
@@ -120,7 +124,14 @@ class connectionObject():
         """
         if self.closeFlag:
             return False
-        return self.use__lock.acquire(False)
+        self.badFlag__lock.acquire()
+        badFlag = self.badFlag
+        self.badFlag = True
+        res = self.use__lock.acquire(False)
+        if res and not badFlag:
+            self.badFlag = False
+        self.badFlag__lock.release()
+        return res
     
     def unlockForUse(self):
         """
@@ -128,6 +139,12 @@ class connectionObject():
         
         This method will raise a RuntimeError if a lock has not been acquired using lockForUse earlier on.
         """
+        self.badFlag__lock.acquire()
+        if self.badFlag:
+            Campaign.logger.log( "Previous use preventing connection {0} from locking was unlocked, traceback follows.".format( self.getIdentification( ) ) )
+            Campaign.logger.localTraceback()
+            self.badFlag = False
+        self.badFlag__lock.release()
         self.use__lock.release()
     
     def tryUnlockForUse(self):
@@ -492,7 +509,8 @@ class host(coreObject):
             if connection.isClosed():
                 raise Exception( "Trying to reuse already closed connectino {0}".format( connection.getIdentification() ) )
         while not connection.lockForUse():
-            Campaign.logger.log( "Trying to lock connection {0}, but it seems to be locked already. Sleeping.".format( connection.getIdentification() ) )
+            Campaign.logger.log( "Trying to lock connection {0}, but it seems to be locked already. Traceback follows. Sleeping.".format( connection.getIdentification() ) )
+            Campaign.logger.localTraceback()
             if connection.isClosed():
                 raise Exception( "Could not lock connection {0}, which now turns out to be closed.".format( connection.getIdentification() ) )
             time.sleep( 1 )

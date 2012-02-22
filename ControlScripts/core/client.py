@@ -349,8 +349,10 @@ class client(coreObject):
                 remoteClientDir = self.sourceObj.remoteLocation(self, execution.host)
             fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
             if simpleCommandLine:
+                print "DEBUG: Preparing execution {0} of client {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine )
                 fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
             else:
+                print "DEBUG: Preparing execution {0} of client {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine )
                 fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
             fileObj.write( 'echo $!\n' )
             fileObj.close()
@@ -389,6 +391,7 @@ class client(coreObject):
             m = re.match( '^([0-9][0-9]*)', result )
             if not m:
                 raise Exception( "Could not retrieve PID for execution {0} of client {1} on host {2} from result:\n{3}".format( execution.getNumber(), execution.client.name, execution.host.name, result ) )
+            print "DEBUG: client {2}: self.pids[{0}] = '{1}'".format( execution.getNumber(), m.group(1), self.name )
             self.pids[execution.getNumber()] = m.group( 1 )
         finally:
             try:
@@ -407,6 +410,7 @@ class client(coreObject):
         res = False
         try:
             self.pid__lock.acquire()
+            print "DEBUG: client {1}: self.pids = {0}".format( self.pids, self.name )
             if execution.getNumber() in self.pids:
                 res = True
         finally:
@@ -473,7 +477,6 @@ class client(coreObject):
                 self.pid__lock.release()
             except RuntimeError:
                 pass
-        isRunning = True
         # Signal sent by kill to the process to try and stop it (0 for no signal)
         killActions = ('TERM', 0, 0, 0, 0, 0, 0, 0, 'INT', 'INT', 'KILL')
         # Time to wait after sending the signal before checking whether the process died
@@ -487,25 +490,34 @@ class client(coreObject):
         # The first line tries and kill the process using signal INT (killActions[8]).
         # The second line gives the process 5 second time (killDelays[8]).
         # The third line checks whether the process died.
-        connection = reuseConnection
-        if not connection:
-            connection = execution.getRunnerConnection()
-        while isRunning and killCounter < len(killActions):
-            if killActions[killCounter] == 0:
-                execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ), connection )
-            time.sleep( killDelays[killCounter] )
-            killCounter += 1
-            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( theProgramPID ), connection )
-            if re.match( '^Y', result ) is not None:
-                try:
-                    self.pid__lock.acquire()
-                    del self.pids[execution.getNumber()]
-                finally:
+        try:
+            connection = reuseConnection
+            if not connection:
+                connection = execution.getRunnerConnection()
+            for killCounter in range( 0, len(killActions) ):
+                if killActions[killCounter] != 0:
+                    res = execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ), connection )
+                    print "DEBUG: kill -{0} {1} : {2}".format( killActions[killCounter], theProgramPID, res )
+                time.sleep( killDelays[killCounter] )
+                result = execution.host.sendCommand( 'kill -0 {0} 2>/dev/null && echo "Y" || echo "N"'.format( theProgramPID ), connection )
+                print 'DEBUG: kill -0 {0} 2>/dev/null && echo "Y" || echo "N" : {1}'.format( theProgramPID, result )
+                if re.match( '^Y', result ) is None:
                     try:
-                        self.pid__lock.release()
-                    except RuntimeError:
-                        pass
-                break
+                        self.pid__lock.acquire()
+                        del self.pids[execution.getNumber()]
+                    finally:
+                        try:
+                            self.pid__lock.release()
+                        except RuntimeError:
+                            pass
+                    break
+            else:
+                Campaign.logger.log( "Warning! Execution {0} of client {1} on host {2} (PID {3}) is probably still running.".format( execution.getNumber(), self.name, execution.host.name, theProgramPID ) )
+                print "Warning! Execution {0} of client {1} on host {2} (PID {3}) is probably still running.".format( execution.getNumber(), self.name, execution.host.name, theProgramPID )
+        except Exception as exc:
+            Campaign.logger.log( "Warning! Execution {0} of client {1} on host {2} (PID {3}) is probably still running.".format( execution.getNumber(), self.name, execution.host.name, theProgramPID ) )
+            print "Warning! Execution {0} of client {1} on host {2} (PID {3}) is probably still running.".format( execution.getNumber(), self.name, execution.host.name, theProgramPID )
+            raise exc
 
     def retrieveLogs(self, execution, localLogDestination):
         """

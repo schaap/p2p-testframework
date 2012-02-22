@@ -189,7 +189,7 @@ class swift(client):
                 if trackeraddress == '':
                     raise Exception( "Swift client {0} has specified {1} as its indirect tracker, but host {2} can't give a specific address.".format( self.name, self.tracker, indirecttracker ) )
                 if colonindex != -1:
-                    trackeraddress += indirecttracker[colonindex:]
+                    trackeraddress += self.tracker[colonindex:]
                 allParams += ' --tracker {0}'.format( trackeraddress )
             else:
                 allParams += ' --tracker {0}'.format( self.tracker )
@@ -221,7 +221,8 @@ class swift(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ) )
+        print "DEBUG: Retrieving logs for execution {3} of client {0} on host {1} using connection {2}".format( self.name, execution.host.name, execution.getRunnerConnection().getIdentification(), execution.getNumber() )
+        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
 
     def cleanupHost(self, host, reuseConnection = None):
         """
