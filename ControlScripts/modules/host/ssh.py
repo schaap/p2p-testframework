@@ -1,8 +1,13 @@
-from core.parsing import *
+from core.parsing import containsSpace, isPositiveInt
 from core.campaign import Campaign
 from core.host import host, countedConnectionObject
 
 import getpass
+import threading
+import errno
+import os
+import stat
+from subprocess import Popen, STDOUT, PIPE
 
 paramiko = None
 try:
@@ -58,8 +63,41 @@ class sshFallbackConnectionObject(countedConnectionObject):
     SSH connection object for fallback connections (no paramiko available)
     """
     
+    # @static
+    sshProgram = None
+    # @static
+    scpProgram = None
+    
     def __init__(self):
         countedConnectionObject.__init__(self)
+    
+    @staticmethod
+    def getSSHProgram():
+        if not sshFallbackConnectionObject.sshProgram:
+            if os.path.exists( '/bin/ssh' ):
+                sshFallbackConnectionObject.sshProgram = '/bin/ssh'
+            elif os.path.exists( '/usr/bin/ssh' ):
+                sshFallbackConnectionObject.sshProgram = '/usr/bin/ssh'
+            else:
+                out, _ = Popen( 'which ssh', stdout = PIPE, shell = True ).communicate()
+                if out is None or out == '' or not os.path.exists( 'out' ):
+                    raise Exception( "host:ssh requires either the paramiko modules (preferred) or ssh command line utility to be present" )
+                sshFallbackConnectionObject.sshProgram = out
+        return sshFallbackConnectionObject.sshProgram
+    
+    @staticmethod
+    def getSCPProgram():
+        if not sshFallbackConnectionObject.scpProgram:
+            if os.path.exists( '/bin/scp' ):
+                sshFallbackConnectionObject.scpProgram = '/bin/scp'
+            elif os.path.exists( '/usr/bin/scp' ):
+                sshFallbackConnectionObject.scpProgram = '/usr/bin/scp'
+            else:
+                out, _ = Popen( 'which scp', stdout = PIPE, shell = True ).communicate()
+                if out is None or out == '' or not os.path.exists( 'out' ):
+                    raise Exception( "host:ssh requires either the paramiko modules (preferred) or scp command line utility to be present" )
+                sshFallbackConnectionObject.scpProgram = out
+        return sshFallbackConnectionObject.scpProgram
 
 class sshParamikoConnectionObject(countedConnectionObject):
     """
@@ -67,18 +105,93 @@ class sshParamikoConnectionObject(countedConnectionObject):
     """
     
     client = None
+    interactiveChannel = None
+    io = None
     
-    def __init__(self, client):
+    sftpChannel = None
+    sftp__lock = None
+    
+    def __init__(self, client, interactiveChannel, io ):
         countedConnectionObject.__init__(self)
         self.client = client
+        self.interactiveChannel = interactiveChannel
+        self.sftp__lock = threading.Lock()
+        self.io = io
     
     def close(self):
         try:
             countedConnectionObject.close(self)
         finally:
-            self.client.close()
-            del self.client
-            self.client = None
+            try:
+                self.sftp__lock.acquire()
+                if self.sftpChannel:
+                    self.sftpChannel.close()
+                    del self.sftpChannel
+                    self.sftpChannel = None
+            finally:
+                self.sftp__lock.release()
+                try:
+                    self.interactiveChannel.shutdown( 2 )
+                    self.interactiveChannel.close()
+                    del self.interactiveChannel
+                    self.interactiveChannel = None
+                except Exception:
+                    self.client.close()
+                    del self.client
+                    self.client = None
+    
+    def write(self, msg):
+        #self.interactiveChannel.sendall( msg )
+        print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
+        self.io[0].write( msg )
+        self.io[0].flush()
+    
+    def readline(self):
+        #res = ''
+        #while True:
+        #    read = self.interactiveChannel.recv(1)
+        #    res += read
+        #    if read == '\n':
+        #        return res
+        line = self.io[1].readline()
+        print "DEBUG: CONN {0} READLINE:\n{1}".format( self.getIdentification(), line )
+        return line
+    
+    def createSFTPChannel(self):
+        if self.isClosed():
+            raise Exception( "Can't create an SFTP channel for a closed SSH connection on connection {0}".format( self.getIdentification( ) ) )
+        try:
+            self.sftp__lock.acquire()
+            if self.sftpChannel:
+                return True
+            self.sftpChannel = self.client.open_sftp()
+        finally:
+            self.sftp__lock.release()
+        return False
+    
+    def removeSFTPChannel(self):
+        if self.isClosed():
+            return
+        try:
+            self.sftp__lock.acquire()
+            if not self.sftpChannel:
+                return
+            self.sftpChannel.close()
+            del self.sftpChannel
+            self.sftpChannel = None
+        finally:
+            self.sftp__lock.release()
+    
+    @staticmethod
+    def existsRemote(sftp, remotePath):
+        found = True
+        try:
+            sftp.stat( remotePath )
+        except IOError as e:
+            found = False
+            if not e.errno == errno.ENOENT:
+                raise e
+        return found
 
 class ssh(host):
     """
@@ -90,10 +203,6 @@ class ssh(host):
     - user          The user name to be used for logging in over SSH.
     """
 
-    # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
-    # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
-    # and bail out if that returns True.
-    
     hostname = None     # The hostname to connect to
     port = None         # The port to use
     user = None         # The username to use
@@ -171,11 +280,6 @@ class ssh(host):
 
         @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        # Be sure to include the new connection in the self.connections list after acquiring self.connections__lock
         if self.isInCleanup():
             return
         if paramiko:
@@ -187,24 +291,61 @@ class ssh(host):
                 raise Exception( "Bad host key for host {0}. Please make sure the host key is already known to the system. The easiest way is usually to just manually use ssh to connect to the remote host once and save the host key.".format( self.name ) )
             except paramiko.AuthenticationException:
                 raise Exception( "Could not authenticate to host {0}. Please make sure that authentication can proceed without user interaction, e.g. by loading an SSH agent or using unencrypted keys.".format( self.name ) )
-            client.exec_command( 'bash' )   # FIXME: This might work, but returns a tuple of three files. It is imperative to make sure reading output does not block.
-            obj = sshParamikoConnectionObject( client )
-        else:
-            pass
-            # FIXME: IMPLEMENT
-        try:
-            self.connections__lock.acquire()
-            if self.isInCleanup():
-                obj.close()
-                return
-            self.connections.append( obj )
-        finally:
+            chan = client.invoke_shell()
+            chan.set_combine_stderr( True )
+            trans = client.get_transport()
+            chan2 = trans.open_session()
+            chan2.set_combine_stderr( True )
+            chan2.exec_command( 'bash -l' )
+            io = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
+            obj = sshParamikoConnectionObject( client, chan, io )
             try:
-                self.connections__lock.release()
-            except RuntimeError:
-                pass
-        self.sendCommand('echo "READY"', obj )
-        return obj
+                self.connections__lock.acquire()
+                if self.isInCleanup():
+                    obj.close()
+                    return
+                self.connections.append( obj )
+            finally:
+                try:
+                    self.connections__lock.release()
+                except RuntimeError:
+                    pass
+            # The 'cd' below is absolutely necessary to make sure that automounts and stuff work correctly
+            self.sendCommand('cd; echo "READY"', obj )
+            return obj
+        else:
+            # FIXME: Adapt
+            args = ['{0}'.format(sshFallbackConnectionObject.getSSHProgram()), '-l', self.user]
+            if self.port:
+                args.append( ' -p {0}'.format( self.port ) )
+            args.append( self.hostname )
+            proc = Popen(args, bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+            try:
+                self.connections__lock.acquire()
+                if self.isInCleanup():
+                    try:
+                        proc.communicate( 'exit' )
+                    except OSError as e:
+                        if not e.errno == errno.EPIPE: # This one is expected
+                            raise e
+                    return
+                obj = sshFallbackConnectionObject( proc )
+                self.connections.append( obj )
+                if self.isInCleanup():
+                    self.connections.pop()
+                    try:
+                        proc.communicate( 'exit' )
+                    except OSError as e:
+                        if not e.errno == errno.EPIPE: # This one is expected
+                            raise e
+                    return
+            finally:
+                try:
+                    self.connections__lock.release()
+                except RuntimeError:
+                    pass
+            self.sendCommand('echo "READY"', obj )
+            return obj
 
     def closeConnection(self, connection):
         """
@@ -219,9 +360,6 @@ class ssh(host):
         """
         host.closeConnection(self, connection)
 
-    # TODO: If you really must you can override getConnection. This is needed in case your connection object
-    # is not a subclass of core.host.connectionObject. There is no real need for that, though.
-
     def sendCommand(self, command, reuseConnection = True):
         """
         Sends a bash command to the remote host.
@@ -233,19 +371,19 @@ class ssh(host):
 
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
-        # TODO: Implement this! Example:
-        #
-        #   connection = None
-        #   try:
-        #       connection = self.getConnection( reuseConnection )
-        #   FIXME: WRITE MORE EXAMPLE
-        #   finally:
-        #       self.releaseConnection( reuseConnection, connection )
-        #
         connection = None
         try:
             connection = self.getConnection(reuseConnection)
-            return connection.sendCommand( command )
+            # Send command
+            connection.write( command+'\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            # Read output of command
+            res = ''
+            line = connection.readline()
+            while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
+                res += line
+                line = connection.readline()
+            # Return output (ditch the last trailing \n)
+            return res.strip()
         finally:
             self.releaseConnection(reuseConnection, connection)
 
@@ -262,13 +400,81 @@ class ssh(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        raise Exception( "Not implemented" )
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            if paramiko:
+                newConnection = connection.createSFTPChannel()
+                try:
+                    sftp = connection.sftpChannel
+                    if sshParamikoConnectionObject.existsRemote(sftp, remoteDestinationPath):
+                        if not overwrite: 
+                            raise Exception( "Sending file {0} to {1} on host {2} without allowing overwrite, but the destination already exists".format( localSourcePath, remoteDestinationPath, self.name ) )
+                        else:
+                            attribs = sftp.stat(remoteDestinationPath)
+                            if stat.S_ISDIR( attribs.st_mode ):
+                                raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
+                    if self.isInCleanup():
+                        return
+                    sftp.put( localSourcePath, remoteDestinationPath )
+                finally:
+                    if newConnection:
+                        connection.removeSFTPChannel()
+            else:
+                pass
+                # FIXME: IMPLEMENT
+        finally:
+            self.releaseConnection(reuseConnection, connection)
     
-    # TODO: If you have a more effective way of sending multiple files at once, override sendFiles as well.
+    def sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection = True):
+        """
+        Sends a directory to the remote host.
+
+        This will recursively send the local directory and all its contents to the remote host.
+
+        Example:    sendFiles( '/home/me/myLocalDir', '/tmp/myTmpDir/newRemoteDir' )
+        If newRemoteDir does not already exist then it will be created. A file /home/me/myLocalDir/x will end up
+        on the remote host as /tmp/myTmpDir/newRemoteDir/x .
+
+        This method will always overwrite existing files.
+
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
+
+        The default implementation will recursively call sendFile or sendFiles on the contents of the
+        local directory.
+
+        @param  localSourcePath         Path to the local directory that is to be sent.
+        @param  remoteDestinationPath   Path to the destination directory on the remote host.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+        """
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            if paramiko:
+                newConnection = connection.createSFTPChannel()
+                try:
+                    sftp = connection.sftpChannel
+                    paths = [(localSourcePath, remoteDestinationPath)]
+                    while len(paths) > 0:
+                        localPath, remotePath = paths.pop()
+                        if self.isInCleanup():
+                            return
+                        if os.path.isdir( localPath ):
+                            if not sshParamikoConnectionObject.existsRemote(sftp, remotePath):
+                                sftp.mkdir( remotePath )
+                            paths += [(os.path.join( localPath, path ), '{0}/{1}'.format( remotePath, path )) for path in os.listdir( localPath )]
+                        else:
+                            sftp.put( localPath, remotePath )
+                finally:
+                    if newConnection:
+                        connection.removeSFTPChannel()
+            else:
+                pass
+                # FIXME: IMPLEMENT
+        finally:
+            self.releaseConnection(reuseConnection, connection)
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -283,11 +489,29 @@ class ssh(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        raise Exception( "Not implemented" )
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            if paramiko:
+                newConnection = connection.createSFTP()
+                try:
+                    sftp = connection.sftpChannel
+                    if os.path.exists( localDestinationPath ):
+                        if not overwrite:
+                            raise Exception( "Getting file {0} to {1} from host {2} without allowing overwrite, but the destination already exists".format( remoteSourcePath, localDestinationPath, self.name ) )
+                        elif os.path.isdir( localDestinationPath ):
+                            raise Exception( "Getting file {0} to {1} from host {2} with overwrite, but the destination already exists and is a directory".format( remoteSourcePath, localDestinationPath, self.name ) )
+                    if self.isInCleanup():
+                        return
+                    sftp.get( remoteSourcePath, localDestinationPath )
+                finally:
+                    if newConnection:
+                        connection.removeSFTP()
+            else:
+                pass
+                # FIXME: IMPLEMENT
+        finally:
+            self.releaseConnection(reuseConnection, connection)
 
     def prepare(self):
         """
@@ -295,13 +519,7 @@ class ssh(host):
 
         The default implementation simply ensures the existence of a remote directory.
         """
-        # TODO: Prepare anything you may need before being able to set up a connection, first.
-        #
-        # Then do this call, and definitely do this call unless you know what you're doing:
         host.prepare(self)
-        # After that you can do any other less-important host-specific preparation
-        #
-        # Usually this one call will be enough if you just need to set up the connection.
 
     def cleanup(self, reuseConnection = None):
         """
@@ -313,18 +531,7 @@ class ssh(host):
         
         @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
-        # Be symmetrical with prepare(), clean up the less-important host-specific stuff here
-        # Then do this call, and definitely do this call unless you know what you're doing:
         host.cleanup(self, reuseConnection)
-        # TODO: Cleanup all of the host, be sure to check what has and what has not been done and needs cleanup.
-        # Don't just assume you're at the end of everything. Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-
-    # TODO: If you need a separate location to store data to ensure that data survives until the end of the test,
-    # override getPersistentTestDir() and make sure to initialize correctly to have both the test dir and the
-    # persistent test dir set up on the remote host
 
     def getSubNet(self):
         """
@@ -332,11 +539,7 @@ class ssh(host):
 
         @return The subnet of the host(s).
         """
-        # TODO: Implement this! Example:
-        #
-        #   return self.hostname
-        #
-        raise Exception( "Not implemented" )
+        return self.hostname
 
     def getAddress(self):
         """
@@ -350,13 +553,8 @@ class ssh(host):
 
         @return The address of the remote host, or '' if no such address can be given.
         """
-        # TODO: Implement this, if possible. Example:
-        #
-        #   return self.hostname
-        #
-        return ''
+        return self.hostname
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version.
         return "2.0.0"

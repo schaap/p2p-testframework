@@ -593,8 +593,12 @@ class host(coreObject):
         """
         if not os.path.isdir( localSourcePath ):
             raise Exception( "localSourcePath must point to a local directory, found: {0}".format( localSourcePath ) )
-        if self.sendCommand( "[ -f {0} ] && echo 'E'".format( remoteDestinationPath ) )[0] == 'E':
+        res = self.sendCommand( "[ -f {0} ] && echo 'E'".format( remoteDestinationPath ), reuseConnection ) 
+        if len(res) > 0 and res[0] == 'E':
             raise Exception( "remoteDistinationPath {0} already exists on the remote host, but points to a file".format( remoteDestinationPath ) )
+        res = self.sendCommand( "[ ! -e {0} ] && echo 'E'".format( remoteDestinationPath ), reuseConnection ) 
+        if len(res) > 0 and res[0] == 'E':
+            self.sendCommand( 'mkdir -p "{0}"'.format( remoteDestinationPath ), reuseConnection)
         for path in os.listdir( localSourcePath ):
             fullLocalPath = os.path.join( localSourcePath, path )
             fullRemotePath = '{0}/{1}'.format( remoteDestinationPath, path )
@@ -634,7 +638,8 @@ class host(coreObject):
             self.connections__lock.acquire()
             if len(self.connections) > 0:
                 raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
-            self.connections[0] = self.setupNewConnection()
+            print "DEBUG: Setup connection"
+            self.connections.append( self.setupNewConnection() )
             if len(self.connections) == 0 or not self.connections[0]:
                 if not self.isInCleanup():
                     raise Exception( "Could not create default connection" )
@@ -648,8 +653,10 @@ class host(coreObject):
             except RuntimeError:
                 pass
         if not self.remoteDirectory:
+            print "DEBUG: mktemp -d"
             self.tempDirectory = self.sendCommand( 'mktemp -d' )
-            if self.tempDirectory == '' or self.sendCommand( '[ -d {0} ] || echo "E"'.format( self.tempDirectory ) ) == 'E':
+            print "DEBUG: [ -d ... ]"
+            if self.tempDirectory == '' or self.sendCommand( '[ -d {0} ] && echo "OK"'.format( self.tempDirectory ) ).strip() != "OK":
                 res = self.tempDirectory
                 self.tempDirectory = None
                 raise Exception( "Could not correctly create a remote temporary directory on host {1}. Response: {0}".format( res, self.name ) )

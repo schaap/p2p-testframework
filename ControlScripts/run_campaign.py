@@ -305,6 +305,7 @@ class ScenarioRunner:
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Prepare all hosts
         for host in executionHosts:
+            print "DEBUG: Preparing host {0}".format( host.name )
             host.prepare()
         # Executions may by now have been altered by the host.prepare() calls, so rebuild the host list
         # All executions must refer to prepared hosts, which means that any host.prepare() that alters the executions
@@ -312,6 +313,7 @@ class ScenarioRunner:
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Prepare all clients
         for client in self.getObjects('client'):
+            print "DEBUG: Preparing client {0}".format( client.name )
             client.prepare()
         # Prepare TC and clients
         for host in executionHosts:
@@ -400,6 +402,7 @@ class ScenarioRunner:
             # If we're not just testing: prepare clients for this host
             if not testRun:
                 for client in host.clients:
+                    print "DEBUG: Preparing client {0} on host 1".format( client.name, host.name )
                     client.prepareHost( host )
 
         # If we're not just testing: prepare files
@@ -407,9 +410,11 @@ class ScenarioRunner:
             for host in executionHosts:
                 # Send all files to the host that do not have this host as seeder
                 for f in host.files:
+                    print "DEBUG: Sending file {0} to host 1".format( f.name, host.name )
                     f.sendToHost( host )
                 # Send all files to the host that have this host as seeder
                 for f in host.seedingFiles:
+                    print "DEBUG: Sending seeding file {0} to host 1".format( f.name, host.name )
                     f.sendToHost( host )
                     f.sendToSeedingHost( host )
 
@@ -755,6 +760,8 @@ class CampaignRunner:
                         break
                 else:
                     return CampaignRunner.usage("Scenario {0} is to be run, but does not exist.".format(scName))
+        else:
+            justScenario = [scenario.name for scenario in self.scenarios]
         
         print ""
 
