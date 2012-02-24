@@ -116,6 +116,7 @@ class file(coreObject):
             if self.getFileDir(host):
                 host.sendCommand( 'mkdir -p "{0}/meta/"'.format( self.getFileDir( host ) ) )
                 host.sendFile( self.metaFile, self.getMetaFile( host ) )
+                print "DEBUG: Sent file {0} to {1} on host {2}".format( self.metaFile, self.getMetaFile(host), host.name )
 
     # There's an unused argument host here; that's fine
     # pylint: disable-msg=W0613
@@ -207,6 +208,17 @@ class file(coreObject):
         @return    The name.
         """
         return self.name
+    
+    def cleanup(self):
+        """
+        Cleans up the file object.
+        
+        Do not assume anything has been or has not been done.
+        Check everything and make sure things are clean when you're done.
+        
+        The default implementation does nothing.
+        """
+        pass
 
     @staticmethod
     def APIVersion():

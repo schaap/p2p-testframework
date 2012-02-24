@@ -149,6 +149,7 @@ while [ $going -eq 1 ]; do
         # so we only copy the torrent file in once the first response has been seen
         if [ $torrentloaded = 0 ]; then
             cp "$3" "$2/torrents/"
+            ( echo "Copied torrent file" >&2 ) > /dev/null
             torrentloaded=1
         fi
         date +"%s.%09N"

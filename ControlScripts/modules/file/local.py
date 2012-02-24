@@ -31,6 +31,8 @@ class local(core.file.file):
     generateTorrent = False     # True iff automated torrent generation is requested
     generateRootHash = False    # True iff automated root hash calculation is requested
     renameFile = False          # True iff the single file is to be renamed after uploading
+    
+    tempMetaFile = None         # The temporary file created for the meta file
 
     def __init__(self, scenario):
         """
@@ -107,7 +109,8 @@ class local(core.file.file):
         if self.generateTorrent:
             if self.isInCleanup():
                 return
-            _, self.metaFile = tempfile.mkstemp()
+            _, self.tempMetaFile = tempfile.mkstemp('.torrent')
+            self.metaFile = self.tempMetaFile
             meta.generateTorrentFile( self.path, self.metaFile)
         # pylint: enable-msg=E1101
 
@@ -181,6 +184,20 @@ class local(core.file.file):
             if self.renameFile:
                 name = 'inputFile'
             return '{0}/files/{1}'.format( self.getFileDir(host), name )
+
+    def cleanup(self):
+        """
+        Cleans up the file object.
+        
+        Do not assume anything has been or has not been done.
+        Check everything and make sure things are clean when you're done.
+        
+        The default implementation does nothing.
+        """
+        core.file.file.cleanup(self)
+        if self.tempMetaFile:
+            os.remove( self.tempMetaFile )
+            self.tempMetaFile = None
 
     @staticmethod
     def APIVersion():

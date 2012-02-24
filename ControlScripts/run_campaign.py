@@ -438,7 +438,6 @@ class ScenarioRunner:
                 # Send all files to the host that have this host as seeder
                 for f in host.seedingFiles:
                     print "DEBUG: Sending seeding file {0} to host 1".format( f.name, host.name )
-                    f.sendToHost( host )
                     f.sendToSeedingHost( host )
 
     def executeRun(self):

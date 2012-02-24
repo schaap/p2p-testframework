@@ -90,11 +90,11 @@ class utorrent(client):
         else:
             host.sendFile( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ), '{0}/ut_server_logging'.format( self.getClientDir(host) ) )
         if not self.isRemote:
-            host.sendFile( os.path.join( '{0}/webui.zip'.format( self.sourceObj.localLocation(self) ), '{0}/webui.zip'.format( self.getClientDir(host) ) ) )
+            host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'webui.zip' ), '{0}/webui.zip'.format( self.getClientDir(host) ) )
             if self.useWine:
-                host.sendFile( os.path.join( '{0}/utorrent.exe'.format( self.sourceObj.localLocation(self) ), '{0}/utorrent.exe'.format( self.getClientDir(host) ) ) )
+                host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'utorrent.exe' ), '{0}/utorrent.exe'.format( self.getClientDir(host) ) )
             else:
-                host.sendFile( os.path.join( '{0}/utserver'.format( self.sourceObj.localLocation(self) ), '{0}/utserver'.format( self.getClientDir(host) ) ) )
+                host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'utserver' ), '{0}/utserver'.format( self.getClientDir(host) ) )
 
     # That's right, 2 arguments less.
     # pylint: disable-msg=W0221
@@ -107,12 +107,12 @@ class utorrent(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        if not execution.file.getMetafile():
+        if not execution.file.getMetaFile(execution.host):
             raise Exception( "In order to use uTorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetafile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution) ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution) ) )
         else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetafile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution) ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution) ) )
     # pylint: enable-msg=W0221
 
     def start(self, execution):
