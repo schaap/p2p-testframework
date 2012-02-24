@@ -594,7 +594,10 @@ class client(coreObject):
             return self.scenario.getObjectsDict( 'parser' )[self.__class__.__name__]
         else:
             modclass = Campaign.loadModule( 'parser', self.__class__.__name__ )
-            obj = modclass()
+            # *Sigh*. PyLint. Dynamic loading!
+            # pylint: disable-msg=E1121
+            obj = modclass( self.scenario )
+            # pylint: enable-msg=E1121
             obj.checkSettings()
             return obj
         # pylint: enable-msg=W0613

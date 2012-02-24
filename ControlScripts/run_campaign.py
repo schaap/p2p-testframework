@@ -1,5 +1,28 @@
 #!/usr/bin/python
 
+#
+# YET TO BE PORTED, in order
+#
+#    client:utorrent
+#    parser:utorrent
+#    processor:test__
+#    processor:gnuplot
+#    processor:savehostname
+#    processor:saveisseeder
+#    viewer:test__
+#    viewer:htmlcollection
+#    client:opentracker
+#    parser:opentracker
+#    [work work first]
+#    host:das4
+#    client:http
+#    parser:aria2
+#    parser:http
+#    parser:lighttpd
+#    tc:netem
+#
+
+
 # System imports
 import sys
 import os
