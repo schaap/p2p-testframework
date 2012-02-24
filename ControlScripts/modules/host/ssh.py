@@ -8,50 +8,16 @@ import errno
 import os
 import stat
 from subprocess import Popen, STDOUT, PIPE
+import subprocess
 
 paramiko = None
 try:
     paramiko = __import__('paramiko', globals(), locals() )
 except ImportError:
+    Campaign.logger.log( "Warning! You are using host:ssh without the paramiko packages installed. This is supported, but definitely not ideal. Please install the paramiko packages to have a much more effective host:ssh." )
+    print "Warning! You are using host:ssh without the paramiko packages installed. This is supported, but definitely not ideal. Please install the paramiko packages to have a much more effective host:ssh."
     paramiko = None
     
-def design():
-    """
-    This function is just here for easier comment writing.
-    
-Given paramiko:
-- reading a key for connecting to the host given an SSH agent is a matter of:
-    try:
-        agent = paramiko.Agent()
-        key = agent.get_keys()
-        agent.close()
-    except SSHException: # incompatible protocol
-        keys = []
-- reading a key for connecting to the host is a matter of:
-    try:
-        key = paramiko.DSSKey.from_private_key_file( filename )
-    except paramiko.SSHException:
-        try:
-            key = paramiko.RSAKey.from_private_key_file( filename )
-        except paramiko.SSHException:
-            raise Exception( "Key in {0} is not a valid DSS or RSA key.".format( filename ) )
-        except paramiko.PasswordRequiredException:
-            raise Exception( "Encrypted keys are not supported." )
-    except paramiko.PasswordRequiredException:
-        raise Exception( "Encrypted keys are not supported." )
-- reading the known_hosts into paramiko is a matter of:
-    try:
-        hostkeys = paramiko.HostKeys( filename )
-    except IOError:
-        hostkeys = paramiko.HostKeys()
-- using saved configuration is a matter of:
-    sshConfig = paramiko.SSHConfig()
-    sshConfig.parse( filename )
-    configurationDict = sshConfig.lookup( hostname )
-    
-    """
-    pass
-
 def parseError( msg ):
     """
     A simple helper function to make parsing a lot of parameters a bit nicer.
@@ -68,8 +34,28 @@ class sshFallbackConnectionObject(countedConnectionObject):
     # @static
     scpProgram = None
     
-    def __init__(self):
+    proc = None             # The remote bash process (Popen object)
+    
+    def __init__(self, proc):
         countedConnectionObject.__init__(self)
+        self.proc = proc
+        
+    def close(self):
+        countedConnectionObject.close(self)
+        self.proc.stdin.close()
+        self.proc.stdout.close()
+        del self.proc
+        self.proc = None
+    
+    def write(self, msg):
+        print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
+        self.proc.stdin.write( msg )
+        self.proc.stdin.flush()
+    
+    def readline(self):
+        line = self.proc.stdout.readline()
+        print "DEBUG: CONN {0} READLINE:\n{1}".format( self.getIdentification(), line )
+        return line
     
     @staticmethod
     def getSSHProgram():
@@ -98,6 +84,20 @@ class sshFallbackConnectionObject(countedConnectionObject):
                     raise Exception( "host:ssh requires either the paramiko modules (preferred) or scp command line utility to be present" )
                 sshFallbackConnectionObject.scpProgram = out
         return sshFallbackConnectionObject.scpProgram
+    
+    @staticmethod
+    def existsRemote(useHost, connection, remotePath):
+        res = useHost.sendCommand('[ -e "{0}" ] && echo "Y" || echo "N"'.format( remotePath ), connection)
+        if len(res) == 0:
+            raise Exception( "No reply from host {0} when querying existence of file {1}".format( useHost.name, remotePath ) )
+        return res[0] == 'Y'
+
+    @staticmethod
+    def isRemoteDir(useHost, connection, remotePath):
+        res = useHost.sendCommand('[ -d "{0}" ] && echo "Y" || echo "N"'.format( remotePath ), connection)
+        if len(res) == 0:
+            raise Exception( "No reply from host {0} when querying whether this is a directory: {1}".format( useHost.name, remotePath ) )
+        return res[0] == 'Y'
 
 class sshParamikoConnectionObject(countedConnectionObject):
     """
@@ -119,40 +119,31 @@ class sshParamikoConnectionObject(countedConnectionObject):
         self.io = io
     
     def close(self):
+        countedConnectionObject.close(self)
         try:
-            countedConnectionObject.close(self)
+            self.sftp__lock.acquire()
+            if self.sftpChannel:
+                self.sftpChannel.close()
+                del self.sftpChannel
+                self.sftpChannel = None
         finally:
+            self.sftp__lock.release()
             try:
-                self.sftp__lock.acquire()
-                if self.sftpChannel:
-                    self.sftpChannel.close()
-                    del self.sftpChannel
-                    self.sftpChannel = None
-            finally:
-                self.sftp__lock.release()
-                try:
-                    self.interactiveChannel.shutdown( 2 )
-                    self.interactiveChannel.close()
-                    del self.interactiveChannel
-                    self.interactiveChannel = None
-                except Exception:
-                    self.client.close()
-                    del self.client
-                    self.client = None
+                self.interactiveChannel.shutdown( 2 )
+                self.interactiveChannel.close()
+                del self.interactiveChannel
+                self.interactiveChannel = None
+            except Exception:
+                self.client.close()
+                del self.client
+                self.client = None
     
     def write(self, msg):
-        #self.interactiveChannel.sendall( msg )
         print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
         self.io[0].write( msg )
         self.io[0].flush()
     
     def readline(self):
-        #res = ''
-        #while True:
-        #    read = self.interactiveChannel.recv(1)
-        #    res += read
-        #    if read == '\n':
-        #        return res
         line = self.io[1].readline()
         print "DEBUG: CONN {0} READLINE:\n{1}".format( self.getIdentification(), line )
         return line
@@ -192,6 +183,11 @@ class sshParamikoConnectionObject(countedConnectionObject):
             if not e.errno == errno.ENOENT:
                 raise e
         return found
+
+    @staticmethod
+    def isRemoteDir(sftp, remotePath):
+        attribs = sftp.stat(remotePath)
+        return stat.S_ISDIR( attribs.st_mode )
 
 class ssh(host):
     """
@@ -299,53 +295,37 @@ class ssh(host):
             chan2.exec_command( 'bash -l' )
             io = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
             obj = sshParamikoConnectionObject( client, chan, io )
-            try:
-                self.connections__lock.acquire()
-                if self.isInCleanup():
-                    obj.close()
-                    return
-                self.connections.append( obj )
-            finally:
-                try:
-                    self.connections__lock.release()
-                except RuntimeError:
-                    pass
-            # The 'cd' below is absolutely necessary to make sure that automounts and stuff work correctly
-            self.sendCommand('cd; echo "READY"', obj )
-            return obj
         else:
-            # FIXME: Adapt
             args = ['{0}'.format(sshFallbackConnectionObject.getSSHProgram()), '-l', self.user]
             if self.port:
-                args.append( ' -p {0}'.format( self.port ) )
+                args.append( '-p' )
+                args.append( '{0}'.format( self.port ) )
             args.append( self.hostname )
             proc = Popen(args, bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
-            try:
-                self.connections__lock.acquire()
-                if self.isInCleanup():
-                    try:
-                        proc.communicate( 'exit' )
-                    except OSError as e:
-                        if not e.errno == errno.EPIPE: # This one is expected
-                            raise e
-                    return
-                obj = sshFallbackConnectionObject( proc )
-                self.connections.append( obj )
-                if self.isInCleanup():
-                    self.connections.pop()
-                    try:
-                        proc.communicate( 'exit' )
-                    except OSError as e:
-                        if not e.errno == errno.EPIPE: # This one is expected
-                            raise e
-                    return
-            finally:
+            if self.isInCleanup():
                 try:
-                    self.connections__lock.release()
-                except RuntimeError:
-                    pass
-            self.sendCommand('echo "READY"', obj )
-            return obj
+                    proc.communicate( 'exit' )
+                except OSError as e:
+                    if not e.errno == errno.EPIPE: # This one is expected
+                        raise e
+                return
+            obj = sshFallbackConnectionObject( proc )
+        try:
+            self.connections__lock.acquire()
+            if self.isInCleanup():
+                obj.close()
+                return
+            self.connections.append( obj )
+        finally:
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
+        # The 'cd' below is absolutely necessary to make sure that automounts and stuff work correctly
+        res = self.sendCommand('cd; echo "READY"', obj )
+        if not res[-5:] == "READY":
+            raise Exception( "Connection to host {0} seems not to be ready after it has been made. Reponse: {1}".format( self.name, res ) )
+        return obj
 
     def closeConnection(self, connection):
         """
@@ -373,9 +353,11 @@ class ssh(host):
         """
         connection = None
         try:
+            print "DEBUG: Host {0} entered sendCommand".format( self.name )
             connection = self.getConnection(reuseConnection)
+            print "DEBUG: Host {0} got lock in sendCommand on connection {1}".format( self.name, connection.getIdentification() )
             # Send command
-            connection.write( command+'\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.write( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
             # Read output of command
             res = ''
             line = connection.readline()
@@ -383,6 +365,7 @@ class ssh(host):
                 res += line
                 line = connection.readline()
             # Return output (ditch the last trailing \n)
+            print "DEBUG: Host {0} returning from sendCommand with connection {1}".format( self.name, connection.getIdentification() )
             return res.strip()
         finally:
             self.releaseConnection(reuseConnection, connection)
@@ -400,31 +383,56 @@ class ssh(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        connection = None
-        try:
-            connection = self.getConnection(reuseConnection)
-            if paramiko:
+        if paramiko:
+            connection = None
+            try:
+                connection = self.getConnection(reuseConnection)
                 newConnection = connection.createSFTPChannel()
                 try:
                     sftp = connection.sftpChannel
                     if sshParamikoConnectionObject.existsRemote(sftp, remoteDestinationPath):
                         if not overwrite: 
                             raise Exception( "Sending file {0} to {1} on host {2} without allowing overwrite, but the destination already exists".format( localSourcePath, remoteDestinationPath, self.name ) )
-                        else:
-                            attribs = sftp.stat(remoteDestinationPath)
-                            if stat.S_ISDIR( attribs.st_mode ):
-                                raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
+                        elif sshParamikoConnectionObject.isRemoteDir(sftp, remoteDestinationPath):
+                            raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
                     if self.isInCleanup():
                         return
                     sftp.put( localSourcePath, remoteDestinationPath )
+                    sftp.chmod( remoteDestinationPath, os.stat(localSourcePath).st_mode )
                 finally:
                     if newConnection:
                         connection.removeSFTPChannel()
-            else:
-                pass
-                # FIXME: IMPLEMENT
-        finally:
-            self.releaseConnection(reuseConnection, connection)
+            finally:
+                self.releaseConnection(reuseConnection, connection)
+        else:
+            connection = reuseConnection
+            if connection == False:
+                connection = self.setupNewConnection()
+            try:
+                if sshFallbackConnectionObject.existsRemote(self, connection, remoteDestinationPath):
+                    if not overwrite:
+                        raise Exception( "Sending file {0} to {1} on host {2} without allowing overwrite, but the destination already exists".format( localSourcePath, remoteDestinationPath, self.name ) )
+                    elif sshFallbackConnectionObject.isRemoteDir(self, connection, remoteDestinationPath):
+                        raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
+                if self.isInCleanup():
+                    return
+                args = ['{0}'.format(sshFallbackConnectionObject.getSCPProgram())]
+                if self.port:
+                    args.append( '-P' )
+                    args.append( '{0}'.format( self.port ) )
+                args.append( localSourcePath )
+                args.append( '{0}@{1}:{2}'.format( self.user, self.hostname, remoteDestinationPath ) )
+                try:
+                    subprocess.check_output( args, bufsize=8192 )
+                except subprocess.CalledProcessError as e:
+                    Campaign.logger.log( "Sending file {1} to {2} on host {0} failed: {3}".format( self.name, localSourcePath, remoteDestinationPath, e.output ) )
+                    raise e
+                localMode = os.stat(localSourcePath).st_mode
+                # The three localMode expressions extract the octal values for the user, group and other parts of the mode
+                self.sendCommand( 'chmod {0}{1}{2} "{3}"'.format( (localMode & 0x1C0) / 0x40, (localMode & 0x38) / 0x8, localMode & 0x7, remoteDestinationPath ), connection )
+            finally:
+                if reuseConnection == False:
+                    self.closeConnection(connection)
     
     def sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection = True):
         """
@@ -449,10 +457,10 @@ class ssh(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        connection = None
-        try:
-            connection = self.getConnection(reuseConnection)
-            if paramiko:
+        if paramiko:
+            connection = None
+            try:
+                connection = self.getConnection(reuseConnection)
                 newConnection = connection.createSFTPChannel()
                 try:
                     sftp = connection.sftpChannel
@@ -464,17 +472,27 @@ class ssh(host):
                         if os.path.isdir( localPath ):
                             if not sshParamikoConnectionObject.existsRemote(sftp, remotePath):
                                 sftp.mkdir( remotePath )
+                                sftp.chmod( remotePath, os.stat(localPath).st_mode )
                             paths += [(os.path.join( localPath, path ), '{0}/{1}'.format( remotePath, path )) for path in os.listdir( localPath )]
                         else:
+                            if sshParamikoConnectionObject.existsRemote(sftp, remotePath) and sshParamikoConnectionObject.isRemoteDir(sftp, remotePath):
+                                raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localPath, remotePath, self.name ) )
                             sftp.put( localPath, remotePath )
+                            sftp.chmod( remotePath, os.stat(localPath).st_mode )
                 finally:
                     if newConnection:
                         connection.removeSFTPChannel()
+            finally:
+                self.releaseConnection(reuseConnection, connection)
+        else:
+            if reuseConnection == False:
+                connection = self.setupNewConnection()
+                try:
+                    host.sendFiles(self, localSourcePath, remoteDestinationPath, connection)
+                finally:
+                    self.closeConnection(connection)
             else:
-                pass
-                # FIXME: IMPLEMENT
-        finally:
-            self.releaseConnection(reuseConnection, connection)
+                host.sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection)
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -489,29 +507,40 @@ class ssh(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        connection = None
-        try:
-            connection = self.getConnection(reuseConnection)
-            if paramiko:
-                newConnection = connection.createSFTP()
+        if os.path.exists( localDestinationPath ):
+            if not overwrite:
+                raise Exception( "Getting file {0} to {1} from host {2} without allowing overwrite, but the destination already exists".format( remoteSourcePath, localDestinationPath, self.name ) )
+            elif os.path.isdir( localDestinationPath ):
+                raise Exception( "Getting file {0} to {1} from host {2} with overwrite, but the destination already exists and is a directory".format( remoteSourcePath, localDestinationPath, self.name ) )
+        if self.isInCleanup():
+            return
+        if paramiko:
+            connection = None
+            try:
+                connection = self.getConnection(reuseConnection)
+                newConnection = connection.createSFTPChannel()
                 try:
                     sftp = connection.sftpChannel
-                    if os.path.exists( localDestinationPath ):
-                        if not overwrite:
-                            raise Exception( "Getting file {0} to {1} from host {2} without allowing overwrite, but the destination already exists".format( remoteSourcePath, localDestinationPath, self.name ) )
-                        elif os.path.isdir( localDestinationPath ):
-                            raise Exception( "Getting file {0} to {1} from host {2} with overwrite, but the destination already exists and is a directory".format( remoteSourcePath, localDestinationPath, self.name ) )
                     if self.isInCleanup():
                         return
                     sftp.get( remoteSourcePath, localDestinationPath )
                 finally:
                     if newConnection:
-                        connection.removeSFTP()
-            else:
-                pass
-                # FIXME: IMPLEMENT
-        finally:
-            self.releaseConnection(reuseConnection, connection)
+                        connection.removeSFTPChannel()
+            finally:
+                self.releaseConnection(reuseConnection, connection)
+        else:
+            args = ['{0}'.format(sshFallbackConnectionObject.getSCPProgram())]
+            if self.port:
+                args.append( '-P' )
+                args.append( '{0}'.format( self.port ) )
+            args.append( '{0}@{1}:{2}'.format( self.user, self.hostname, remoteSourcePath ) )
+            args.append( localDestinationPath )
+            try:
+                subprocess.check_output( args, bufsize=8192 )
+            except subprocess.CalledProcessError as e:
+                Campaign.logger.log( "Retrieving file {1} to {2} from host {0} failed: {3}".format( self.name, remoteSourcePath, localDestinationPath, e.output ) )
+                raise e
 
     def prepare(self):
         """

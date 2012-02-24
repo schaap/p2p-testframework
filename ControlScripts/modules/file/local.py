@@ -142,6 +142,8 @@ class local(core.file.file):
 
         @param  host        The host to which to send the files.
         """
+        if not self.getFileDir(host):
+            return
         core.file.file.sendToSeedingHost(self, host)
         host.sendCommand( 'mkdir -p "{0}/files/"'.format( self.getFileDir(host) ) )
         if os.path.isdir( self.path ):
@@ -166,6 +168,8 @@ class local(core.file.file):
 
         @return The path to the (root of) the file(s) on the remote host, or None if they are not (yet) available.
         """
+        if not self.getFileDir(host):
+            return
         if os.path.isdir( self.path ):
             if self.path[-1:] == '/':
                 name = os.path.basename( self.path[:-1] )

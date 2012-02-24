@@ -131,6 +131,8 @@ class test__(core.file.file):
 
         @return The path to the (root of) the file(s) on the remote host, or None if they are not (yet) available.
         """
+        if not self.getFileDir(host):
+            return None
         return "{0}/files/testseedingfile".format( self.getFileDir( host ) )
 
     @staticmethod

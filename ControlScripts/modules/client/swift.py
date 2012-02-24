@@ -195,6 +195,8 @@ class swift(client):
                 allParams += ' --tracker {0}'.format( self.tracker )
         if self.extraParameters:
             allParams += ' {0}'.format( self.extraParameters )
+        if self.isInCleanup():
+            return
         client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:. ./swift --progress {0} 2> "{1}/log.log"'.format( allParams, self.getExecutionLogDir(execution) ) )
     # pylint: enable-msg=W0221
 
@@ -222,7 +224,8 @@ class swift(client):
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
         print "DEBUG: Retrieving logs for execution {3} of client {0} on host {1} using connection {2}".format( self.name, execution.host.name, execution.getRunnerConnection().getIdentification(), execution.getNumber() )
-        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
+        if self.getExecutionLogDir(execution):
+            execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
 
     def cleanupHost(self, host, reuseConnection = None):
         """

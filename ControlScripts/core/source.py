@@ -149,12 +149,16 @@ class source(coreObject):
         """
         Returns the remote location of the client sources on the host.
 
+        During cleanup this may return None! 
+
         No guarantees exist that the location exists. Be sure to call prepareRemote(...) for that.
 
         @param  client      The client for which the location is needed.
         @param  host        The host on which the location should reside.
         """
-        return "{0}/source".format( client.getClientDir( host ) )
+        if client.getClientDir( host ):
+            return "{0}/source".format( client.getClientDir( host ) )
+        return None
 
     def cleanup(self):
         """

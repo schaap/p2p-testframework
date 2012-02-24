@@ -84,12 +84,16 @@ class file(coreObject):
         Returns the path on the remote host where this file's files can reside.
 
         No guarantees are given as to the existence of this path.
+        
+        During cleanup this may return None! 
 
         @param  host        The host on which the remote path is requested.
 
         @return The path to the file dir on the remote host.
         """
-        return host.getTestDir()+"/files/{0}".format(self.name)
+        if host.getTestDir():
+            return host.getTestDir()+"/files/{0}".format(self.name)
+        return None
 
     def sendToHost(self, host):
         """
@@ -109,8 +113,9 @@ class file(coreObject):
         @param  host        The host to which to send the files.
         """
         if self.metaFile:
-            host.sendCommand( 'mkdir -p "{0}/meta/"'.format( self.getFileDir( host ) ) )
-            host.sendFile( self.metaFile, self.getMetaFile( host ) )
+            if self.getFileDir(host):
+                host.sendCommand( 'mkdir -p "{0}/meta/"'.format( self.getFileDir( host ) ) )
+                host.sendFile( self.metaFile, self.getMetaFile( host ) )
 
     # There's an unused argument host here; that's fine
     # pylint: disable-msg=W0613
@@ -171,7 +176,7 @@ class file(coreObject):
         @return The path to the meta file on the remote host, or None is no meta file is available.
         """
         # Note that this is the new name of getMetaName(...), which made no sense in naming
-        if not self.metaFile:
+        if not self.metaFile or not self.getFileDir( host ):
             return None
         postfix = ''
         index = self.metaFile.rfind( '.' )

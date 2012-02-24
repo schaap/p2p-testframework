@@ -90,6 +90,8 @@ class local(source):
             raise Exception( "The sources of client {0} should be found in local directory '{1}', but that either doesn't exist or is not a directory.".format( client.name, client.location ) )
         if not source.prepareRemote(self, client, host):
             return False
+        if self.isInCleanup():
+            return
         host.sendFiles( client.location, self.remoteLocation(client, host) )
         return True
 

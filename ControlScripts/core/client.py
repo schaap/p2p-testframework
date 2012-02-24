@@ -234,15 +234,20 @@ class client(coreObject):
 
         This is the directory where client-specific temporary data, irrespective of execution, should be stored.
 
+        During cleanup this may return None! 
+
         @param  host            The remote host for to construct the path.
         @param  persistent      Set to True to get the persistent test directory (default: False).
 
         @return The path to the client test directory on the remote host.
         """
         if persistent:
-            return "{0}/clients/{1}".format( host.getPersistentTestDir(), self.name )
+            if host.getPersistentTestDir():
+                return "{0}/clients/{1}".format( host.getPersistentTestDir(), self.name )
         else:
-            return "{0}/clients/{1}".format( host.getTestDir(), self.name )
+            if host.getTestDir():
+                return "{0}/clients/{1}".format( host.getTestDir(), self.name )
+        return None
 
     def getLogDir(self, host, persistent = True):
         """
@@ -250,15 +255,20 @@ class client(coreObject):
 
         This is the directory where client-specific logs, irrespective of execution, should be stored.
 
+        During cleanup this may return None! 
+
         @param  host            The remote host for to construct the path.
         @param  persistent      Set to True to get the persistent log directory (default: True).
 
         @return The path to the log directory on the remote host.
         """
         if persistent:
-            return "{0}/logs/{1}".format( host.getPersistentTestDir(), self.name )
+            if host.getPersistentTestDir():
+                return "{0}/logs/{1}".format( host.getPersistentTestDir(), self.name )
         else:
-            return "{0}/logs/{1}".format( host.getTestDir(), self.name )
+            if host.getTestDir():
+                return "{0}/logs/{1}".format( host.getTestDir(), self.name )
+        return None
 
     def getExecutionClientDir(self, execution, persistent = False):
         """
@@ -266,15 +276,20 @@ class client(coreObject):
 
         This is the directory where client/execution-specific temporary data should be stored.
 
+        During cleanup this may return None! 
+
         @param  execution       The execution for which to construct the path.
         @param  persistent      Set to True to get the persistent test directory (default: False).
 
         @return The path to the execution test directory on the remote host.
         """
         if persistent:
-            return "{0}/clients/{1}/exec_{2}".format( execution.host.getPersistentTestDir(), self.name, execution.getNumber() )
+            if execution.host.getPersistentTestDir():
+                return "{0}/clients/{1}/exec_{2}".format( execution.host.getPersistentTestDir(), self.name, execution.getNumber() )
         else:
-            return "{0}/clients/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
+            if execution.host.getTestDir():
+                return "{0}/clients/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
+        return None
 
     def getExecutionLogDir(self, execution, persistent = True):
         """
@@ -282,15 +297,20 @@ class client(coreObject):
 
         This is the directory where client/execution-specific logs should be stored.
 
+        During cleanup this may return None! 
+
         @param  execution       The execution for which to construct the path.
         @param  persistent      Set to True to get the persistent test directory (default: True).
 
         @return The path to the execution log directory on the remote host.
         """
         if persistent:
-            return "{0}/logs/{1}/exec_{2}".format( execution.host.getPersistentTestDir(), self.name, execution.getNumber() )
+            if execution.host.getPersistentTestDir():
+                return "{0}/logs/{1}/exec_{2}".format( execution.host.getPersistentTestDir(), self.name, execution.getNumber() )
         else:
-            return "{0}/logs/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
+            if execution.host.getTestDir():
+                return "{0}/logs/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
+        return None
 
     def prepareExecution(self, execution, simpleCommandLine = None, complexCommandLine = None):
         """
@@ -544,7 +564,12 @@ class client(coreObject):
         connection = True
         if reuseConnection:
             connection = reuseConnection
-        host.sendCommand( 'rm -rf "{0}/clients/{2}" "{0}/logs/{2}" "{1}/clients/{2}" "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ), connection )
+        if host.getTestDir() and host.getPersistentTestDir():
+            host.sendCommand( 'rm -rf "{0}/clients/{2}" "{0}/logs/{2}" "{1}/clients/{2}" "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ), connection )
+        elif host.getTestDir():
+            host.sendCommand( 'rm -rf "{0}/clients/{1}" "{0}/logs/{1}"'.format( host.getTestDir(), self.name ), connection )
+        elif host.getPersistentTestDir():
+            host.sendCommand( 'rm -rf "{0}/clients/{1}" "{0}/logs/{1}"'.format( host.getPersistentTestDir(), self.name ), connection )
 
     # This method has unused argument execution; that's fine
     # pylint: disable-msg=W0613

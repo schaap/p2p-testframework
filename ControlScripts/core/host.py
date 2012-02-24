@@ -507,7 +507,7 @@ class host(coreObject):
                 raise Exception( "Trying to reuse a connection that is not a connection." )
             connection = reuseConnection
             if connection.isClosed():
-                raise Exception( "Trying to reuse already closed connectino {0}".format( connection.getIdentification() ) )
+                raise Exception( "Trying to reuse already closed connection {0}".format( connection.getIdentification() ) )
         while not connection.lockForUse():
             Campaign.logger.log( "Trying to lock connection {0}, but it seems to be locked already. Traceback follows. Sleeping.".format( connection.getIdentification() ) )
             Campaign.logger.localTraceback()
@@ -656,10 +656,12 @@ class host(coreObject):
             print "DEBUG: mktemp -d"
             self.tempDirectory = self.sendCommand( 'mktemp -d' )
             print "DEBUG: [ -d ... ]"
-            if self.tempDirectory == '' or self.sendCommand( '[ -d {0} ] && echo "OK"'.format( self.tempDirectory ) ).strip() != "OK":
+            if self.tempDirectory != '':
+                testres = self.sendCommand( '[ -d "{0}" ] && [ `ls -a "{0}" | wc -l` -eq 2 ] && echo "OK"'.format( self.tempDirectory ) )
+            if self.tempDirectory == '' or testres.strip() != "OK":
                 res = self.tempDirectory
                 self.tempDirectory = None
-                raise Exception( "Could not correctly create a remote temporary directory on host {1}. Response: {0}".format( res, self.name ) )
+                raise Exception( "Could not correctly create a remote temporary directory on host {1} or could not verify it. Response: {0}\nResponse to the verification: {2}".format( res, self.name, testres ) )
 
     # Indeed, PyLint, host.cleanup() has more arguments than coreObject.cleanup(). This is actually CORRECT in normal OO.
     # pylint: disable-msg=W0221
@@ -718,6 +720,8 @@ class host(coreObject):
         For logfiles and other files that are needed after the execution of the client, use
         getPersistentTestDir().
 
+        During cleanup this may return None! 
+
         The default implementation uses self.remoteDirectory if it exists, or otherwise self.tempDirectory.
 
         @return The test directory on the remote host.
@@ -733,6 +737,8 @@ class host(coreObject):
 
         Note that persistence in this case is limited to the complete test as opposed to data being thrown away
         at any possible moment in between commands.
+
+        During cleanup this may return None! 
 
         The default implementation just uses self.getTestDir() and is hence under the assumption that the
         normal test dir is persistent enough.
