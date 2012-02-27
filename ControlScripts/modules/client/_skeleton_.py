@@ -125,54 +125,14 @@ class _skeleton_(client):
         @param  host            The host on which to prepare the client.
         """
         # The default implementations takes care of creating client specific directories on the host, as well as
-        # compilation of the client on the host, if needed. Be sure to call it.
+        # compilation of the client on the host, if needed. It also uploads or moves your client if you have
+        # implemted getBinaryLayout(), getSourceLayout() and getExtraUploadLayout(). Be sure to call it.
         client.prepareHost(self, host)
         # The client specific directories on the remote host can be found using self.getClientDir(...) and
         # self.getLogsDir(...)
         #
-        # TODO: Prepare the host for running your client. This usually includes uploading the binaries from local,
-        # or moving some things around remotely. The end goal of this method is that the method start() works, no
-        # matter how the client was built or sent. Four cases are to be considered:
-        #   -   The client binaries are available locally; they have to be sent to the remote host
-        #   -   The client sources have been built locally; the binaries have to be sent to the remote host
-        #   -   The client binaries are available remotely; no action should be required
-        #   -   The client sources have been built remotely; the binaries may need to be moved around
-        # The thing to keep in mind is that, when using the default implementation with the runner script made by
-        # prepareExecution(...), the script will first change directory as follows:
-        #   -   Local binaries or sources:      self.getClientDir( host, False )
-        #   -   Remote binaries or sources:     self.sourceObj.remoteLocation()
-        # From that point on the client should be runnable with the same commands. This will most likely mean that
-        # the client binaries have to end up in the same place (relative to the used remote directory), no matter
-        # where they came from (local or remote) and how they were provided at first (binary or source).
-        #
-        # Example:
-        #
-        #   if self.isInCleanup():      # Don't make a mess while cleaning up
-        #       return
-        #   if self.isRemote:
-        #       # If any fiels on the remote host need to be moved around, be sure to do so here.
-        #       # Example that moves the binary if it was built from source on the remote host:
-        #       host.sendCommand( '[ -d "{0}/src" ] && mv "{0}/src/yourClientBinary" "{0}/"'.format(
-        #                                   self.sourceObj.remoteLocation(self, host) ) )
-        #   else:
-        #       # Send your client files here, either from the source location (where building took place) or the
-        #       # location where the binaries already reside.
-        #
-        #       # The following is a version for a simple, single-binary client, which is compiled in-place:
-        #       # host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
-        #       #                '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #
-        #       # A more extended example, which takes the source structure into account:
-        #       if os.path.exists( '{0}/src'.format( self.sourceObj.localLocation(self) ) ):
-        #           host.sendFile( '{0}/src/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
-        #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #       else:
-        #           host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
-        #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #
-        # This is quite an elaborate method, but it is important to take into account all four cases. That will
-        # ensure that your client runs well. If you need extra files available on the remote host you can copy them
-        # here as well, of course, and/or check their availability to make sure the client will run.
+        # TODO: If you really need to go beyond the possibilities of getBinaryLayout(), getSourceLayout() and
+        # getExtraUploadLayout(), then this is the location to do that. Make sure to take every case into account!
         #
 
     # That's right, 2 arguments less.
@@ -377,6 +337,86 @@ class _skeleton_(client):
         # TODO: Reimplement this if possible
         #
         return client.trafficOutboundPorts(self)
+
+    def getBinaryLayout(self):
+        """
+        Return a list of binaries that need to be present on the server.
+        
+        Add directories to be created as well, have them end with a /.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    List of binaries.
+        """
+        #
+        # TODO: Implement this for your convenience. Example:
+        #
+        #    return ['yourClientBinary']
+        #
+        # For more extensive clients:
+        #
+        #    return ['executableFile', 'data/', 'data/peerlist', 'data/translationfile']
+        return None
+    
+    def getSourceLayout(self):
+        """
+        Return a list of tuples that describe the layout of the source.
+        
+        Each tuple in the list corresponds to (sourcelocation, binarylocation),
+        where the binarylocation is one of the entries returned by getBinaryLayout().
+        
+        Each entry in getBinaryLayout() that is not directory needs to be present.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    The layout of the source.
+        """
+        #
+        # TODO: Implement this for your convenience. Example:
+        #
+        #    return [('src/yourClientBinary', 'yourClientBinary')]
+        #
+        # For more extensive clients:
+        #
+        #    return [('src/executableFile', 'executableFile'),
+        #            ('peerlists/alllists/most_recent', 'data/peerlist'),
+        #            ('po/english.po', 'data/translationfile')]
+        #
+        # Note that for each entry in getBinaryLayout that is not a directory, exactly one entry must be present in getSourceLayout.
+        # Also note that each entry in getSourceLayout corresponds to exactly one entry in getBinaryLayout.
+        # This means, in particular, that if self.getBinaryLayout() == None then also self.getSourceLayout() == None.
+        #
+        # If your sources compile nicely in-place, be sure to fill this in, anyway. Something like:
+        #
+        #    return [('yourClientBinary', 'yourClientBinary')]
+        #
+        return None
+
+    def getExtraUploadLayout(self):
+        """
+        Returns a list of local files that are always uploaded to the remote host.
+        
+        Each tuple in the list corresponds to (locallocation, remotelocation),
+        where the first is the location of the local file and the second is the
+        relative location of the file on the remote host (relative to the location
+        of the client's directory).
+        
+        Add directories to be created as well, have their locallocation be '' and 
+        have their remotelocation end with a /.
+                
+        This method is especially useful for wrappers and the like.
+        
+        Return None to handle the uploading yourself.
+        
+        @return    The files that are always to be uploaded.
+        """
+        #
+        # TODO: Implement this for your convenience. Example:
+        #
+        #    return [(os.path.join(Campaign.testEnvDir, 'ClientWrappers', 'yourclient', 'yourclient_runner'), 'yourclient_runner')]
+        #
+        # This example would have ClientWrappers/yourclient/yourclient_runner uploaded to '{0}/yourclient_runner'.format( self.getClientDir( host ) ).
+        return None
 
     @staticmethod
     def APIVersion():

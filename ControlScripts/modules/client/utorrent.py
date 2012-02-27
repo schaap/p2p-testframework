@@ -57,6 +57,9 @@ class utorrent(client):
         """
         client.checkSettings(self)
         
+        if self.builder:
+            raise Exception( "client:utorrent does not support compilation from source... Where did you get those sources, anyway?" )
+        
         if self.useWine:
             if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ) ) or not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ) ):
                 raise Exception( "The uTorrent client runner, when using wine, needs the utorrent runner scripts for wine. These are expected to be present in ClientWrappers/utorrent-windows/, but they aren't." )
@@ -82,19 +85,6 @@ class utorrent(client):
         @param  host            The host on which to prepare the client.
         """
         client.prepareHost(self, host)
-        if self.isInCleanup():
-            return
-        if self.useWine:
-            host.sendFile( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ), '{0}/ut_server_logging'.format( self.getClientDir(host) ) )
-            host.sendFile( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ), '{0}/ut_server_logging'.format( self.getClientDir(host) ) )
-        else:
-            host.sendFile( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ), '{0}/ut_server_logging'.format( self.getClientDir(host) ) )
-        if not self.isRemote:
-            host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'webui.zip' ), '{0}/webui.zip'.format( self.getClientDir(host) ) )
-            if self.useWine:
-                host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'utorrent.exe' ), '{0}/utorrent.exe'.format( self.getClientDir(host) ) )
-            else:
-                host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'utserver' ), '{0}/utserver'.format( self.getClientDir(host) ) )
 
     # That's right, 2 arguments less.
     # pylint: disable-msg=W0221
@@ -209,6 +199,61 @@ class utorrent(client):
         @return A list of all ports from which outgoing traffic can come, or [] if no such list can be given.
         """
         return client.trafficOutboundPorts(self)
+
+    def getBinaryLayout(self):
+        """
+        Return a list of binaries that need to be present on the server.
+        
+        Add directories to be created as well, have them end with a /.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    List of binaries.
+        """
+        if self.useWine:
+            return [ 'webui.zip', 'utorrent.exe' ]
+        else:
+            return [ 'webui.zip', 'utserver' ]
+    
+    def getSourceLayout(self):
+        """
+        Return a list of tuples that describe the layout of the source.
+        
+        Each tuple in the list corresponds to (sourcelocation, binarylocation),
+        where the binarylocation is one of the entries returned by getBinaryLayout().
+        
+        Each entry in getBinaryLayout() that is not directory needs to be present.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    The layout of the source.
+        """
+        return None
+
+    def getExtraUploadLayout(self):
+        """
+        Returns a list of local files that are always uploaded to the remote host.
+        
+        Each tuple in the list corresponds to (locallocation, remotelocation),
+        where the first is the location of the local file and the second is the
+        relative location of the file on the remote host (relative to the location
+        of the client's directory).
+        
+        Add directories to be created as well, have their locallocation be '' and 
+        have their remotelocation end with a /.
+                
+        This method is especially useful for wrappers and the like.
+        
+        Return None to handle the uploading yourself.
+        
+        @return    The files that are always to be uploaded.
+        """
+        if self.useWine:
+            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ), 'ut_server_logging'),
+                    (os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ), 'settings.dat')]
+        else:
+            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ), 'ut_server_logging')]
+        return None
 
     @staticmethod
     def APIVersion():

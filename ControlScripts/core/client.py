@@ -142,12 +142,13 @@ class client(coreObject):
             except ImportError:
                 raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{1} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
         if not self.builder:
-            self.builder = 'none'
             try:
                 __import__( 'modules.builder.none', globals(), locals(), 'none' )
             except ImportError:
                 raise Exception( "The default builder module builder:none can't be imported. This means your installation is broken." )
-        builderClass = Campaign.loadModule( 'builder', self.builder )
+            builderClass = Campaign.loadModule( 'builder', 'none' )
+        else:
+            builderClass = Campaign.loadModule( 'builder', self.builder )
         # PyLint really doesn't understand dynamic loading ('too many positional arguments')
         # pylint: disable-msg=E1121
         self.builderObj = builderClass(self.scenario)
@@ -211,9 +212,29 @@ class client(coreObject):
         # Create client specific directories
         host.sendCommand( 'mkdir -p "{0}/clients/{2}"; mkdir -p "{0}/logs/{2}"; mkdir -p "{1}/clients/{2}"; mkdir -p "{1}/logs/{2}"'.format( host.getTestDir(), host.getPersistentTestDir(), self.name ) )
         # Build the client if it is to be built remotely
-        if self.isRemote:
+        if self.isInCleanup():
+            return
+        # Check sanity of getBinaryLayout() and getSourceLayout(), as well as create directories remotely
+        if self.getBinaryLayout():
             if self.isInCleanup():
                 return
+            if self.builder and self.getSourceLayout():
+                binariesInSources = [entry[1] for entry in self.getSourceLayout()]
+                dirCount = 0
+                for entry in self.getBinaryLayout():
+                    if entry[-1:] == '/':
+                        dirCount += 1
+                    elif not entry in binariesInSources:
+                        raise Exception( "Client module {0} has both getBinaryLayout() and getSourceLayout(), but entry {1} in the binaries is not present in the sources. That's wrong.".format( self.__class__.__name__, entry ) )
+                if len(binariesInSources) + dirCount != len(self.getSourceLayout()):
+                    raise Exception( "Client module {0} has both getBinaryLayout() and getSourceLayout(), but not every entry in the sources corresponds to an entry in the binaries. That's wrong.".format( self.__class__.__name__ ) )
+            for entry in self.getBinaryLayout():
+                if entry[:-1] == '/':
+                    if self.isInCleanup():
+                        return
+                    host.sendCommand( 'mkdir -p "{0}/{1}"'.format( self.getClientDir(host), entry ) )
+        # Make sure client is uploaded/present
+        if self.isRemote:
             if self.builder:
                 # Only say we're compiling if a builder was given
                 print "Remotely compiling client {0}".format( self.name )
@@ -227,7 +248,62 @@ class client(coreObject):
                 if self.isInCleanup():
                     return
                 raise Exception( "A remote build of client {0} failed on host {1}".format( self.name, host.name ) )
-
+            # Check and shuffle files
+            if self.getBinaryLayout():
+                if self.isInCleanup():
+                    return
+                if self.builder and self.getSourceLayout():
+                    binariesInSources = [entry[1] for entry in self.getSourceLayout()]
+                    dirCount = 0
+                    for entry in self.getSourceLayout():
+                        if self.isInCleanup():
+                            return
+                        if self.sourceObj.remoteLocation( self, host ) == self.getClientDir(host) and entry[0] == entry[1]:
+                            res = host.sendCommand( '[ -f "{0}/{1}" ] && echo "OK"'.format( self.sourceObj.remoteLocation( self, host ), entry[0] ) )
+                        else:
+                            res = host.sendCommand( '[ -f "{0}/{1}" ] && cp "{0}/{1}" "{2}/{3}" && echo "OK"'.format( self.sourceObj.remoteLocation( self, host ), entry[0], self.getClientDir(host), entry[1] ) )
+                        if res != "OK":
+                            raise Exception( "Client {0} failed to prepare host {1}: checking for existence of file {2} after building and copying it to {3} (if needed) failed. Response: {4}.".format( self.name, host.name, entry[0], entry[1], res ) )
+                elif not self.builder:
+                    for entry in self.getBinaryLayout():
+                        if entry[-1:] == '/':
+                            continue
+                        if self.isInCleanup():
+                            return
+                        res = host.sendCommand( '[ -f "{0}/{1}" ] && echo "OK"'.format( self.sourceObj.remoteLocation( self, host ), entry ) )
+                        if res != "OK":
+                            raise Exception( "Client {0} failed to prepare host {1}: checking for existence of file {2} after preparing remotely failed. Response: {3}.".format( self.name, host.name, entry, res ) )
+        else:
+            if self.getBinaryLayout():
+                if self.builder:
+                    # Upload from source locations
+                    for entry in self.getSourceLayout():
+                        if self.isInCleanup():
+                            return
+                        if not os.path.exists( os.path.join( self.sourceObj.localLocation( self ), entry[0] ) ):
+                            raise Exception( "Client {0} failed to prepare host {1}: local compilation misses file {2}".format( self.name, host.name, entry[0] ) )
+                        host.sendFile( os.path.join( self.sourceObj.localLocation( self ), entry[0] ), '{0}/{1}'.format( self.getClientDir(host), entry[1] ), True )
+                else:
+                    # Upload from binary locations
+                    for entry in self.getBinaryLayout():
+                        if self.isInCleanup():
+                            return
+                        if not os.path.exists( os.path.join( self.sourceObj.localLocation( self ), entry ) ):
+                            raise Exception( "Client {0} failed to prepare host {1}: local binary location misses file {2}".format( self.name, host.name, entry ) )
+                        host.sendFile( os.path.join( self.sourceObj.localLocation( self ), entry ), '{0}/{1}'.format( self.getClientDir(host), entry ), True )
+        # Upload extra files
+        if self.getExtraUploadLayout():
+            for entry in self.getExtraUploadLayout():
+                if entry[0] == '':
+                    if entry[1][-1:] != '/':
+                        raise Exception( "Client module {0} has an entry in the extra upload layout which has no local location, but is not a remote directory. This is wrong.".format( self.__class__.__name__ ) )
+                    host.sendCommand( 'mkdir -p "{0}/{1}"'.format( self.getClientDir(host), entry[1] ) )
+            for entry in self.getExtraUploadLayout():
+                if entry[0] != '':
+                    if not os.path.exists( entry[0] ):
+                        raise Exception( "Client module {0} has an entry to upload file {1}, but that doesn't exist locally.".format( self.__class__.__name__, entry[0] ) )
+                    host.sendFile( entry[0], "{0}/{1}".format( self.getClientDir(host), entry[1] ), True )
+                            
     def getClientDir(self, host, persistent = False):
         """
         Convenience function that constructs the path to the test directory of the client on the remote host.
@@ -675,6 +751,53 @@ class client(coreObject):
         @return    The name.
         """
         return self.name
+    
+    def getBinaryLayout(self):
+        """
+        Return a list of binaries that need to be present on the server.
+        
+        Add directories to be created as well, have them end with a /.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    List of binaries.
+        """
+        return None
+    
+    def getSourceLayout(self):
+        """
+        Return a list of tuples that describe the layout of the source.
+        
+        Each tuple in the list corresponds to (sourcelocation, binarylocation),
+        where the binarylocation is one of the entries returned by getBinaryLayout().
+        
+        Each entry in getBinaryLayout() that is not directory needs to be present.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    The layout of the source.
+        """
+        return None
+    
+    def getExtraUploadLayout(self):
+        """
+        Returns a list of local files that are always uploaded to the remote host.
+        
+        Each tuple in the list corresponds to (locallocation, remotelocation),
+        where the first is the location of the local file and the second is the
+        relative location of the file on the remote host (relative to the location
+        of the client's directory).
+        
+        Add directories to be created as well, have their locallocation be '' and 
+        have their remotelocation end with a /.
+        
+        This method is especially useful for wrappers and the like.
+        
+        Return None to handle the uploading yourself.
+        
+        @return    The files that are always to be uploaded.
+        """
+        return None
 
     @staticmethod
     def APIVersion():

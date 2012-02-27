@@ -26,16 +26,17 @@ def buildPieces( path, fileList_, blocksize ):
     while len(fileList) > 0:
         if not f:
             f = open(os.path.join(path, *(fileList.pop(0)['path'])))
-        data = f.read( leftToRead )
-        h.update( data )
-        leftToRead -= len(data)
-        if leftToRead == 0:
-            pieces += h.digest()
-            h = hashlib.new( 'sha1' )
-            leftToRead = blocksize
-        else:
-            f.close()
-            f = None
+        while f:
+            data = f.read( leftToRead )
+            h.update( data )
+            leftToRead -= len(data)
+            if leftToRead == 0:
+                pieces += h.digest()
+                h = hashlib.new( 'sha1' )
+                leftToRead = blocksize
+            else:
+                f.close()
+                f = None
     if leftToRead > 0 and leftToRead < blocksize:
         pieces += h.digest()
     return pieces

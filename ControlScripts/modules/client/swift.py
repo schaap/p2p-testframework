@@ -133,17 +133,7 @@ class swift(client):
 
         @param  host            The host on which to prepare the client.
         """
-        # The default implementations takes care of creating client specific directories on the host, as well as
-        # compilation of the client on the host, if needed. Be sure to call it.
         client.prepareHost(self, host)
-        # The client specific directories on the remote host can be found using self.getClientDir(...) and
-        # self.getLogsDir(...)
-
-        if self.isInCleanup():
-            return
-        if not self.isRemote:
-            host.sendFile( '{0}/swift'.format( self.sourceObj.localLocation(self) ),
-                           '{0}/swift'.format( self.getClientDir(host) ) )
 
     # That's right, 2 arguments less.
     # pylint: disable-msg=W0221
@@ -298,6 +288,53 @@ class swift(client):
         if self.listenPort:
             return [self.listenPort]
         return []
+
+    def getBinaryLayout(self):
+        """
+        Return a list of binaries that need to be present on the server.
+        
+        Add directories to be created as well, have them end with a /.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    List of binaries.
+        """
+        return ['swift']
+    
+    def getSourceLayout(self):
+        """
+        Return a list of tuples that describe the layout of the source.
+        
+        Each tuple in the list corresponds to (sourcelocation, binarylocation),
+        where the binarylocation is one of the entries returned by getBinaryLayout().
+        
+        Each entry in getBinaryLayout() that is not directory needs to be present.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    The layout of the source.
+        """
+        return [('swift','swift')]
+
+    def getExtraUploadLayout(self):
+        """
+        Returns a list of local files that are always uploaded to the remote host.
+        
+        Each tuple in the list corresponds to (locallocation, remotelocation),
+        where the first is the location of the local file and the second is the
+        relative location of the file on the remote host (relative to the location
+        of the client's directory).
+        
+        Add directories to be created as well, have their locallocation be '' and 
+        have their remotelocation end with a /.
+                
+        This method is especially useful for wrappers and the like.
+        
+        Return None to handle the uploading yourself.
+        
+        @return    The files that are always to be uploaded.
+        """
+        return None
 
     @staticmethod
     def APIVersion():

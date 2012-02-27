@@ -122,7 +122,7 @@ class _skeleton_(processor):
         """
         # TODO: Implement this method. Example:
         #
-        #   for execution in self.scenario.getObjectsDict('execution'):
+        #   for execution in self.scenario.getObjects('execution'):
         #       if not os.path.exists( os.path.join( self.getRawLogDir( execution, baseDir ), 'log.log' ) ):
         #           raise Exception( "Raw log file log.log expected for execution {2} of client {0} on host {1}".format( execution.client.name, execution.host.name, execution.getNumber() ) )
         #       if not os.path.exists( os.path.join( self.getParsedLogDir( execution, baseDir ), 'log.useless' ) ):

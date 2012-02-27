@@ -1,3 +1,5 @@
 The external packages in this directory are:
 - bencode
     The original bencode implementation of BitTorrent 5.0.8, distributed under the BitTorrent Open Source License.
+- magic
+    The python-magic libmagic wrapper v 4.1. Retrieved from https://github.com/ahupp/python-magic . Distributed under the open source PSF license.

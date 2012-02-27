@@ -3,6 +3,9 @@ from core.campaign import Campaign
 from core.client import client
 
 import os
+import tempfile
+import threading
+import external.bencode
 
 def parseError( msg ):
     """
@@ -25,10 +28,11 @@ class opentracker(client):
                         will be uploaded; can be specified multiple times.
     """
     
-    port = None                 # The port openTracker will listen on
-    changeTrackers = None       # List of names of file objects for which to change the torrent files
-    hasUpdatedTrackers = False  # Flag to keep track of whether the trackers have already been updated or not
-    tempUpdatedFiles = []       # List of all the temporary files (which need to be erased on cleanup)
+    port = None                     # The port openTracker will listen on
+    changeTrackers = None           # List of names of file objects for which to change the torrent files
+    hasUpdatedTrackers = False      # Flag to keep track of whether the trackers have already been updated or not
+    tempUpdatedFiles__lock = None   # List of all the temporary files (which need to be erased on cleanup)
+    tempUpdatedFiles = None         # List of all the temporary files (which need to be erased on cleanup)
 
     def __init__(self, scenario):
         """
@@ -38,6 +42,8 @@ class opentracker(client):
         """
         client.__init__(self, scenario)
         self.changeTrackers = []
+        self.tempUpdatedFiles = []
+        self.tempUpdatedFiles__lock = threading.Lock()
 
     def parseSetting(self, key, value):
         """
@@ -100,58 +106,7 @@ class opentracker(client):
 
         @param  host            The host on which to prepare the client.
         """
-        # The default implementations takes care of creating client specific directories on the host, as well as
-        # compilation of the client on the host, if needed. Be sure to call it.
         client.prepareHost(self, host)
-        # The client specific directories on the remote host can be found using self.getClientDir(...) and
-        # self.getLogsDir(...)
-        #
-        # TODO: Prepare the host for running your client. This usually includes uploading the binaries from local,
-        # or moving some things around remotely. The end goal of this method is that the method start() works, no
-        # matter how the client was built or sent. Four cases are to be considered:
-        #   -   The client binaries are available locally; they have to be sent to the remote host
-        #   -   The client sources have been built locally; the binaries have to be sent to the remote host
-        #   -   The client binaries are available remotely; no action should be required
-        #   -   The client sources have been built remotely; the binaries may need to be moved around
-        # The thing to keep in mind is that, when using the default implementation with the runner script made by
-        # prepareExecution(...), the script will first change directory as follows:
-        #   -   Local binaries or sources:      self.getClientDir( host, False )
-        #   -   Remote binaries or sources:     self.sourceObj.remoteLocation()
-        # From that point on the client should be runnable with the same commands. This will most likely mean that
-        # the client binaries have to end up in the same place (relative to the used remote directory), no matter
-        # where they came from (local or remote) and how they were provided at first (binary or source).
-        #
-        # Example:
-        #
-        #   if self.isInCleanup():      # Don't make a mess while cleaning up
-        #       return
-        #   if self.isRemote:
-        #       # If any fiels on the remote host need to be moved around, be sure to do so here.
-        #       # Example that moves the binary if it was built from source on the remote host:
-        #       host.sendCommand( '[ -d "{0}/src" ] && mv "{0}/src/yourClientBinary" "{0}/"'.format(
-        #                                   self.sourceObj.remoteLocation(self, host) ) )
-        #   else:
-        #       # Send your client files here, either from the source location (where building took place) or the
-        #       # location where the binaries already reside.
-        #
-        #       # The following is a version for a simple, single-binary client, which is compiled in-place:
-        #       # host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
-        #       #                '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #
-        #       # A more extended example, which takes the source structure into account:
-        #       if os.path.exists( '{0}/src'.format( self.sourceObj.localLocation(self) ) ):
-        #           host.sendFile( '{0}/src/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
-        #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #       else:
-        #           host.sendFile( '{0}/yourClientBinary'.format( self.sourceObj.localLocation(self) ),
-        #                          '{0}/yourClientBinary'.format( self.getClientDir( host ) ), True )
-        #
-        # This is quite an elaborate method, but it is important to take into account all four cases. That will
-        # ensure that your client runs well. If you need extra files available on the remote host you can copy them
-        # here as well, of course, and/or check their availability to make sure the client will run.
-        #
-        if self.isRemote:
-            host.sendFile( os.path.join( self.sourceObj.localLocation(self), 'opentracker' ), '{0}/opentracker'.format(self.getClientDir(host)), True )
         
         if not self.hasUpdatedTrackers and len( self.changeTrackers ) > 0:
             self.hasUpdatedTrackers = True
@@ -162,8 +117,37 @@ class opentracker(client):
             for f in self.changeTrackers:
                 if f not in self.scenario.getObjectsDict( 'file' ):
                     raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the latter was never declared.".format( self.name, f ) )
-                
-                
+                if not self.scenario.getObjectsDict( 'file' )[f].metaFile or not os.path.exists( self.scenario.getObjectsDict( 'file' )[f].metaFile ) or os.path.isdir( self.scenario.getObjectsDict( 'file' )[f].metaFile ):
+                    raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter does not exist or is a directory.".format( self.name, f ) )
+            for f in self.changeTrackers:
+                _, tmpFile = tempfile.mkstemp('.torrent')
+                try:
+                    self.tempUpdatedFiles__lock.acquire()
+                    if self.isInCleanup():
+                        os.remove( tmpFile )
+                        return
+                    self.tempUpdatedFiles.append( tmpFile )
+                finally:
+                    self.tempUpdatedFiles__lock.release()
+                fobj = open( self.scenario.getObjectsDict( 'file' )[f].metaFile, 'r' )
+                try:
+                    torrentdata = fobj.read( )
+                finally:
+                    fobj.close()
+                torrentdict = external.bencode.bdecode( torrentdata )
+                if not torrentdict or not 'info' in torrentdict:
+                    raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter seems not to be a .torrent file." )
+                torrentdict['announce'] = newTracker
+                if 'announce-list' in torrentdict:
+                    torrentdict['announce-list'] = [[newTracker]]
+                torrentdata = external.bencode.bencode( torrentdict )
+                fobj = open( tmpFile, 'w' )
+                try:
+                    fobj.write( torrentdata )
+                    fobj.flush()
+                finally:
+                    fobj.close()
+                self.scenario.getObjectsDict( 'file' )[f].metaFile = tmpFile
 
     # That's right, 2 arguments less.
     # pylint: disable-msg=W0221
@@ -176,43 +160,7 @@ class opentracker(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        # The default implementation will create the client/execution specific directories, which can be found using
-        # self.getExecutionClientDir(...) and self.getExecutionLogDir(...)
-        #
-        # The default implemenation can also build a runner script that can be used with the default start(...)
-        # implementation. Subclassers are encouraged to use this possibility when they don't need much more elaborate
-        # ways of running their client.
-        #
-        # The runner script can be created in two ways, both are well documented at client.prepareExecution(...).
-        # This example below shows the most common use:
-        #
-        #   client.prepareExecution(self, execution, simpleCommandLine =
-        #       "./yourClientBinary > {0}/log.log".format( self.getExecutionLogDir( execution ) ))
-        #
-        # This example is a bit more elaborate; the complexCommandLine is to be used if any but the last command
-        # in the sequence takes significant time to run:
-        #
-        #   allParams = '{0} --logdir {1}'.format( self.extraParameters, self.getExecutionLogDir( execution ) )
-        #   if self.protocolVersion:
-        #       allParams += " --prot {0}".format(self.protocolVersion)
-        #   if self.postFixParams:
-        #       allParams += " {0}".format(self.postFixParams)
-        #   if execution.isSeeder():
-        #       client.prepareExecution(self, execution, simpleCommandLine =
-        #           "./yourClientBinary --seed {0}".format( allParams ) )
-        #   else:
-        #       client.prepareExecution(self, execution, complexCommandLine =
-        #           "./yourClientBinary --leech {0} && ./yourClientBinary --seed {0}".format( allParams ) )
-        #
-        # Be sure to take self.extraParameters and your own parameters into account when building the command line
-        # for the runner script. Also don't forget to make sure logs end up where you want them.
-        #
-        # The following implementation assumes you won't be using the runner script and is hence highly discouraged.
-        #
-        # TODO: Prepare the execution/client specific part on the host; specifically subclassers are encouraged to
-        # use either the simpleCommandLine or complexCommandLine named arguments to client.prepareExecution(...) to
-        # have a runner script built that will be used by the default implementation of start(...).
-        client.prepareExecution(self, execution)
+        client.prepareExecution(self, execution, simpleCommandLine="./opentracker -p {0} -P {0}".format( self.port ) )
     # pylint: enable-msg=W0221
 
     def start(self, execution):
@@ -227,43 +175,7 @@ class opentracker(client):
 
         @param  execution       The execution this client is to be run for.
         """
-        # The default implementation is very well usable is you have created a runner script in
-        # prepareExecution(...). If not, this is where you should run your client. A small example that assumes a lot
-        # of preparation has been done elsewhere (which is not done in the examples above):
-        #
-        #   try:
-        #       self.pid__lock.acquire()
-        #       if self.isInCleanup():
-        #           self.pid__lock.release()
-        #           return
-        #       if execution.getNumber() in self.pids:
-        #           self.pid__lock.release()
-        #           raise Exception( "Don't run twice!" )
-        #       resp = execution.host.sendCommand(
-        #           'cd "{0}"; ./yourClientBinary --pidFile "{1}/pidFile" &; cat "{1}/pidFile"'.format(
-        #               self.getClientDir( execution.host ), self.getExecutionClientDir( execution ) ) )
-        #       m = re.match( "^([0-9][0-9]*)", resp )
-        #       if not m:
-        #           raise Exception( "Failure to start... or get PID, anyway." )
-        #       self.pids[execution.getNumber()] = m.group( 1 )
-        #   finally:
-        #       try:
-        #           self.pid__lock.release()
-        #       except RuntimeError:
-        #           pass
-        #
-        # As you can see the start(...) method quite quickly becomes quite elaborate with quite some possibilities
-        # for errors. That is why all of the above is highly discouraged: please use the simpleCommandLine or
-        # complexCommandLine named parameters to client.prepareExecution(...) in your implementation of
-        # prepareExecution(...) above and just use the following implementation:
         client.start(self, execution)
-        #
-        # TODO: If you really, really must: override this implementation. Your risk.
-        #
-
-    # TODO: If you really need a different detection whether your client is running, override isRunning(...)
-
-    # TODO: If you can kill your client more effectively than sending a signal, override kill(...)
 
     def retrieveLogs(self, execution, localLogDestination):
         """
@@ -274,12 +186,6 @@ class opentracker(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        # TODO: Implement this in order to get your logs out. Example:
-        #
-        #   execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ),
-        #       '{0}/log.log'.format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
-        #
-        # The use of the execution.getRunnerConnection() connection prevents errors with multi-threading.
         pass
 
     def cleanupHost(self, host, reuseConnection = None):
@@ -291,11 +197,6 @@ class opentracker(client):
         @param  host            The host on which to clean up the client.
         @param  reuseConnection If not None, force the use of this connection for command to the host.
         """
-        # Just calling the default implementation is usually enough, here. Be sure to be symmetrical with
-        # prepareHost(...).
-        #
-        # TODO: Add any cleanup on the host you might need.
-        #
         client.cleanupHost(self, host, reuseConnection)
 
     def cleanup(self):
@@ -304,10 +205,14 @@ class opentracker(client):
 
         The default calls any required cleanup on the sources.
         """
-        #
-        # TODO: Implement this if needed, be symmetrical with prepare(...)
-        #
         client.cleanup(self)
+        try:
+            self.tempUpdatedFiles__lock.acquire()
+            for tmpFile in self.tempUpdatedFiles:
+                os.remove( tmpFile )
+            self.tempUpdatedFiles = []
+        finally:
+            self.tempUpdatedFiles__lock.release()
 
     def trafficProtocol(self):
         """
@@ -323,9 +228,6 @@ class opentracker(client):
 
         @return The protocol the client uses for communication.
         """
-        #
-        # TODO: Reimplement this if possible.
-        #
         return client.trafficProtocol(self)
 
     def trafficInboundPorts(self):
@@ -343,10 +245,7 @@ class opentracker(client):
 
         @return A list of all ports on which incoming traffic can come, or [] if no such list can be given.
         """
-        #
-        # TODO: Reimplement this if possible
-        #
-        return client.trafficInboundPorts(self)
+        return [self.port]
 
     def trafficOutboundPorts(self):
         """
@@ -363,12 +262,55 @@ class opentracker(client):
 
         @return A list of all ports from which outgoing traffic can come, or [] if no such list can be given.
         """
-        #
-        # TODO: Reimplement this if possible
-        #
-        return client.trafficOutboundPorts(self)
+        return [self.port]
+
+    def getBinaryLayout(self):
+        """
+        Return a list of binaries that need to be present on the server.
+        
+        Add directories to be created as well, have them end with a /.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    List of binaries.
+        """
+        return ['opentracker']
+    
+    def getSourceLayout(self):
+        """
+        Return a list of tuples that describe the layout of the source.
+        
+        Each tuple in the list corresponds to (sourcelocation, binarylocation),
+        where the binarylocation is one of the entries returned by getBinaryLayout().
+        
+        Each entry in getBinaryLayout() that is not directory needs to be present.
+        
+        Return None to handle the uploading or moving yourself.
+        
+        @return    The layout of the source.
+        """
+        return [('opentracker', 'opentracker')]
+
+    def getExtraUploadLayout(self):
+        """
+        Returns a list of local files that are always uploaded to the remote host.
+        
+        Each tuple in the list corresponds to (locallocation, remotelocation),
+        where the first is the location of the local file and the second is the
+        relative location of the file on the remote host (relative to the location
+        of the client's directory).
+        
+        Add directories to be created as well, have their locallocation be '' and 
+        have their remotelocation end with a /.
+                
+        This method is especially useful for wrappers and the like.
+        
+        Return None to handle the uploading yourself.
+        
+        @return    The files that are always to be uploaded.
+        """
+        return None
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
         return "2.0.0"
