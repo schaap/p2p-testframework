@@ -249,6 +249,46 @@ class host(coreObject):
         self.clients = []
         self.files = []
         self.seedingFiles = []
+    
+    def copyhost(self, other):
+        """
+        Creates a copy of the other host in this host.
+        
+        Copies should not include host object specific information, such as cached objects or references. 
+
+        DO NOT rely on this function for generic use. It is just here to support subclasses that wish to
+        implement it. In general it can be assumed it is not fully implemented by subclasses and hence
+        broken to call it. 
+        
+        The tempDirectory parameter will be None. 
+        The tcObj parameter will be loaded by creating a new object of the same class.
+        The connections list will be empty.
+        The client, files and seedingFiles connections will be empty.
+        """
+        self.remoteDirectory = other.remoteDirectory
+        self.tc = other.tc
+        self.tcInterface = other.tcInterface
+        self.tcDown = other.tcDown
+        self.tcDownBurst = other.tcDownBurst
+        self.tcUp = other.tcUp
+        self.tcUpBurst = other.tcUpBurst
+        self.tcLoss = other.tcLoss
+        self.tcCorruption = other.tcCorruption
+        self.tcDuplication = other.tcDuplication
+        self.tcDelay = other.tcDelay
+        self.tcJitter = other.tcJitter
+        self.tcParamsSet = other.tcParamsSet
+        if other.tcObj:
+            self.tcObj = other.tcObj.__class__()
+        if isinstance( other.tcInboundPortList, list ):
+            self.tcInboundPortList = list(other.tcInboundPortList)
+        else:
+            self.tcInboundPortList = other.tcInboundPortList
+        if isinstance( other.tcOutbountPortList, list ):
+            self.tcOutboundPortList = list(other.tcOutbountPortList)
+        else:
+            self.tcOutboundPortList = other.tcOutbountPortList
+        self.tcProtocol = other.tcProtocol
 
     def parseSetting(self, key, value):
         """

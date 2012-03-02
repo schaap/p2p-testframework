@@ -105,16 +105,14 @@ class sshParamikoConnectionObject(countedConnectionObject):
     """
     
     client = None
-    interactiveChannel = None
     io = None
     
     sftpChannel = None
     sftp__lock = None
     
-    def __init__(self, client, interactiveChannel, io ):
+    def __init__(self, client, io ):
         countedConnectionObject.__init__(self)
         self.client = client
-        self.interactiveChannel = interactiveChannel
         self.sftp__lock = threading.Lock()
         self.io = io
     
@@ -128,15 +126,9 @@ class sshParamikoConnectionObject(countedConnectionObject):
                 self.sftpChannel = None
         finally:
             self.sftp__lock.release()
-            try:
-                self.interactiveChannel.shutdown( 2 )
-                self.interactiveChannel.close()
-                del self.interactiveChannel
-                self.interactiveChannel = None
-            except Exception:
-                self.client.close()
-                del self.client
-                self.client = None
+            self.client.close()
+            del self.client
+            self.client = None
     
     def write(self, msg):
         print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
@@ -287,14 +279,12 @@ class ssh(host):
                 raise Exception( "Bad host key for host {0}. Please make sure the host key is already known to the system. The easiest way is usually to just manually use ssh to connect to the remote host once and save the host key.".format( self.name ) )
             except paramiko.AuthenticationException:
                 raise Exception( "Could not authenticate to host {0}. Please make sure that authentication can proceed without user interaction, e.g. by loading an SSH agent or using unencrypted keys.".format( self.name ) )
-            chan = client.invoke_shell()
-            chan.set_combine_stderr( True )
             trans = client.get_transport()
             chan2 = trans.open_session()
             chan2.set_combine_stderr( True )
             chan2.exec_command( 'bash -l' )
             io = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
-            obj = sshParamikoConnectionObject( client, chan, io )
+            obj = sshParamikoConnectionObject( client, io )
         else:
             args = ['{0}'.format(sshFallbackConnectionObject.getSSHProgram()), '-l', self.user]
             if self.port:

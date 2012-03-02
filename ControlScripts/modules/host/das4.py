@@ -1,8 +1,9 @@
 # These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
 # the Campaign data object and the host parent class.
-from core.parsing import *
+from core.parsing import isPositiveInt
 from core.campaign import Campaign
 from core.host import host, countedConnectionObject
+import core.execution
 
 import threading
 import errno
@@ -132,14 +133,14 @@ else:
 def getHostnameByIP(ip):
     import socket
     socket.setdefaulttimeout(10)
-    return socket.gethostbyaddr("69.59.196.211")[0]
+    return socket.gethostbyaddr(ip)[0]
 # ==== /getHostnameByIP(ip)  
    
 class das4ConnectionObject(countedConnectionObject):
     """
     SSH connection object for paramiko connections
     
-    This connection object is copied here from host:ssh.
+    This connection object is a small adaptation from the one in host:ssh.
     """
     
     client = None
@@ -148,13 +149,15 @@ class das4ConnectionObject(countedConnectionObject):
     
     sftpChannel = None
     sftp__lock = None
+    sftpScriptname = None
     
-    def __init__(self, client, interactiveChannel, io ):
+    def __init__(self, client, interactiveChannel, io, sftpScriptName ):
         countedConnectionObject.__init__(self)
         self.client = client
         self.interactiveChannel = interactiveChannel
         self.sftp__lock = threading.Lock()
         self.io = io
+        self.sftpScriptname = sftpScriptName
     
     def close(self):
         countedConnectionObject.close(self)
@@ -193,7 +196,11 @@ class das4ConnectionObject(countedConnectionObject):
             self.sftp__lock.acquire()
             if self.sftpChannel:
                 return True
-            self.sftpChannel = self.client.open_sftp()
+            # Slightly more elaborate than client.open_sftp(), since we need special handling
+            t = self.client.get_transport()
+            chan = t.open_session()
+            chan.invoke_subsystem(self.sftpScriptname)
+            self.sftpChannel = paramiko.SFTPClient(chan)
         finally:
             self.sftp__lock.release()
         return False
@@ -275,22 +282,59 @@ class das4(host):
     module will actually split itself into one host per node. This means that, after setup, you will end up with
     each node as a separate host and they will hence be used as single hosts.
     
+    For the reservation the requests from all DAS4 host objects will be taken together and put into one big
+    request. The advantage of this approach is that it makes sure that all hosts are available at the same time.
+    For this reason it is also NOT supported to have multiple DAS4 host objects with different headnodes in the
+    same scenario. In other words: whenever you have multiple DAS4 host objects in the same scenario, make sure
+    they have the same headnode configured.
+    
     Traffic control on the DAS4 is currently not supported. If you try and use it, anyway, results are
     unpredictable. Most likely it will break the moment any DAS4 node needs to fall back to full IP-range based
     traffic control; thereby also breaking it for other users. For your convenience and experimentation no
     warnings or errors will pop up if you try, though.  
     """
-    # TODO: Update description for automated lookup test method
 
-    # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
-    # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
-    # and bail out if that returns True.
+    headNode = None                 # Address of the headNode to use
+    nNodes = None                   # Number of nodes to reserve
+    reserveTime = None              # Number of seconds to reserve the nodes
+    user = None                     # Username to use as login name on the DAS4
+    headNode_override = False       # Set to True to disable headNode validity checks
     
-    headNode = None             # Address of the headNode to use
-    nNodes = None               # Number of nodes to reserve
-    reserveTime = None          # Number of seconds to reserve the nodes
-    user = None                 # Username to use as login name on the DAS4
-    headNode_override = False   # Set to True to disable headNode validity checks
+    masterConnection = None         # The master connection to the headnode; all slave hosts will connect through port
+                                    # forwards over this connection.
+    masterIO = []                   # Will be an array of length 2 with the input and output streams for masterConnection
+    
+    tempPersistentDirectory = None  # String with the temporary persistent directory on the headnode
+    reservationID = None            # Reservation identifier
+    nodeSet = []                    # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
+    slaves = []                     # list of slaves of this master node, None for non-master nodes
+    
+    # DAS4 host objects come in three types:
+    # - supervisor
+    # - master
+    # - slave
+    #
+    # Each master is also a slave, the supervisor is also a master (and hence also a slave).
+    # The master hosts are the ones declared in the scenario files. Each host object from the scenario files of
+    # type das4 will get one host object that will become a master host. The master hosts have their headNode,
+    # nNodes and reserveTime parameters set, indicating which headNode they wish to use and how many nodes to
+    # request. The supervisor host is the first master host that starts preparation and supervises the master
+    # connection and the reservation of the nodes. The slave hosts are the final connections to the nodes
+    # themselves, one slave host for each node. The slave hosts are mostly created by the master hosts. 
+    #
+    # The supervisor node will first take together all requests from DAS4 hosts and pass them as one big request
+    # to the headnode. It will retrieve the reservationID from that and will wait for the nodes to become
+    # available. The nodes are then divided over the master hosts in their nodeSet. The master hosts then make
+    # the slave hosts for each node they have (except the first which they serve themselves).
+    #
+    # The difference between the hosts can be detected as follows:
+    #    host type                   nNodes          reservationID       len(nodeSet)    simple test
+    #    first unprepared master     >= 1            None                None            if not self.nodeSet:
+    #    supervisor                  >= 1            string              nNodes          if self.reservationID:
+    #    master                      >= 1            None                nNodes          if self.nNodes:
+    #    slave                       None            None                1               if not self.nNodes:
+    # Note the special host type 'first unprepared master', here. This is the master host that will be upgraded
+    # to supervisor. The simple test gives the simplest test that should work.
 
     def __init__(self, scenario):
         """
@@ -299,6 +343,9 @@ class das4(host):
         @param  scenario        The ScenarioRunner object this host object is part of.
         """
         host.__init__(self, scenario)
+        self.masterIO = None
+        self.nodeSet = None
+        self.slaves = None
 
     def parseSetting(self, key, value):
         """
@@ -350,7 +397,7 @@ class das4(host):
     def checkSettings(self):
         """
         Check the sanity of the settings in this object.
-
+empty
         This method is called after all calls to parseSetting(...) have been done.
         Any defaults may be set here as well.
 
@@ -386,6 +433,31 @@ class das4(host):
                     self.headNode = 'fs5.das4.astron.nl'
             if not self.headNode:
                 raise Exception( "No headnode was specified for host {0} and this host was not detected to be in one of the hosting networks. Please specify a headnode.")
+    
+    #
+    # General flow:
+    # - prepare
+    #        Master only:
+    #            Create connection to headnode
+    #            Reserve hosts
+    #            Create port forwards for all nodes 
+    #            Create all slave host objects and set local slave
+    #        set temporary bogus self.remoteDirectory if none was specified
+    #        host.prepare() to setup a new connection
+    #        if the bogus remote dir was used, create a real one with DAS4-specific params, place in self.tempDirectory
+    #
+    # - setupNewConnection
+    #        Always slave connection
+    # - sendX:
+    #        Much like host:ssh
+    # - cleanup
+    #        host.cleanup()
+    #        Master only:
+    #            Call .cleanup() on all slaves before proceeding
+    #            Close all port forwards
+    #            Cancel reservation
+    #            Close master connection
+    #
 
     def setupNewConnection(self):
         """
@@ -399,12 +471,38 @@ class das4(host):
 
         @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        # Be sure to include the new connection in the self.connections list after acquiring self.connections__lock
-        raise Exception( "Not implemented" )
+        if self.isInCleanup():
+            return
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        try:
+            client.connect( self.headNode, username = self.user )
+        except paramiko.BadHostKeyException:
+            raise Exception( "Bad host key for the headnode of host {0}. Please make sure the host key is already known to the system. The easiest way is usually to just manually use ssh to connect to the remote host once and save the host key.".format( self.name ) )
+        except paramiko.AuthenticationException:
+            raise Exception( "Could not authenticate to the headnode of host {0}. Please make sure that authentication can proceed without user interaction, e.g. by loading an SSH agent or using unencrypted keys.".format( self.name ) )
+        trans = client.get_transport()
+        chan2 = trans.open_session()
+        chan2.set_combine_stderr( True )
+        chan2.exec_command( 'ssh {0}'.format( self.nodeSet[0] ) )
+        io = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
+        obj = das4ConnectionObject( client, io, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ) )
+        try:
+            self.connections__lock.acquire()
+            if self.isInCleanup():
+                obj.close()
+                return
+            self.connections.append( obj )
+        finally:
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
+        # The 'cd' below is absolutely necessary to make sure that automounts and stuff work correctly
+        res = self.sendCommand('cd; echo "READY"', obj )
+        if not res[-5:] == "READY":
+            raise Exception( "Connection to host {0} seems not to be ready after it has been made. Reponse: {1}".format( self.name, res ) )
+        return obj
 
     def closeConnection(self, connection):
         """
@@ -417,15 +515,7 @@ class das4(host):
 
         @param  The connection to be closed.
         """
-        # TODO: Actually close the connection. Then call host.closeConnection(connection). Example:
-        #
-        #    FIXME: WRITE EXAMPLE
-        #
-        # Always include the next call:
         host.closeConnection(self, connection)
-
-    # TODO: If you really must you can override getConnection. This is needed in case your connection object
-    # is not a subclass of core.host.connectionObject. There is no real need for that, though.
 
     def sendCommand(self, command, reuseConnection = True):
         """
@@ -438,16 +528,24 @@ class das4(host):
 
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
-        # TODO: Implement this! Example:
-        #
-        #   connection = None
-        #   try:
-        #       connection = self.getConnection( reuseConnection )
-        #   FIXME: WRITE MORE EXAMPLE
-        #   finally:
-        #       self.releaseConnection( reuseConnection, connection )
-        #
-        raise Exception( "Not implemented" )
+        connection = None
+        try:
+            print "DEBUG: Host {0} entered sendCommand".format( self.name )
+            connection = self.getConnection(reuseConnection)
+            print "DEBUG: Host {0} got lock in sendCommand on connection {1}".format( self.name, connection.getIdentification() )
+            # Send command
+            connection.write( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            # Read output of command
+            res = ''
+            line = connection.readline()
+            while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
+                res += line
+                line = connection.readline()
+            # Return output (ditch the last trailing \n)
+            print "DEBUG: Host {0} returning from sendCommand with connection {1}".format( self.name, connection.getIdentification() )
+            return res.strip()
+        finally:
+            self.releaseConnection(reuseConnection, connection)
 
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -462,13 +560,76 @@ class das4(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        raise Exception( "Not implemented" )
-    
-    # TODO: If you have a more effective way of sending multiple files at once, override sendFiles as well.
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            newConnection = connection.createSFTPChannel()
+            try:
+                sftp = connection.sftpChannel
+                if das4ConnectionObject.existsRemote(sftp, remoteDestinationPath):
+                    if not overwrite: 
+                        raise Exception( "Sending file {0} to {1} on host {2} without allowing overwrite, but the destination already exists".format( localSourcePath, remoteDestinationPath, self.name ) )
+                    elif das4ConnectionObject.isRemoteDir(sftp, remoteDestinationPath):
+                        raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
+                if self.isInCleanup():
+                    return
+                sftp.put( localSourcePath, remoteDestinationPath )
+                sftp.chmod( remoteDestinationPath, os.stat(localSourcePath).st_mode )
+            finally:
+                if newConnection:
+                    connection.removeSFTPChannel()
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+
+    def sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection = True):
+        """
+        Sends a directory to the remote host.
+
+        This will recursively send the local directory and all its contents to the remote host.
+
+        Example:    sendFiles( '/home/me/myLocalDir', '/tmp/myTmpDir/newRemoteDir' )
+        If newRemoteDir does not already exist then it will be created. A file /home/me/myLocalDir/x will end up
+        on the remote host as /tmp/myTmpDir/newRemoteDir/x .
+
+        This method will always overwrite existing files.
+
+        Regarding reuseConnection it is possible the value may be ignored: a new connection may be needed for file transfer, anyway.
+
+        The default implementation will recursively call sendFile or sendFiles on the contents of the
+        local directory.
+
+        @param  localSourcePath         Path to the local directory that is to be sent.
+        @param  remoteDestinationPath   Path to the destination directory on the remote host.
+        @param  reuseConnection         True to try and reuse the default connection for sending the file.
+                                        False to build a new connection for sending this file and use that.
+                                        A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+        """
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            newConnection = connection.createSFTPChannel()
+            try:
+                sftp = connection.sftpChannel
+                paths = [(localSourcePath, remoteDestinationPath)]
+                while len(paths) > 0:
+                    localPath, remotePath = paths.pop()
+                    if self.isInCleanup():
+                        return
+                    if os.path.isdir( localPath ):
+                        if not das4ConnectionObject.existsRemote(sftp, remotePath):
+                            sftp.mkdir( remotePath )
+                            sftp.chmod( remotePath, os.stat(localPath).st_mode )
+                        paths += [(os.path.join( localPath, path ), '{0}/{1}'.format( remotePath, path )) for path in os.listdir( localPath )]
+                    else:
+                        if das4ConnectionObject.existsRemote(sftp, remotePath) and das4ConnectionObject.isRemoteDir(sftp, remotePath):
+                            raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localPath, remotePath, self.name ) )
+                        sftp.put( localPath, remotePath )
+                        sftp.chmod( remotePath, os.stat(localPath).st_mode )
+            finally:
+                if newConnection:
+                    connection.removeSFTPChannel()
+        finally:
+            self.releaseConnection(reuseConnection, connection)
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -483,11 +644,46 @@ class das4(host):
                                         False to build a new connection for sending this file and use that.
                                         A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
         """
-        # TODO: Implement this! Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
-        raise Exception( "Not implemented" )
+        if os.path.exists( localDestinationPath ):
+            if not overwrite:
+                raise Exception( "Getting file {0} to {1} from host {2} without allowing overwrite, but the destination already exists".format( remoteSourcePath, localDestinationPath, self.name ) )
+            elif os.path.isdir( localDestinationPath ):
+                raise Exception( "Getting file {0} to {1} from host {2} with overwrite, but the destination already exists and is a directory".format( remoteSourcePath, localDestinationPath, self.name ) )
+        if self.isInCleanup():
+            return
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            newConnection = connection.createSFTPChannel()
+            try:
+                sftp = connection.sftpChannel
+                if self.isInCleanup():
+                    return
+                sftp.get( remoteSourcePath, localDestinationPath )
+            finally:
+                if newConnection:
+                    connection.removeSFTPChannel()
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+
+    def sendMasterCommand(self, command):
+        """
+        Sends a bash command to the remote host.
+
+        @param  command             The command to be executed on the remote host.
+
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
+        """
+        # Send command
+        self.masterIO[0].write( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+        # Read output of command
+        res = ''
+        line = self.masterIO[1].readline()
+        while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
+            res += line
+            line = self.masterIO[1].readline()
+        # Return output (ditch the last trailing \n)
+        return res.strip()
 
     def prepare(self):
         """
@@ -495,13 +691,207 @@ class das4(host):
 
         The default implementation simply ensures the existence of a remote directory.
         """
-        # TODO: Prepare anything you may need before being able to set up a connection, first.
-        #
-        # Then do this call, and definitely do this call unless you know what you're doing:
+        if self.isInCleanup():
+            return
+        if not self.nodeSet:
+            # Supervisor host
+            # Check sanity of all DAS4 hosts
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, 'das4')]:
+                if h.headNode != self.headNode:
+                    raise Exception( "When multiple DAS4 host objects are declared, they must all share the same headnode. Two different headnodes have been found: {0} and {1}. This is unsupported.".format( self.headNode, h.headNode ) )
+            # Create connection to headnode
+            self.masterConnection = paramiko.SSHClient()
+            self.masterConnection.load_system_host_keys()
+            try:
+                self.masterConnection.connect( self.headNode, username = self.user )
+            except paramiko.BadHostKeyException:
+                raise Exception( "Bad host key for host {0}. Please make sure the host key of the headnode is already known to the system. The easiest way is usually to just manually use ssh to connect to the headnode once and save the host key.".format( self.name ) )
+            except paramiko.AuthenticationException:
+                raise Exception( "Could not authenticate to host {0}. Please make sure that authentication can proceed without user interaction, e.g. by loading an SSH agent or using unencrypted keys.".format( self.name ) )
+            trans = self.masterConnection.get_transport()
+            chan2 = trans.open_session()
+            chan2.set_combine_stderr( True )
+            chan2.exec_command( 'bash -l' )
+            self.masterIO = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
+            self.sendMasterCommand('module load prun')
+            # Reserve nodes
+            totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, 'das4')])
+            maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, 'das4')])
+            if self.isInCleanup():
+                self.masterConnection.close()
+                del self.masterConnection
+                self.masterConnection = None
+                return
+            self.reservationID = self.sendMasterCommand('preserve -1 -# {0} {1} | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):$/\\1/" | grep -E "^[[:digit:]]*$"'.format( totalNodes, maxReserveTime ) )
+            if self.reservationID == '' or isPositiveInt( self.reservationID ):
+                self.masterConnection.close()
+                del self.masterConnection
+                self.masterConnection = None
+                raise Exception
+            print "Reservation on DAS4 made for {0} nodes, waiting for availability".format( totalNodes )
+            # Wait for nodes
+            # Please note how the following command is built: one string per line, but all these strings will be concatenated.
+            # The whitespace is *purely* readability and *not* present in the resulting command. Hence the "; " at the end of each of these strings. 
+            res = self.sendMasterCommand( (
+                    "ERR=0; "
+                    'while ! qstat -j {0} | grep "usage" {devnull}; do '
+                        'if ! qstat -j {0} {devnull}; then '
+                            'echo "ERR"; ERR=1; break; '
+                        'fi; '
+                        'sleep 1; '
+                    'done; '
+                    'if [ $ERR -eq 0 ]; then '
+                        'while ! preserve -llist | grep -E "^{0}[[:space:]]" | sed -e "s/^{d}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}r{s}{d}{s}\\(.*\\)$"/\\1/" | grep -v -E "^{0}[[:space:]]" {devnull}; do '
+                            'if ! qstat -j {0} {devnull}; then '
+                                'echo "ERR"; ERR=1; break; '
+                            'fi; '
+                            'sleep 1; '
+                        'done; '
+                    'fi; '
+                    'if [ $ERR -eq 0 ]; then '
+                        'echo "OK"; '
+                    'fi'
+                    ).format( self.reservationID,
+                                  devnull = '>/dev/null 2>/dev/null',
+                                  s = '[[:space:]][[:space:]]*', 
+                                  d = '[[:digit:]][[:digit:]]*', 
+                                  ns = '[^[:space:]][^[:space:]]*' ) )
+            if res != "OK":
+                raise Exception( "Nodes for host {0} never became available and the reservation seems to be gone as well.".format( self.name ) )
+            if self.isInCleanup():
+                return
+            # Get the nodes
+            nodes = self.sendMasterCommand( 'preserve -llist | grep -E "^{0}[[:space:]]" | sed -e "s/^{d}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}r{s}{d}{s}\\(.*\\)$/\\1/"'.format(
+                                              self.reservationID,
+                                              s = '[[:space:]][[:space:]]*', 
+                                              d = '[[:digit:]][[:digit:]]*', 
+                                              ns = '[^[:space:]][^[:space:]]*' ) )
+            if nodes == '':
+                raise Exception( "Nodes for host {0} could not be extracted from the reservation.".format( self.name ) )
+            wrongStart = "{0} ".format( self.reservationID )
+            if nodes[:len(wrongStart)] == wrongStart:
+                raise Exception( "Nodes for host {0} could not be extracted from the reservation. Nodes found (and presumed to be incorrect): {1}.".format( self.name, nodes ) )
+            nodeList = nodes.split()
+            # See if we can reach all nodes
+            for node in nodeList:
+                if self.isInCleanup():
+                    return
+                res = self.sendMasterCommand( 'if ! qstat -j {1} > /dev/null 2> /dev/null; then echo "ERR"; else ssh -n -T -o BatchMode=yes {0} "echo \\"OK\\""; fi'.format( node, self.reservationID ) ) 
+                if res.splitlines()[-1] != "OK":
+                    raise Exception( "Can't connect to a node of host {0}. Observed output: {1}".format( self.name, res ) )
+            print "Nodes on DAS4 available: {0}".format( nodes )
+            # Divide all nodes over the master hosts
+            counter = 0
+            for h in [h for h in self.scenario.getObjects('host') if isinstance( h, 'das4' )]:
+                nextCounter = counter + h.nNodes
+                if nextCounter > len(nodeList):
+                    raise Exception( "Handing out nodes from host {0} to the DAS4 host objects. Trying to hand out nodes numbered {1} to {2} (zero-bases), but there are only {3} nodes reserved. Insanity!".format( self.name, counter, nextCounter, totalNodes ) )
+                h.nodeSet = nodeList[counter:nextCounter]
+                h.masterConnection = self.masterConnection
+                h.masterIO = self.masterIO
+                counter = nextCounter
+            if counter != len(nodeList):
+                raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved. Insanity!".format( self.name, counter, totalNodes ) )
+            # / Supervisor host
+        if self.nNodes:
+            # Master host part 1
+            # Create temporary persistent directory, if needed
+            if self.remoteDirectory == '':
+                if self.isInCleanup():
+                    self.masterConnection.close()
+                    del self.masterConnection
+                    self.masterConnection = None
+                    return
+                self.tempPersistentDirectory = self.sendMasterCommand('mktemp -d --tempdir="`pwd`"')
+                if not self.tempPersistentDirectory or self.tempPersistentDirectory == '':
+                    self.tempPersistentDirectory = None
+                    raise Exception( "Could not create temporary persistent directory on the headnode for host {0}".format( self.name ) )
+                res = self.sendMasterCommand('[ -d "{0}" ] && echo "OK"'.format( self.tempPersistentDirectory ))
+                if res.splitlines()[-1] != "OK":
+                    res1 = self.tempPersistentDirectory
+                    self.tempPersistentDirectory = None
+                    raise Exception( "Could not verify the existence of the temporary persistent directory on the headnode for host {0}. Response: {1}. Response to the test: {2}.".format( self.name, res1, res ) )
+            # Create all slave hosts for this master host
+            self.slaves = []
+            executions = [e for e in self.scenario.getObjects('execution') if e.host == self]
+            for c in range( 1, len(self.nodeSet) ):
+                # Create slave host object
+                newObj = das4(self.scenario)
+                newObj.headNode = self.headNode
+                newObj.user = self.user
+                newObj.tempPersistentDirectory = self.tempPersistentDirectory
+                newObj.nodeSet = [self.nodeSet[c]]
+                newObj.copyhost(self)
+                newName = "{0}!{1}".format( self.name, c )
+                if newName in self.scenario.getObjectsDict('host'):
+                    raise Exception( "Insanity! DAS4 host {0} wanted to create slave for connection {1}, which would be named {2}, but a host with that name already exists!".format( self.name, c, newName ) )
+                newObj.name = newName
+                if self.isInCleanup():
+                    return
+                self.scenario.objects['host'][newObj.getName()] = newObj
+                self.slaves.append(newObj)
+                # Duplicate each execution with this host for the slave host
+                for e in executions:
+                    ne = core.execution.execution(self.scenario)
+                    ne.hostName = newName
+                    ne.clientName = e.clientName
+                    ne.fileName = e.fileName
+                    ne.parserName = e.parserName
+                    ne.seeder = e.seeder
+                    ne.resolveNames()
+                    if self.isInCleanup():
+                        return
+                    self.scenario.objects['execution'][ne.getName()] = ne
+                    if ne.client not in newObj.clients:
+                        newObj.clients.append( ne.client )
+                    if ne.file not in newObj.files:
+                        newObj.files.append( ne.file )
+                    if ne.isSeeder() and ne.file not in newObj.seedingFiles:
+                        newObj.seedingFiles.append( ne.file )
+            # Create sftp forwarding scripts
+            if self.isInCleanup():
+                return
+            res = self.sendMasterCommand('mkdir -p "{0}/das4_sftp" && echo "OK"'.format( self.getPersistentTestDir( ) ))
+            if res.splitlines()[-1] != "OK":
+                raise Exception( "Failed to create the SFTP forwarding scripts directory on the headnode of host {0}: {1}".format( self.name, res ) )
+            for node in self.nodeSet:
+                if self.isInCleanup():
+                    return
+                res = self.sendMasterCommand('echo "ssh -o BatchMode=yes -s {0} sftp" > "{1}/das4_sftp/sftp_fwd_{0}" && chmod +x "{1}/das4_sftp/sftp_fwd_{0}" && echo "OK"'.format( node, self.getPersistentTestDir( ) ) )
+                if res.splitlines()[-1] != "OK":
+                    raise Exception( "Failed to create the SFTP forwarding script for node {1} on the headnode of host {0}: {2}".format( self.name, node, res ) )
+            # / Master host part 1
+        # Slave host
+        # Prevent host.prepare(self) from creating a temp dir
+        bogusRemoteDir = False
+        if not self.remoteDirectory:
+            self.remoteDirectory = 'bogus'
+            bogusRemoteDir = True
+        # Run host.prepare(self)
+        if self.isInCleanup():
+            return
         host.prepare(self)
-        # After that you can do any other less-important host-specific preparation
-        #
-        # Usually this one call will be enough if you just need to set up the connection.
+        # Create a local storage temp dir if needed
+        if bogusRemoteDir:
+            self.remoteDirectory = None
+            if self.isInCleanup():
+                return
+            self.tempDirectory = self.sendCommand( 'mkdir -p /local/{0}; mktemp -d --tmpdir=/local/{0}'.format( self.user ) )
+            if self.tempDirectory != '':
+                testres = self.sendCommand( '[ -d "{0}" ] && [ `ls -a "{0}" | wc -l` -eq 2 ] && echo "OK"'.format( self.tempDirectory ) )
+            if self.tempDirectory == '' or testres.strip() != "OK":
+                res = self.tempDirectory
+                self.tempDirectory = None
+                raise Exception( "Could not correctly create a remote temporary directory on host {1} or could not verify it. Response: {0}\nResponse to the verification: {2}".format( res, self.name, testres ) )
+        # / Slave host
+        if self.nNodes:
+            # Master host part 2
+            # Prepare all the slave hosts
+            for s in self.slaves:
+                if self.isInCleanup():
+                    return
+                s.prepare()
+            # / Master host part 2
 
     def cleanup(self, reuseConnection = None):
         """
@@ -513,18 +903,71 @@ class das4(host):
         
         @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
-        # Be symmetrical with prepare(), clean up the less-important host-specific stuff here
-        # Then do this call, and definitely do this call unless you know what you're doing:
         host.cleanup(self, reuseConnection)
-        # TODO: Cleanup all of the host, be sure to check what has and what has not been done and needs cleanup.
-        # Don't just assume you're at the end of everything. Example:
-        #
-        #   FIXME: WRITE EXAMPLE
-        #
+        if not self.reservationID and self.masterConnection:
+            # Master host (and not supervisor)
+            for h in self.slaves:
+                if not h.isInCleanup():
+                    h.cleanup()
+            if self.tempPersistentDirectory:
+                res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
+                if res.splitlines()[-1] != "OK":
+                    del self.masterIO[0]
+                    del self.masterIO[1]
+                    self.masterIO = None
+                    del self.masterConnection
+                    self.masterConnection = None
+                    raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
+                self.tempPersistentDirectory = None
+            del self.masterIO[0]
+            del self.masterIO[1]
+            self.masterIO = None
+            del self.masterConnection
+            self.masterConnection = None
+            # / Master host
+        elif self.reservationID:
+            # Supervisor host
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, 'das4')]:
+                if not h.isInCleanup():
+                    h.cleanup()
+            self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
+            if self.tempPersistentDirectory:
+                res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
+                if res.splitlines()[-1] != "OK":
+                    del self.masterIO[0]
+                    del self.masterIO[1]
+                    self.masterIO = None
+                    self.masterConnection.close()
+                    del self.masterConnection
+                    self.masterConnection = None
+                    raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
+                self.tempPersistentDirectory = None
+            del self.masterIO[0]
+            del self.masterIO[1]
+            self.masterIO = None
+            self.masterConnection.close()
+            del self.masterConnection
+            self.masterConnection = None
+            # / Supervisor host
 
-    # TODO: If you need a separate location to store data to ensure that data survives until the end of the test,
-    # override getPersistentTestDir() and make sure to initialize correctly to have both the test dir and the
-    # persistent test dir set up on the remote host
+    def getPersistentTestDir(self):
+        """
+        Returns the path to the directory on the remote host where (temporary) files are stored for the testing
+        environment, which will remain available until the host is cleaned.
+
+        Note that persistence in this case is limited to the complete test as opposed to data being thrown away
+        at any possible moment in between commands.
+
+        During cleanup this may return None! 
+
+        The default implementation just uses self.getTestDir() and is hence under the assumption that the
+        normal test dir is persistent enough.
+
+        @return The persisten test directory on the remote host.
+        """
+        if self.tempPersistentDirectory:
+            return self.tempPersistentDirectory
+        return self.getTestDir()
 
     def getSubNet(self):
         """
@@ -532,11 +975,7 @@ class das4(host):
 
         @return The subnet of the host(s).
         """
-        # TODO: Implement this! Example:
-        #
-        #   return self.hostname
-        #
-        raise Exception( "Not implemented" )
+        return self.nodeSet[0]
 
     def getAddress(self):
         """
@@ -550,13 +989,8 @@ class das4(host):
 
         @return The address of the remote host, or '' if no such address can be given.
         """
-        # TODO: Implement this, if possible. Example:
-        #
-        #   return self.hostname
-        #
-        return ''
+        return self.nodeSet[0]
 
     @staticmethod
     def APIVersion():
-        # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version.
         return "2.0.0"
