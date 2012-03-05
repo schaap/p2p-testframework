@@ -562,7 +562,14 @@ class ScenarioRunner:
         cleanupConnections = {}
         print "Setting up cleanup connections"
         for h in self.getObjects( 'host' ):
-            cleanupConnections[h] = h.setupNewConnection()
+            try:
+                cleanupConnections[h] = h.setupNewConnection()
+                if cleanupConnections[h] is None:
+                    cleanupConnections[h] = True
+            except Exception as exc:
+                Campaign.logger.log( "Could not create cleanup connection for host {0}, exception will be discarded.\nWarning! This might mean the cleanup will partially fail.\n{1}".format( h.name, exc.__str__() ) )
+                Campaign.logger.exceptionTraceback()
+                cleanupConnections[h] = True
         print "Checking and killing clients"
         for e in self.getObjects('execution'):
             try:
@@ -576,6 +583,7 @@ class ScenarioRunner:
                     print "DEBUG: not hasStarted"
             except Exception as exc:
                 Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
+                Campaign.logger.exceptionTraceback()
         print "Cleaning up files"
         for f in self.getObjects('file'):
             try:

@@ -10,6 +10,7 @@ import errno
 import stat
 import subprocess
 import os
+import logging
 
 # ==== Paramiko is used for the SSH connections ====
 paramiko = None
@@ -144,17 +145,15 @@ class das4ConnectionObject(countedConnectionObject):
     """
     
     client = None
-    interactiveChannel = None
     io = None
     
     sftpChannel = None
     sftp__lock = None
     sftpScriptname = None
     
-    def __init__(self, client, interactiveChannel, io, sftpScriptName ):
+    def __init__(self, client, io, sftpScriptName ):
         countedConnectionObject.__init__(self)
         self.client = client
-        self.interactiveChannel = interactiveChannel
         self.sftp__lock = threading.Lock()
         self.io = io
         self.sftpScriptname = sftpScriptName
@@ -169,15 +168,9 @@ class das4ConnectionObject(countedConnectionObject):
                 self.sftpChannel = None
         finally:
             self.sftp__lock.release()
-            try:
-                self.interactiveChannel.shutdown( 2 )
-                self.interactiveChannel.close()
-                del self.interactiveChannel
-                self.interactiveChannel = None
-            except Exception:
-                self.client.close()
-                del self.client
-                self.client = None
+            self.client.close()
+            del self.client
+            self.client = None
     
     def write(self, msg):
         print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
@@ -199,7 +192,7 @@ class das4ConnectionObject(countedConnectionObject):
             # Slightly more elaborate than client.open_sftp(), since we need special handling
             t = self.client.get_transport()
             chan = t.open_session()
-            chan.invoke_subsystem(self.sftpScriptname)
+            chan.exec_command(self.sftpScriptname)
             self.sftpChannel = paramiko.SFTPClient(chan)
         finally:
             self.sftp__lock.release()
@@ -308,6 +301,7 @@ class das4(host):
     reservationID = None            # Reservation identifier
     nodeSet = []                    # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
     slaves = []                     # list of slaves of this master node, None for non-master nodes
+    bogusRemoteDir = False          # Flag to signal whether to ignore the value in self.remoteDirectory
     
     # DAS4 host objects come in three types:
     # - supervisor
@@ -473,6 +467,8 @@ empty
         """
         if self.isInCleanup():
             return
+        if not self.nodeSet or len(self.nodeSet) < 1:
+            return
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         try:
@@ -534,7 +530,7 @@ empty
             connection = self.getConnection(reuseConnection)
             print "DEBUG: Host {0} got lock in sendCommand on connection {1}".format( self.name, connection.getIdentification() )
             # Send command
-            connection.write( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
             # Read output of command
             res = ''
             line = connection.readline()
@@ -675,13 +671,16 @@ empty
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         # Send command
-        self.masterIO[0].write( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+        print "DEBUG: CONN MASTER SEND {0}".format( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+        self.masterIO[0].write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
         # Read output of command
         res = ''
         line = self.masterIO[1].readline()
+        print "DEBUG: CONN MASTER READ '{0}'".format( line )
         while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
             res += line
             line = self.masterIO[1].readline()
+            print "DEBUG: CONN MASTER READ '{0}'".format( line )
         # Return output (ditch the last trailing \n)
         return res.strip()
 
@@ -696,7 +695,7 @@ empty
         if not self.nodeSet:
             # Supervisor host
             # Check sanity of all DAS4 hosts
-            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, 'das4')]:
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
                 if h.headNode != self.headNode:
                     raise Exception( "When multiple DAS4 host objects are declared, they must all share the same headnode. Two different headnodes have been found: {0} and {1}. This is unsupported.".format( self.headNode, h.headNode ) )
             # Create connection to headnode
@@ -715,19 +714,21 @@ empty
             self.masterIO = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
             self.sendMasterCommand('module load prun')
             # Reserve nodes
-            totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, 'das4')])
-            maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, 'das4')])
+            totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, das4)])
+            maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, das4)])
             if self.isInCleanup():
                 self.masterConnection.close()
                 del self.masterConnection
                 self.masterConnection = None
                 return
             self.reservationID = self.sendMasterCommand('preserve -1 -# {0} {1} | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):$/\\1/" | grep -E "^[[:digit:]]*$"'.format( totalNodes, maxReserveTime ) )
-            if self.reservationID == '' or isPositiveInt( self.reservationID ):
+            if self.reservationID == '' or not isPositiveInt( self.reservationID ):
                 self.masterConnection.close()
                 del self.masterConnection
                 self.masterConnection = None
-                raise Exception
+                res = self.reservationID
+                self.reservationID = None
+                raise Exception( 'The reservationID as found on the DAS4 ("{0}") seems not to be a reservation ID.'.format( res ) )
             print "Reservation on DAS4 made for {0} nodes, waiting for availability".format( totalNodes )
             # Wait for nodes
             # Please note how the following command is built: one string per line, but all these strings will be concatenated.
@@ -741,7 +742,7 @@ empty
                         'sleep 1; '
                     'done; '
                     'if [ $ERR -eq 0 ]; then '
-                        'while ! preserve -llist | grep -E "^{0}[[:space:]]" | sed -e "s/^{d}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}r{s}{d}{s}\\(.*\\)$"/\\1/" | grep -v -E "^{0}[[:space:]]" {devnull}; do '
+                        'while ! preserve -llist | grep -E "^{0}[[:space:]]" | sed -e "s/^{d}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}{ns}{s}r{s}{d}{s}\\(.*\\)$/\\1/" | grep -v -E "^{0}[[:space:]]" {devnull}; do '
                             'if ! qstat -j {0} {devnull}; then '
                                 'echo "ERR"; ERR=1; break; '
                             'fi; '
@@ -782,7 +783,7 @@ empty
             print "Nodes on DAS4 available: {0}".format( nodes )
             # Divide all nodes over the master hosts
             counter = 0
-            for h in [h for h in self.scenario.getObjects('host') if isinstance( h, 'das4' )]:
+            for h in [h for h in self.scenario.getObjects('host') if isinstance( h, das4 )]:
                 nextCounter = counter + h.nNodes
                 if nextCounter > len(nodeList):
                     raise Exception( "Handing out nodes from host {0} to the DAS4 host objects. Trying to hand out nodes numbered {1} to {2} (zero-bases), but there are only {3} nodes reserved. Insanity!".format( self.name, counter, nextCounter, totalNodes ) )
@@ -796,17 +797,17 @@ empty
         if self.nNodes:
             # Master host part 1
             # Create temporary persistent directory, if needed
-            if self.remoteDirectory == '':
+            if not self.remoteDirectory:
                 if self.isInCleanup():
                     self.masterConnection.close()
                     del self.masterConnection
                     self.masterConnection = None
                     return
-                self.tempPersistentDirectory = self.sendMasterCommand('mktemp -d --tempdir="`pwd`"')
+                self.tempPersistentDirectory = self.sendMasterCommand('mktemp -d --tmpdir="`pwd`"')
                 if not self.tempPersistentDirectory or self.tempPersistentDirectory == '':
                     self.tempPersistentDirectory = None
                     raise Exception( "Could not create temporary persistent directory on the headnode for host {0}".format( self.name ) )
-                res = self.sendMasterCommand('[ -d "{0}" ] && echo "OK"'.format( self.tempPersistentDirectory ))
+                res = self.sendMasterCommand('[ -d "{0}" ] && echo "OK" || echo "ERR"'.format( self.tempPersistentDirectory ))
                 if res.splitlines()[-1] != "OK":
                     res1 = self.tempPersistentDirectory
                     self.tempPersistentDirectory = None
@@ -863,17 +864,20 @@ empty
             # / Master host part 1
         # Slave host
         # Prevent host.prepare(self) from creating a temp dir
-        bogusRemoteDir = False
+        self.bogusRemoteDir = False
         if not self.remoteDirectory:
             self.remoteDirectory = 'bogus'
-            bogusRemoteDir = True
+            self.bogusRemoteDir = True
         # Run host.prepare(self)
         if self.isInCleanup():
             return
-        host.prepare(self)
+        try:
+            host.prepare(self)
+        finally:
+            if self.bogusRemoteDir:
+                self.remoteDirectory = None
         # Create a local storage temp dir if needed
-        if bogusRemoteDir:
-            self.remoteDirectory = None
+        if self.bogusRemoteDir:
             if self.isInCleanup():
                 return
             self.tempDirectory = self.sendCommand( 'mkdir -p /local/{0}; mktemp -d --tmpdir=/local/{0}'.format( self.user ) )
@@ -906,49 +910,71 @@ empty
         host.cleanup(self, reuseConnection)
         if not self.reservationID and self.masterConnection:
             # Master host (and not supervisor)
-            for h in self.slaves:
-                if not h.isInCleanup():
-                    h.cleanup()
+            if self.slaves and len(self.slaves) > 0:
+                for h in self.slaves:
+                    if not h.isInCleanup():
+                        h.cleanup()
             if self.tempPersistentDirectory:
                 res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
                 if res.splitlines()[-1] != "OK":
-                    del self.masterIO[0]
-                    del self.masterIO[1]
+                    del self.masterIO
                     self.masterIO = None
                     del self.masterConnection
                     self.masterConnection = None
                     raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
                 self.tempPersistentDirectory = None
-            del self.masterIO[0]
-            del self.masterIO[1]
+            del self.masterIO
             self.masterIO = None
             del self.masterConnection
             self.masterConnection = None
             # / Master host
         elif self.reservationID:
             # Supervisor host
-            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, 'das4')]:
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
                 if not h.isInCleanup():
                     h.cleanup()
+            if self.slaves and len(self.slaves) > 0:
+                for h in self.slaves:
+                    if not h.isInCleanup():
+                        h.cleanup()
             self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
             if self.tempPersistentDirectory:
                 res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
                 if res.splitlines()[-1] != "OK":
-                    del self.masterIO[0]
-                    del self.masterIO[1]
+                    del self.masterIO
                     self.masterIO = None
                     self.masterConnection.close()
                     del self.masterConnection
                     self.masterConnection = None
                     raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
                 self.tempPersistentDirectory = None
-            del self.masterIO[0]
-            del self.masterIO[1]
+            del self.masterIO
             self.masterIO = None
             self.masterConnection.close()
             del self.masterConnection
             self.masterConnection = None
             # / Supervisor host
+
+    def getTestDir(self):
+        """
+        Returns the path to the directory on the remote host where (temporary) files are stored for the testing
+        environment.
+
+        Files placed in this directory are not guaranteed to remain available for later downloading.
+        This is the perfect location for files such as data to be downloaded by clients, which can be forgotten
+        the moment the client finishes.
+        For logfiles and other files that are needed after the execution of the client, use
+        getPersistentTestDir().
+
+        During cleanup this may return None! 
+
+        The default implementation uses self.remoteDirectory if it exists, or otherwise self.tempDirectory.
+
+        @return The test directory on the remote host.
+        """
+        if self.remoteDirectory and not self.bogusRemoteDir:
+            return self.remoteDirectory
+        return self.tempDirectory
 
     def getPersistentTestDir(self):
         """

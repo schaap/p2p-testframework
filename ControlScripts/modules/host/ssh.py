@@ -347,7 +347,7 @@ class ssh(host):
             connection = self.getConnection(reuseConnection)
             print "DEBUG: Host {0} got lock in sendCommand on connection {1}".format( self.name, connection.getIdentification() )
             # Send command
-            connection.write( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
             # Read output of command
             res = ''
             line = connection.readline()

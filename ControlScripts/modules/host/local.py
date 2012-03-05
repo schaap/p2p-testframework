@@ -165,7 +165,7 @@ class local(host):
         try:
             connection = self.getConnection(reuseConnection)
             # Send command
-            connection.stdin().write( command+'\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.stdin().write( command+'\n# `\n# \'\n# \"\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
             connection.stdin().flush()
             # Read output of command
             out = connection.stdout()
