@@ -4,7 +4,6 @@
 # YET TO BE PORTED, in order
 #
 #    [work work first]
-#    host:das4
 #    client:http
 #    parser:aria2
 #    parser:http

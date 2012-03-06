@@ -253,8 +253,6 @@ class client(coreObject):
                 if self.isInCleanup():
                     return
                 if self.builder and self.getSourceLayout():
-                    binariesInSources = [entry[1] for entry in self.getSourceLayout()]
-                    dirCount = 0
                     for entry in self.getSourceLayout():
                         if self.isInCleanup():
                             return
