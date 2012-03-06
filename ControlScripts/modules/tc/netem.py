@@ -5,7 +5,7 @@ import time
 
 def checkCommand( host, command ):
     ans = host.sendCommand( command + ' && echo "OK" || echo "NO"' )
-    if ans.splitLines()[-1] == "OK":
+    if ans.splitlines()[-1] == "OK":
         return True
     return False
 

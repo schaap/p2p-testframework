@@ -43,7 +43,7 @@ class http(client):
 
     # @static
     sourcelocations_lighttpd = [
-                              ['src','lighttpd']
+                              ['src','lighttpd'],
                               ['src','mod_status.la'],
                               ['src','.libs','mod_status.so'],
                               ['src','mod_indexfile.la'],
@@ -152,14 +152,14 @@ class http(client):
         if self.isRemote:
             entries = []
             res = host.sendCommand( '[ -d "{0}"/lighttpd-*/src -a -f "{0}"/lighttpd-*/src/lighttpd ] && echo "E" || echo "N"'.format( self.sourceObj.remoteLocation( self, host ) ) )
-            if res.splitLines()[-1] == 'E':
+            if res.splitlines()[-1] == 'E':
                 # Remote source location of lighttpd with in-place build
                 entries += ['/'.join(['lighttpd-*']+f) for f in http.sourcelocations_lighttpd]
             else:
                 # Remote binary installation of lighttpd
                 entries += ['/'.join(f) for f in http.binarylocations_lighttpd]
             res = host.sendCommand( '[ -d "{0}"/aria2-*/src -a -f "{0}"/aria2-*/src/aria2c ] && echo "E" || echo "N"'.format( self.sourceObj.remoteLocation( self, host ) ) )
-            if res.splitLines()[-1] == 'E':
+            if res.splitlines()[-1] == 'E':
                 # Remote source location of aria2 with in-place build
                 entries += ['/'.join(['aria2-*']+f) for f in http.sourcelocations_aria]
             else:
@@ -194,6 +194,10 @@ class http(client):
                 if not os.path.isfile( f ):
                     raise Exception( "Client {0} failed to prepare host {1}: local file {2} is missing".format( self.name, host.name, f ) )
                 host.sendFile( f, '{0}/{1}'.format( self.getClientDir(host), entry[-1] ), True )
+        f = os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'lighttpd', 'lighttpd_logging' )
+        if not os.path.isfile( f ):
+            raise Exception( "Client {0} failed to prepare host {1} since the client wrapper for lighttpd seems to be missing: {2} not found.".format( self.name, host.name, f ) )
+        host.sendFile( f, '{0}/lighttpd_logging'.format( self.getClientDir(host) ) )
 
     # That's right, 2 arguments less.
     # pylint: disable-msg=W0221
@@ -206,9 +210,9 @@ class http(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        if execution.isSeeder:
+        if execution.isSeeder():
             if self.useSSL:
-                command = '"{0}/lighttpd_logging" "{0}" "{1}" "{2}" {3} > "{4}/log.log"'.format(
+                command = '"{0}/lighttpd_logging" "{0}" "{1}" "{2}" {3} SSL > "{4}/log.log"'.format(
                                                                                             self.getClientDir(execution.host),
                                                                                             self.getExecutionClientDir(execution),
                                                                                             execution.file.getFile(execution.host),
@@ -231,10 +235,15 @@ class http(client):
             servers = []
             for e in [e for e in self.scenario.getObjects('execution') if e.isSeeder()]:
                 if e.host.getAddress() == '':
-                    raise Exception( 'clien:http requires each seeding host to return a valid address in their getAddress() method, but host {0} return ""'.format( e.host.name ) )
+                    raise Exception( 'client:http requires each seeding host to return a valid address in their getAddress() method, but host {0} return ""'.format( e.host.name ) )
                 p = self.port
                 if isinstance(e.client, http):
                     p = e.client.port
+                    if e.client.useSSL:
+                        servers.append( 'https://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
+                    else:
+                        servers.append( 'http://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
+                else:
                     if self.useSSL:
                         servers.append( 'https://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
                     else:
@@ -386,7 +395,7 @@ class http(client):
         if self.parser:
             return self.scenario.getObjectsDict( 'parser' )[self.parser]
         else:
-            if execution.isSeeder:
+            if execution.isSeeder():
                 parserType = 'lighttpd'
             else:
                 parserType = 'aria2'
