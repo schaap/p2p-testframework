@@ -1,25 +1,19 @@
-from core.campaign import Campaign
 from core.parser import parser
 
 import os
 import re
 
-def parseError( msg ):
+class lighttpd(parser):
     """
-    A simple helper function to make parsing a lot of parameters a bit nicer.
-    """
-    raise Exception( "Parse error for parser object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
-
-class utorrent(parser):
-    """
-    Implementation for the uTorrent parser.
+    A parser for lighttpd upload logs (no download is assumed).
     
-    This module parses the uTorrent logs to create a simple data file.
+    Extra parameters:
+    - [none]
     
-    Raw logs expected by this module:
+    Raw logs expected:
     - log.log
     
-    Parsed log files created by this module:
+    Parsed log files created:
     - log.data
     -- relative time (seconds)
     -- % done
@@ -80,26 +74,24 @@ class utorrent(parser):
         logfile = os.path.join(logDir, 'log.log')
         datafile = os.path.join(outputDir, 'log.data')
         if not os.path.exists( logfile ) or not os.path.isfile( logfile ):
-            raise Exception( "parser:utorrent expects the file log.log to be available for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            raise Exception( "parser:lighttpd expects the file log.log to be available for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         if os.path.exists( datafile ):
-            raise Exception( "parser:utorrent wants to create log.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            raise Exception( "parser:lighttpd wants to create log.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         fl = None
         fd = None
         try:
             fl = open( logfile, 'r' )
             fd = open( datafile, 'w' )
-            fd.write( "time percent upspeed dlspeed\n0 0 0 0\n" )
+            fd.write( "time percent upspeed dlspeed\n0 100.0 0 0\n" )
             firstTime = -1
             relTime = -1
-            percentDone = ''
-            prevDown = 0
-            prevUp = 0
+            lastUploaded = 0
             
             for line in fl:
                 if firstTime == -1:
-                    if not re.match( '^[0-9]*\\.[0-9]*$', line ):
-                        continue
-                    firstTime = float(line)
+                    if re.match( '^[0-9]*\\.[0-9]*$', line ):
+                        firstTime = float(line)
+                    continue
                 
                 if re.match( '^[0-9]*\\.[0-9]*$', line ):
                     relTime = float(line) - firstTime
@@ -108,22 +100,11 @@ class utorrent(parser):
                 if relTime == -1:
                     continue
                 
-                m = re.match( '^\\["[^"]*",[^,]*,[^,]*,[^,]*,([^,]*),([^,]*),([^,]*),[^,]*,.*', line )
+                m = re.match( '^Total kBytes: ([0-9]*)$', line )
                 if m:
-                    percentDone = float(m.group(1)) / 10.0
-                    down = float(m.group(2))
-                    up = float(m.group(3))
-                    if up < prevUp:
-                        up = prevUp
-                    if down < prevDown:
-                        down = prevDown
-                    downspeed = ( down - prevDown ) / 1024.0
-                    upspeed = ( up - prevUp ) / 1024.0
-                    prevDown = down
-                    prevUp = up
-                    
-                    fd.write( "{0} {1} {2} {3}\n".format( relTime, percentDone, upspeed, downspeed ) )
-                    
+                    upspeed = int(m.group(1)) - lastUploaded
+                    lastUploaded = int(m.group(1))
+                    fd.write( "{0} 100.0 {1} 0\n".format( relTime, upspeed ) )
                     relTime = -1
         finally:
             try:

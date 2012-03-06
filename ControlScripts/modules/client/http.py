@@ -1,14 +1,8 @@
-# These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
-# the Campaign data object and the client parent class.
-from core.parsing import *
+from core.parsing import isPositiveInt
 from core.campaign import Campaign
 from core.client import client
 
 import os
-
-# You can define anything you like in the scope of your own module: the only thing that will be imported from it
-# is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
-# suppose you copy this file to modules/client/rudeClient.py then the name of your class would be rudeClient.
 
 def parseError( msg ):
     """

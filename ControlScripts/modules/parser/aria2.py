@@ -1,25 +1,22 @@
-from core.campaign import Campaign
 from core.parser import parser
 
 import os
 import re
 
-def parseError( msg ):
+class aria2(parser):
     """
-    A simple helper function to make parsing a lot of parameters a bit nicer.
-    """
-    raise Exception( "Parse error for parser object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
-
-class utorrent(parser):
-    """
-    Implementation for the uTorrent parser.
+    A parser for aria2 download logs (no upload is assumed).
     
-    This module parses the uTorrent logs to create a simple data file.
+    Extra parameters:
+    - [none]
     
-    Raw logs expected by this module:
+    Raw logs expected:
     - log.log
+    -- contains the output of aria2 (preferably with a shorter interval than the default 60s) with
+        --human-readable=false, --truncate-console-readout=false and only one file in the download
+        queue (possibly multiple sources)
     
-    Parsed log files created by this module:
+    Parsed log files created:
     - log.data
     -- relative time (seconds)
     -- % done
@@ -80,9 +77,9 @@ class utorrent(parser):
         logfile = os.path.join(logDir, 'log.log')
         datafile = os.path.join(outputDir, 'log.data')
         if not os.path.exists( logfile ) or not os.path.isfile( logfile ):
-            raise Exception( "parser:utorrent expects the file log.log to be available for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            raise Exception( "parser:aria2 expects the file log.log to be available for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         if os.path.exists( datafile ):
-            raise Exception( "parser:utorrent wants to create log.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            raise Exception( "parser:aria2 wants to create log.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         fl = None
         fd = None
         try:
@@ -91,39 +88,49 @@ class utorrent(parser):
             fd.write( "time percent upspeed dlspeed\n0 0 0 0\n" )
             firstTime = -1
             relTime = -1
-            percentDone = ''
-            prevDown = 0
-            prevUp = 0
+            firstDay = ''
+            lastRelTime = ''
             
             for line in fl:
+                m = re.match( '^ \\*\\*\\* Download Progress Summary as of [^ ]* *[^ ]* *([0-9][0-9]*) *([0-9][0-9]*):([0-9][0-9]*):([0-9][0-9]*) .*$', line )
                 if firstTime == -1:
-                    if not re.match( '^[0-9]*\\.[0-9]*$', line ):
+                    if not m:
                         continue
-                    firstTime = float(line)
-                
-                if re.match( '^[0-9]*\\.[0-9]*$', line ):
-                    relTime = float(line) - firstTime
+                    firstDay = int(m.group(1))
+                    firstTime = int(m.group(4)) + 60 * int(m.group(3)) + 3600 * int(m.group(2))
+                    relTime = 1
                     continue
+                
+                if m:
+                    relTime = int(m.group(4)) + 60 * int(m.group(3)) + 3600 * int(m.group(2))
+                    if firstDay != int(m.group(1)):
+                        relTime += 24 * 3600
+                    relTime -= firstTime
+                    continue
+                
+                if re.match( '.*NOTICE - Download complete', line ):
+                    if relTime == -1:
+                        relTime = lastRelTime + 1
+                    fd.write( "{0} 100.0 0 0\n".format( relTime ) )
+                    relTime = -1
                 
                 if relTime == -1:
                     continue
                 
-                m = re.match( '^\\["[^"]*",[^,]*,[^,]*,[^,]*,([^,]*),([^,]*),([^,]*),[^,]*,.*', line )
+                m = re.match( '^\\[\\#1 SIZE:0B/0B CN:[0-9]* SPD:0Bs.*', line )
                 if m:
-                    percentDone = float(m.group(1)) / 10.0
-                    down = float(m.group(2))
-                    up = float(m.group(3))
-                    if up < prevUp:
-                        up = prevUp
-                    if down < prevDown:
-                        down = prevDown
-                    downspeed = ( down - prevDown ) / 1024.0
-                    upspeed = ( up - prevUp ) / 1024.0
-                    prevDown = down
-                    prevUp = up
+                    fd.write( "{0} 0 0 0\n".format( relTime ) )
+                    lastRelTime = relTime
+                    relTime = -1
+                
+                m = re.match( '^\\[\\#1 SIZE:([0-9]*)B/([0-9]*)B\\([0-9]*%\\) CN:[0-9]* SPD:([0-9]*)Bs ETA:.*\\]$', line )
+                if m:
+                    percentDone = 100.0 * ( float(int(m.group(1))) / float(int(m.group(2))) )
+                    downspeed = int(m.group(3)) / 1024.0
                     
-                    fd.write( "{0} {1} {2} {3}\n".format( relTime, percentDone, upspeed, downspeed ) )
+                    fd.write( "{0} {1} 0 {2}\n".format( relTime, percentDone, downspeed ) )
                     
+                    lastRelTime = relTime
                     relTime = -1
         finally:
             try:
