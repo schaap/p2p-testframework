@@ -3,11 +3,6 @@
 #
 # YET TO BE PORTED, in order
 #
-#    [work work first]
-#    client:http
-#    parser:aria2
-#    parser:http
-#    parser:lighttpd
 #    tc:netem
 #
 

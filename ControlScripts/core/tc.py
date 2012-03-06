@@ -31,11 +31,12 @@ class tc(coreObject):
 
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
-    def install(self, host):
+    def install(self, host, otherhosts):
         """
         Installs the traffic control on the host.
 
-        @param  host    The host on which to install TC.
+        @param  host        The host on which to install TC.
+        @param  otherhosts  List of subnets of other hosts.
         """
         raise Exception( "Not implemented" )
     # pylint: enable-msg=W0613

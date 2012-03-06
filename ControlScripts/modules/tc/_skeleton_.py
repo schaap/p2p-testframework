@@ -44,20 +44,22 @@ class _skeleton_(tc):
         # Also, don't actually set it up just yet.
         raise Exception( "Not implemented" )
 
-    def install(self, host):
+    def install(self, host, otherhosts):
         """
         Installs the traffic control on the host.
 
-        @param  host    The host on which to install TC.
+        @param  host        The host on which to install TC.
+        @param  otherhosts  List of subnets of other hosts.
         """
         # TODO: Implement this.
         raise Exception( "Not implemented" )
 
-    def remove(self, host):
+    def remove(self, host, reuseConnection = None):
         """
         Removes the traffic control from the host.
 
         @param  host    The host from which to remove TC.
+        @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
         # TODO: Implement this.
         raise Exception( "Not implemented" )
