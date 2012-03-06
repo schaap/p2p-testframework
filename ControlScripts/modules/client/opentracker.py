@@ -68,7 +68,7 @@ class opentracker(client):
             if not isPositiveInt( value ) or int(value) < 1024 or int(value) > 65535:
                 parseError( "Port must be a positive integer greater than 1023 and smaller than 65536, not {0}".format( value ) )
             self.port = int(value)
-        elif key == 'changeTracker':
+        elif key == 'changeTracker' or key == 'changetracker':
             if not isValidName( value ):
                 parseError( "{0} is not a valid name for a file object.".format( value ) )
             self.changeTrackers.append( value )

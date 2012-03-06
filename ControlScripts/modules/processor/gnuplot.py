@@ -131,8 +131,7 @@ class gnuplot(processor):
                 try:
                     subprocess.check_output( [gnuplot.gnuplot, tmpFile], bufsize=8192 )
                 except subprocess.CalledProcessError as e:
-                    Campaign.logger.log( "Running gnuplot failed: {0}".format( e.output ) )
-                    raise e
+                    Campaign.logger.log( "Running gnuplot failed: {0}. Ignoring.".format( e.output ) )
         finally:
             if f:
                 try:
