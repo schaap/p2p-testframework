@@ -634,6 +634,7 @@ class ScenarioRunner:
         """
         Do a check run of the scenario, to find out whether everything is in order.
         """
+        Campaign.logger.log( "=== Checking scenario {0} ===".format( self.name ) )
         try:
             self.setup( True )
         finally:
@@ -644,12 +645,14 @@ class ScenarioRunner:
             except Exception as exc:
                 Campaign.logger.log( "Exception while removing results from test, will be discared: {0}".format( exc.__str__() ) )
                 Campaign.logger.exceptionTraceback()
+        Campaign.logger.log( "=== Scenario {0} checked ===".format( self.name ) )
         print "Scenario {0} checked".format( self.name )
 
     def run(self):
         """
         Do an actual run of the scenario.
         """
+        Campaign.logger.log( "=== Running scenario {0} ===".format( self.name ) )
         try:
             self.setup()
             self.executeRun()
@@ -657,6 +660,7 @@ class ScenarioRunner:
         finally:
             self.cleanup()
         self.processLogs()
+        Campaign.logger.log( "=== Scenario {0} completed ===".format( self.name ) )
         print "Scenario {0} completed".format( self.name )
 
 class CampaignRunner:
