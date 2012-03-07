@@ -284,10 +284,10 @@ class host(coreObject):
             self.tcInboundPortList = list(other.tcInboundPortList)
         else:
             self.tcInboundPortList = other.tcInboundPortList
-        if isinstance( other.tcOutbountPortList, list ):
-            self.tcOutboundPortList = list(other.tcOutbountPortList)
+        if isinstance( other.tcOutboundPortList, list ):
+            self.tcOutboundPortList = list(other.tcOutboundPortList)
         else:
-            self.tcOutboundPortList = other.tcOutbountPortList
+            self.tcOutboundPortList = other.tcOutboundPortList
         self.tcProtocol = other.tcProtocol
 
     def parseSetting(self, key, value):
