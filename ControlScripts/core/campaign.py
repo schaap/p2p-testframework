@@ -1,4 +1,5 @@
 import core.logger
+import core.debuglogger
 
 # We have unused arguments; that's fine
 # pylint: disable-msg=W0613
@@ -14,7 +15,8 @@ class Campaign:
     doCheckRun = True       # True iff a checking run is to be done
     doRealRun = True        # True iff a real run is to be done
 
-    logger = core.logger.logger()       # The global logging object, always available through Campaign.logger
+    logger = core.logger.logger()                   # The global logging object, always available through Campaign.logger
+    debuglogger = core.debuglogger.debuglogger()    # Global channel debug logger object.
 
     currentCampaign = None  # The campaign object currently running
 

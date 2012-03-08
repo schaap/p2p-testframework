@@ -101,7 +101,7 @@ class swift(parser):
                                         
                     percent = 0
                     if int(split[3]) > 0:
-                        percent = 100.0 * ( int(split[1]) / int(split[3]) )
+                        percent = 100.0 * ( float(int(split[1])) / float(int(split[3])) )
                         
                     fd.write( "{0} {1} {2} {3}\n".format( relTime, percent, upspeed, dlspeed ) )
                     relTime += 1

@@ -678,7 +678,6 @@ class host(coreObject):
             self.connections__lock.acquire()
             if len(self.connections) > 0:
                 raise Exception( "While running prepare(...) for host {0} self.connections[0] was already filled?".format( self.name ) )
-            print "DEBUG: Setup connection"
             self.connections.append( self.setupNewConnection() )
             if len(self.connections) == 0 or not self.connections[0]:
                 if not self.isInCleanup():
@@ -693,9 +692,7 @@ class host(coreObject):
             except RuntimeError:
                 pass
         if not self.remoteDirectory:
-            print "DEBUG: mktemp -d"
             self.tempDirectory = self.sendCommand( 'mktemp -d' )
-            print "DEBUG: [ -d ... ]"
             if self.tempDirectory != '':
                 testres = self.sendCommand( '[ -d "{0}" ] && [ `ls -a "{0}" | wc -l` -eq 2 ] && echo "OK"'.format( self.tempDirectory ) )
             if self.tempDirectory == '' or testres.strip() != "OK":

@@ -48,13 +48,11 @@ class sshFallbackConnectionObject(countedConnectionObject):
         self.proc = None
     
     def write(self, msg):
-        print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
         self.proc.stdin.write( msg )
         self.proc.stdin.flush()
     
     def readline(self):
         line = self.proc.stdout.readline()
-        print "DEBUG: CONN {0} READLINE:\n{1}".format( self.getIdentification(), line )
         return line
     
     @staticmethod
@@ -122,6 +120,7 @@ class sshParamikoConnectionObject(countedConnectionObject):
             self.sftp__lock.acquire()
             if self.sftpChannel:
                 self.sftpChannel.close()
+                Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED DURING CLOSE' )
                 del self.sftpChannel
                 self.sftpChannel = None
         finally:
@@ -129,15 +128,14 @@ class sshParamikoConnectionObject(countedConnectionObject):
             self.client.close()
             del self.client
             self.client = None
+            Campaign.debuglogger.closeChannel( self.getIdentification() )
     
     def write(self, msg):
-        print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
         self.io[0].write( msg )
         self.io[0].flush()
     
     def readline(self):
         line = self.io[1].readline()
-        print "DEBUG: CONN {0} READLINE:\n{1}".format( self.getIdentification(), line )
         return line
     
     def createSFTPChannel(self):
@@ -148,6 +146,7 @@ class sshParamikoConnectionObject(countedConnectionObject):
             if self.sftpChannel:
                 return True
             self.sftpChannel = self.client.open_sftp()
+            Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL CREATED' )
         finally:
             self.sftp__lock.release()
         return False
@@ -162,6 +161,7 @@ class sshParamikoConnectionObject(countedConnectionObject):
             self.sftpChannel.close()
             del self.sftpChannel
             self.sftpChannel = None
+            Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED' )
         finally:
             self.sftp__lock.release()
     
@@ -285,6 +285,7 @@ class ssh(host):
             chan2.exec_command( 'bash -l' )
             io = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
             obj = sshParamikoConnectionObject( client, io )
+            Campaign.debuglogger.log( obj.getIdentification(), 'CREATED in scenario {2} for SSH host {0} to node {1} type paramiko'.format( self.name, self.hostname, self.scenario.name ) )
         else:
             args = ['{0}'.format(sshFallbackConnectionObject.getSSHProgram()), '-l', self.user]
             if self.port:
@@ -300,6 +301,7 @@ class ssh(host):
                         raise e
                 return
             obj = sshFallbackConnectionObject( proc )
+            Campaign.debuglogger.log( obj.getIdentification(), 'CREATED in scenario {2} for SSH host {0} to node {1} type fallback'.format( self.name, self.hostname, self.scenario.name ) )
         try:
             self.connections__lock.acquire()
             if self.isInCleanup():
@@ -328,6 +330,7 @@ class ssh(host):
 
         @param  The connection to be closed.
         """
+        Campaign.debuglogger.closeChannel(connection.getIdentification())
         host.closeConnection(self, connection)
 
     def sendCommand(self, command, reuseConnection = True):
@@ -343,19 +346,18 @@ class ssh(host):
         """
         connection = None
         try:
-            print "DEBUG: Host {0} entered sendCommand".format( self.name )
             connection = self.getConnection(reuseConnection)
-            print "DEBUG: Host {0} got lock in sendCommand on connection {1}".format( self.name, connection.getIdentification() )
             # Send command
             connection.write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            Campaign.debuglogger.log( connection.getIdentification(), 'SEND {0}'.format( command ) )
             # Read output of command
             res = ''
             line = connection.readline()
             while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
+                Campaign.debuglogger.log( connection.getIdentification(), 'RECV {0}'.format( line ) )
                 res += line
                 line = connection.readline()
             # Return output (ditch the last trailing \n)
-            print "DEBUG: Host {0} returning from sendCommand with connection {1}".format( self.name, connection.getIdentification() )
             return res.strip()
         finally:
             self.releaseConnection(reuseConnection, connection)
@@ -387,6 +389,7 @@ class ssh(host):
                             raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
                     if self.isInCleanup():
                         return
+                    Campaign.debuglogger.log( connection.getIdentification(), 'SFTP SEND FILE {0} TO {1}'.format( localSourcePath, remoteDestinationPath ) )
                     sftp.put( localSourcePath, remoteDestinationPath )
                     sftp.chmod( remoteDestinationPath, os.stat(localSourcePath).st_mode )
                 finally:
@@ -413,6 +416,7 @@ class ssh(host):
                 args.append( localSourcePath )
                 args.append( '{0}@{1}:{2}'.format( self.user, self.hostname, remoteDestinationPath ) )
                 try:
+                    Campaign.debuglogger.log( connection.getIdentification(), 'SCP SEND FILE {0} TO {1}'.format( localSourcePath, remoteDestinationPath ) )
                     subprocess.check_output( args, bufsize=8192 )
                 except subprocess.CalledProcessError as e:
                     Campaign.logger.log( "Sending file {1} to {2} on host {0} failed: {3}".format( self.name, localSourcePath, remoteDestinationPath, e.output ) )
@@ -461,12 +465,14 @@ class ssh(host):
                             return
                         if os.path.isdir( localPath ):
                             if not sshParamikoConnectionObject.existsRemote(sftp, remotePath):
+                                Campaign.debuglogger.log( connection.getIdentification(), 'SFTP CREATE REMOTE DIR {0}'.format( remotePath ) )
                                 sftp.mkdir( remotePath )
                                 sftp.chmod( remotePath, os.stat(localPath).st_mode )
                             paths += [(os.path.join( localPath, path ), '{0}/{1}'.format( remotePath, path )) for path in os.listdir( localPath )]
                         else:
                             if sshParamikoConnectionObject.existsRemote(sftp, remotePath) and sshParamikoConnectionObject.isRemoteDir(sftp, remotePath):
                                 raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localPath, remotePath, self.name ) )
+                            Campaign.debuglogger.log( connection.getIdentification(), 'SFTP SEND FILE {0} TO {1}'.format( localPath, remotePath ) )
                             sftp.put( localPath, remotePath )
                             sftp.chmod( remotePath, os.stat(localPath).st_mode )
                 finally:
@@ -513,6 +519,7 @@ class ssh(host):
                     sftp = connection.sftpChannel
                     if self.isInCleanup():
                         return
+                    Campaign.debuglogger.log( connection.getIdentification(), 'SFTP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
                     sftp.get( remoteSourcePath, localDestinationPath )
                 finally:
                     if newConnection:
@@ -527,6 +534,7 @@ class ssh(host):
             args.append( '{0}@{1}:{2}'.format( self.user, self.hostname, remoteSourcePath ) )
             args.append( localDestinationPath )
             try:
+                Campaign.debuglogger.log( connection.getIdentification(), 'SCP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
                 subprocess.check_output( args, bufsize=8192 )
             except subprocess.CalledProcessError as e:
                 Campaign.logger.log( "Retrieving file {1} to {2} from host {0} failed: {3}".format( self.name, remoteSourcePath, localDestinationPath, e.output ) )

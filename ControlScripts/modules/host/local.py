@@ -111,6 +111,7 @@ class local(host):
         if self.isInCleanup():
             return
         proc = Popen(['{0}'.format(local.bashProgram), '-l'], bufsize=8192, stdin=PIPE, stdout=PIPE, stderr=STDOUT)
+        Campaign.debuglogger.log( 'local_{0}'.format(self.name), 'CREATED in scenario {1} for LOCAL host {0}'.format( self.name, self.scenario.name ) )
         try:
             self.connections__lock.acquire()
             if self.isInCleanup():
@@ -148,6 +149,7 @@ class local(host):
         """
         if connection.closeIfNotClosed():
             return
+        Campaign.debuglogger.closeChannel( 'local_{0}'.format(self.name) )
         host.closeConnection(self, connection)
 
     def sendCommand(self, command, reuseConnection = True):
@@ -167,11 +169,13 @@ class local(host):
             # Send command
             connection.stdin().write( command+'\n# `\n# \'\n# \"\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
             connection.stdin().flush()
+            Campaign.debuglogger.log( 'local_{0}'.format(self.name), 'SEND {0}'.format( command ) )
             # Read output of command
             out = connection.stdout()
             res = ''
             line = out.readline()
             while line != '' and line != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework\n':
+                Campaign.debuglogger.log( 'local_{0}'.format(self.name), 'RECV {0}'.format( line ) )
                 res += line
                 line = out.readline()
             # Return output (ditch the last trailing \n)
@@ -202,6 +206,7 @@ class local(host):
             elif os.path.isdir( remoteDestinationPath ):
                 raise Exception( "Sending local file {0} to remote file {1}: destination would be overwritten, but is a directory".format( localSourcePath, remoteDestinationPath ) )
             try:
+                Campaign.debuglogger.log( 'local_{0}'.format(self.name), 'CP SEND FILE {0} TO {1}'.format( localSourcePath, remoteDestinationPath ) )
                 subprocess.check_output( 'cp "{0}" "{1}"'.format( escapeFileName( localSourcePath ), escapeFileName( remoteDestinationPath ) ), shell=True, stderr=STDOUT )
             except subprocess.CalledProcessError as cpe:
                 Campaign.logger.log( cpe.output )
@@ -232,6 +237,7 @@ class local(host):
             elif os.path.isdir( localDestinationPath ):
                 raise Exception( "Getting remote file {0} to local file {1}: destination would be overwritten, but is a directory".format( remoteSourcePath, localDestinationPath ) )
             try:
+                Campaign.debuglogger.log( 'local_{0}'.format(self.name), 'CP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
                 subprocess.check_output( 'cp "{0}" "{1}"'.format( escapeFileName( remoteSourcePath ), escapeFileName( localDestinationPath ) ), shell=True, stderr=STDOUT )
             except subprocess.CalledProcessError as cpe:
                 Campaign.logger.log( cpe.output )

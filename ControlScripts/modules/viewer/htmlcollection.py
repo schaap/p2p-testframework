@@ -146,16 +146,14 @@ class htmlcollection(viewer):
                     for col in columns:
                         name = '{0}_{1}{2}'.format( col[0], e.getNumber(), col[1] )
                         f = os.path.join( processedDir, name )
-                        print "HTML: Checking {1} at {0}".format( f, name )
                         if os.path.exists( f ):
-                            otherFiles.remove( name )
+                            if name in otherFiles:
+                                otherFiles.remove( name )
                             st = os.stat( f )
                             if st.st_size == 0:
-                                print "HTML: is empty"
                                 fOut.write( '<td></td>' )
                                 continue
                             if ('isSeeder', '') == col:
-                                print "HTML: seeder"
                                 if e.isSeeder():
                                     fOut.write( '<td>YES</td>' )
                                 else:
@@ -163,7 +161,6 @@ class htmlcollection(viewer):
                                 continue
                             mime = external.magic.magic.Magic( mime=True ).from_file( f )
                             if mime[:6] == 'image/':
-                                print "HTML: image"
                                 if htmlcollection.convert:
                                     thumb = os.path.join( 'thumbs', name )
                                     subprocess.check_output( [htmlcollection.convert, '-thumbnail', '200x150', f, os.path.join( viewDir, thumb ) ])
@@ -171,24 +168,19 @@ class htmlcollection(viewer):
                                 else:
                                     fOut.write( '<td><a href="{0}"><img src="{0}" alt="{1}" /></a></td>'.format( os.path.join( relpath, name ), name ) )
                             else:
-                                print "HTML: no image"
                                 fOut.write( '<td><a href="{0}">{1}</a></td>'.format( os.path.join( relpath, name ), name ) )
                         else:
-                            print "HTML: no exist"
                             fOut.write( '<td></td>' )
                     fOut.write( "</tr>\n" )
                 fOut.write( "</tbody></table>\n" )
             fOut.write( '<h3><a name="other">Other data</a></h3><ul>\n' )
             for name in otherFiles:
-                print "HTML: Checking other {1} at {0}".format( f, name )
                 f = os.path.join( processedDir, name )
                 st = os.stat( f )
                 if st.st_size == 0:
-                    print "HTML: empty"
                     continue
                 mime = external.magic.magic.Magic( mime=True ).from_file( f )
                 if mime[:6] == 'image/':
-                    print "HTML: image"
                     if htmlcollection.convert:
                         thumb = os.path.join( 'thumbs', name )
                         subprocess.check_output( [htmlcollection.convert, '-thumbnail', '200x150', f, os.path.join( viewDir, thumb ) ])
@@ -196,7 +188,6 @@ class htmlcollection(viewer):
                     else:
                         fOut.write( '<li><a href="{0}"><img src="{0}" alt="{1}" /></a></li>\n'.format( os.path.join( relpath, name ), name ) )
                 else:
-                    print "HTML: no image"
                     fOut.write( '<li><a href="{0}">{1}</a></li>\n'.format( os.path.join( relpath, name ), name ) )
             fOut.write( '</ul></body></html>\n')
         finally:

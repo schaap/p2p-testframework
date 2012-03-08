@@ -7,29 +7,31 @@ class logger:
     def __init__(self):
         pass
 
-    def log(self, msg):
+    def log(self, msg, alwaysPrint = False):
         """
         Logs the message.
 
         The message msg is either sent to stdout (self.fileObject is None) or to the file being logged to.
         Newlines will be added.
 
-        @param  msg     The message to be logged.
+        @param  msg             The message to be logged.
+        @param  alwaysPrint     Set to True to make sure this message is printed to the screen as well as being logged.
         """
-        if self.fileObject is None:
+        if self.fileObject is None or alwaysPrint:
             print msg
-        else:
+        if self.fileObject:
             self.fileObject.write( msg + '\n' )
 
-    def logPre(self, msg):
+    def logPre(self, msg, alwaysPrint = False):
         """
         Like log, but without extra newlines.
 
-        @param  msg     The message to be logged, which includes any needed newlines.
+        @param  msg             The message to be logged, which includes any needed newlines.
+        @param  alwaysPrint     Set to True to make sure this message is printed to the screen as well as being logged.
         """
-        if self.fileObject is None:
+        if self.fileObject is None or alwaysPrint:
             print msg,
-        else:
+        if self.fileObject:
             self.fileObject.write( msg )
 
     def logToFile(self, pathname):
@@ -65,23 +67,27 @@ class logger:
         """
         return not self.fileObject is None
 
-    def exceptionTraceback(self):
+    def exceptionTraceback(self, alwaysPrint = False):
         """
         Logs the stacktrace of the exception currently being handled.
 
         This method should be called from a function currently handling an exception (e.g. in an except block).
         When no exception is currently being handled, this function does nothing.
+
+        @param  alwaysPrint     Set to True to make sure this message is printed to the screen as well as being logged.
         """
         for line in traceback.format_exc( ):
-            self.logPre( line )
+            self.logPre( line, alwaysPrint )
     
-    def localTraceback(self):
+    def localTraceback(self, alwaysPrint = False):
         """
         Logs the stacktrace of the current stack (including this call).
         
         This method can be called from a function to have the current calling stack logged.
         Note that this is for debugging purposes only!
+
+        @param  alwaysPrint     Set to True to make sure this message is printed to the screen as well as being logged.
         """
         self.log( "DEBUG TRACEBACK: " )
         for line in traceback.format_stack():
-            self.logPre( line )
+            self.logPre( line, alwaysPrint )

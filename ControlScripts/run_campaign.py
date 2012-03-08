@@ -18,6 +18,7 @@ import re
 # P2P Testing Framework imports
 from core.campaign import Campaign
 from core.parsing import isSectionHeader, getModuleType, getSectionName, getModuleSubType, getParameterName, getParameterValue, isPositiveInt, isValidName
+import core.debuglogger
 
 # Global API version of the core
 APIVersion="2.0.0"
@@ -312,7 +313,6 @@ class ScenarioRunner:
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Prepare all hosts
         for host in executionHosts:
-            print "DEBUG: Preparing host {0}".format( host.name )
             host.prepare()
         # Executions may by now have been altered by the host.prepare() calls, so rebuild the host list
         # All executions must refer to prepared hosts, which means that any host.prepare() that alters the executions
@@ -320,7 +320,6 @@ class ScenarioRunner:
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Prepare all clients
         for client in self.getObjects('client'):
-            print "DEBUG: Preparing client {0}".format( client.name )
             client.prepare()
         # Prepare TC and clients
         for host in executionHosts:
@@ -409,7 +408,6 @@ class ScenarioRunner:
             # If we're not just testing: prepare clients for this host
             if not testRun:
                 for client in host.clients:
-                    print "DEBUG: Preparing client {0} on host 1".format( client.name, host.name )
                     client.prepareHost( host )
 
         # If we're not just testing: prepare files
@@ -417,11 +415,9 @@ class ScenarioRunner:
             for host in executionHosts:
                 # Send all files to the host that do not have this host as seeder
                 for f in host.files:
-                    print "DEBUG: Sending file {0} to host 1".format( f.name, host.name )
                     f.sendToHost( host )
                 # Send all files to the host that have this host as seeder
                 for f in host.seedingFiles:
-                    print "DEBUG: Sending seeding file {0} to host 1".format( f.name, host.name )
                     f.sendToSeedingHost( host )
 
     def executeRun(self):
@@ -463,14 +459,10 @@ class ScenarioRunner:
         endTime = time.time() + self.timelimit
         sleepTime = min( 5, self.timelimit )
         while sleepTime > 0:
-            print "DEBUG: Sleeping for {0} seconds".format( sleepTime )
             time.sleep( sleepTime )
             for execution in self.getObjects('execution'):
-                print "DEBUG: Checking whether client {0} still runs on host {1}".format( execution.client.name, execution.host.name )
                 if execution.client.isRunning(execution):
-                    print "DEBUG: Yep"
                     break
-                print "DEBUG: Nope"
             else:
                 print "All client have finished before time is up"
                 break
@@ -567,14 +559,8 @@ class ScenarioRunner:
         print "Checking and killing clients"
         for e in self.getObjects('execution'):
             try:
-                print "DEBUG: checking exec {0} (client {1}, host {2})".format( e.getNumber(), e.client.name, e.host.name )
                 if e.client.hasStarted( e ) and e.client.isRunning( e, cleanupConnections[e.host] ):
-                    print "DEBUG: hasStarted and isRunning"
                     e.client.kill( e, cleanupConnections[e.host] )
-                elif e.client.hasStarted( e ):
-                    print "DEBUG: hasStarted and not isRunning"
-                else:
-                    print "DEBUG: not hasStarted"
             except Exception as exc:
                 Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )
                 Campaign.logger.exceptionTraceback()
@@ -634,7 +620,7 @@ class ScenarioRunner:
         """
         Do a check run of the scenario, to find out whether everything is in order.
         """
-        Campaign.logger.log( "=== Checking scenario {0} ===".format( self.name ) )
+        Campaign.logger.log( "=== Checking scenario {0} ===".format( self.name ), True )
         try:
             self.setup( True )
         finally:
@@ -643,16 +629,16 @@ class ScenarioRunner:
             try:
                 shutil.rmtree( self.resultsDir )
             except Exception as exc:
-                Campaign.logger.log( "Exception while removing results from test, will be discared: {0}".format( exc.__str__() ) )
+                Campaign.logger.log( "Exception while removing results from test, will be discarded: {0}".format( exc.__str__() ) )
                 Campaign.logger.exceptionTraceback()
-        Campaign.logger.log( "=== Scenario {0} checked ===".format( self.name ) )
-        print "Scenario {0} checked".format( self.name )
+        Campaign.logger.log( "=== Scenario {0} checked ===".format( self.name ), True )
+        print ""
 
     def run(self):
         """
         Do an actual run of the scenario.
         """
-        Campaign.logger.log( "=== Running scenario {0} ===".format( self.name ) )
+        Campaign.logger.log( "=== Running scenario {0} ===".format( self.name ), True )
         try:
             self.setup()
             self.executeRun()
@@ -660,8 +646,8 @@ class ScenarioRunner:
         finally:
             self.cleanup()
         self.processLogs()
-        Campaign.logger.log( "=== Scenario {0} completed ===".format( self.name ) )
-        print "Scenario {0} completed".format( self.name )
+        Campaign.logger.log( "=== Scenario {0} completed ===".format( self.name ), True )
+        print ""
 
 class CampaignRunner:
     """
@@ -676,6 +662,8 @@ class CampaignRunner:
     campaignID = ''         # The campaign ID, which is really just a timestamp
     campaignName = ''       # The full campaign name, which will be used as the name for the directory the results end up in
     campaignResultsDir = '' # The path to the results directory for this campaign
+    
+    deadlyScenarios = True  # False if a failing scenario should not stop the rest of the campaign
     
     scenarios = []          # List of scenarios to run
 
@@ -782,18 +770,74 @@ class CampaignRunner:
             justScenario = [scenario.name for scenario in self.scenarios]
         
         print ""
+        print "Reading scenarios"
+        print ""
+        
+        badScenarios = []
 
-        for scenario in self.scenarios:
-            if scenario.name in justScenario:
-                scenario.read()
+        if self.deadlyScenarios:
+            for scenario in self.scenarios:
+                if scenario.name in justScenario:
+                    scenario.read()
+        else:
+            for scenario in self.scenarios:
+                if scenario.name in justScenario:
+                    try:
+                        scenario.read()
+                    except Exception as exc:
+                        if isinstance( exc, KeyboardInterrupt ):
+                            raise exc
+                        else:
+                            Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
+                            Campaign.logger.exceptionTraceback( True )
+                            Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
+                            badScenarios.append( scenario.name )
+
         if Campaign.doCheckRun:
-            for scenario in self.scenarios:
-                if scenario.name in justScenario:
-                    scenario.test()
+            print ""
+            print "Checking scenarios"
+            print ""
+            if self.deadlyScenarios:
+                for scenario in self.scenarios:
+                    if scenario.name in justScenario:
+                        scenario.test()
+            else:
+                for scenario in self.scenarios:
+                    if scenario.name in justScenario and scenario.name not in badScenarios:
+                        try:
+                            scenario.test()
+                        except Exception as exc:
+                            if isinstance( exc, KeyboardInterrupt ):
+                                raise exc
+                            else:
+                                Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
+                                Campaign.logger.exceptionTraceback( True )
+                                Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
+                                badScenarios.append( scenario.name )
         if Campaign.doRealRun:
-            for scenario in self.scenarios:
-                if scenario.name in justScenario:
-                    scenario.run()
+            print ""
+            print "Running scenarios"
+            print ""
+            if self.deadlyScenarios:
+                for scenario in self.scenarios:
+                    if scenario.name in justScenario:
+                        scenario.run()
+            else:
+                for scenario in self.scenarios:
+                    if scenario.name in justScenario and scenario.name not in badScenarios:
+                        try:
+                            scenario.run()
+                        except Exception as exc:
+                            if isinstance( exc, KeyboardInterrupt ):
+                                raise exc
+                            else:
+                                Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
+                                Campaign.logger.exceptionTraceback( True )
+                                Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
+                                badScenarios.append( scenario.name )
+        
+        print "Campaign finished"
+        print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
 
     ######
     # Static part of the class: initialization and option parsing
@@ -812,12 +856,24 @@ class CampaignRunner:
 P2P Testing Framework campaign runner
 Run a test campaign, scenario by scenario.
 Usage:
-    {0} [--check|--nocheck] [--scenario=name [...]] your_campaign_file
+    {0} [--check|--nocheck] [--scenario=name [...]] [--debuglog[=basedir]] [--debugseparate] [--debugboth] [--deadly] your_campaign_file
+
 --check will check the correctness of the settings as well as try and see if what was requested is possible.
-The checks made by --check may not be all-inclusive, but should eliminate a lot of possible errors during runs, andhence a lot of frustration when setting up tests.
+The checks made by --check may not be all-inclusive, but should eliminate a lot of possible errors during runs, and hence a lot of frustration when setting up tests.
 --nocheck will skip the checking run and only do an actual run (useful for already tested setups).
 When neither --check nor --nocheck is given, an actual run is done.
+
 --scenario=name will only run the named scenario; --scenario= can be given multiple times for a list of scenarios.
+
+--debuglog[=basedir] will turn on channel debug logging, which logs every outgoing and incoming communication over channels to hosts.
+Providing a basedir will use that directory as a base directory for the logs instead of the campaign's result directory.
+The normal debugging log is a combined log of all channels that will be written to debug_channels, no separate logs will be made.
+--debugseparate turns off the combined log and instead creates a separate log file for each channel. Note that this may result in many files!
+--debugboth does both the combined and the separate logging.
+Debug options are read from left to right; the last basedir is chosen. E.g. --debugseparate --debuglog=. --debugboth --debuglog will set, in order,
+[separate, not combined, default dir], [not separate, combined, .], [separate, combined, .], [not separate, combined, .].
+
+--deadly specified that a single failing scenario will stop the complete campaign. Normally the next scenario will just be started.
 """.format( sys.argv[0] )
 
     @staticmethod
@@ -841,6 +897,10 @@ When neither --check nor --nocheck is given, an actual run is done.
             return CampaignRunner.usage( "No campaign file found." )
 
         # Check and process options
+        doDebug = False
+        doDebugSeparate = False
+        doDebugCombined = True
+        deadlyScenarios = False
         for opt in options:
             if opt == '--check':
                 if Campaign.doCheckRun and Campaign.doRealRun:
@@ -857,6 +917,24 @@ When neither --check nor --nocheck is given, an actual run is done.
                     justScenario.append( opt[11:] )
                 else:
                     justScenario = [opt[11:]]
+            elif opt == '--debuglog':
+                if doDebug == False:
+                    doDebug = True
+                doDebugCombined = True
+                doDebugSeparate = False
+            elif opt == '--debugseparate':
+                if doDebug == False:
+                    doDebug = True
+                doDebugSeparate = True
+                doDebugCombined = False
+            elif opt == '--debugboth':
+                if doDebug == False:
+                    doDebug = True
+                doDebugSeparate = True
+            elif opt[:11] == '--debuglog=':
+                doDebug = opt[11:]
+            elif opt == '--deadly':
+                deadlyScenarios = True
             else:
                 return CampaignRunner.usage( "Unknown option: {0}".format( opt ) )
         
@@ -871,7 +949,7 @@ When neither --check nor --nocheck is given, an actual run is done.
 
         # Initialize the global environment
         Campaign.testEnvDir = os.path.abspath(os.path.join( os.path.dirname(argv[0]), '..' ))
-        if not os.getenv('RESULTS_DIR', '') == '':
+        if os.getenv('RESULTS_DIR', '') != '':
             if not os.path.exists( os.getenv('RESULTS_DIR') ) or not os.path.isdir( os.getenv('RESULTS_DIR') ):
                 print 'RESULTS_DIR is set to {0}, but that is not a valid directory. Please specify a valid directory in RESULTS_DIR or set it to ""'.format( os.getenv('RESULTS_DIR') )
                 return
@@ -886,7 +964,7 @@ When neither --check nor --nocheck is given, an actual run is done.
             elif not os.path.isdir( Campaign.resultsDir ):
                 print 'Results directory {0} already exists but is not a directory.'.format( Campaign.resultsDir )
                 return
-
+        
         Campaign.loadModule = staticmethod(loadModule)
         Campaign.loadCoreModule = staticmethod(loadCoreModule)
 
@@ -894,6 +972,12 @@ When neither --check nor --nocheck is given, an actual run is done.
         for campaign_file in campaign_files:
             try:
                 Campaign.currentCampaign = CampaignRunner(campaign_file)
+                if doDebug == True:
+                    Campaign.debuglogger = core.debuglogger.debuglogger( Campaign.getCurrentCampaign().campaignResultsDir, doDebugSeparate, doDebugCombined )
+                elif doDebug != False:
+                    os.makedirs( os.path.join( doDebug, Campaign.getCurrentCampaign().campaignName ) )
+                    Campaign.debuglogger = core.debuglogger.debuglogger( os.path.join( doDebug, Campaign.getCurrentCampaign().campaignName ), doDebugSeparate, doDebugCombined )
+                Campaign.getCurrentCampaign().deadlyScenarios = deadlyScenarios
                 Campaign.getCurrentCampaign().readCampaignFile(justScenario)
             except Exception as exc:
                 Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
@@ -902,6 +986,8 @@ When neither --check nor --nocheck is given, an actual run is done.
                     Campaign.logger.closeLogFile()
                     Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
                     Campaign.logger.exceptionTraceback()
+            finally:
+                Campaign.debuglogger.cleanup()
 
 if __name__ == "__main__":
     CampaignRunner.load(sys.argv)

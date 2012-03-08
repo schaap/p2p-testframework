@@ -116,7 +116,6 @@ class file(coreObject):
             if self.getFileDir(host):
                 host.sendCommand( 'mkdir -p "{0}/meta/"'.format( self.getFileDir( host ) ) )
                 host.sendFile( self.metaFile, self.getMetaFile( host ) )
-                print "DEBUG: Sent file {0} to {1} on host {2}".format( self.metaFile, self.getMetaFile(host), host.name )
 
     # There's an unused argument host here; that's fine
     # pylint: disable-msg=W0613

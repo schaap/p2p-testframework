@@ -213,7 +213,6 @@ class swift(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        print "DEBUG: Retrieving logs for execution {3} of client {0} on host {1} using connection {2}".format( self.name, execution.host.name, execution.getRunnerConnection().getIdentification(), execution.getNumber() )
         if self.getExecutionLogDir(execution):
             execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
 

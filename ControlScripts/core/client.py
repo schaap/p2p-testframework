@@ -479,13 +479,10 @@ class client(coreObject):
                 return
             if execution.getNumber() in self.pids:
                 raise Exception( "Execution number {0} already present in list PIDs".format( execution.getNumber() ) )
-            print "DEBUG: Sending command clientRunner for client {0} on host {1}".format( self.name, execution.host.name )
             result = execution.host.sendCommand( '{0}/clientRunnerScript'.format( self.getExecutionClientDir( execution ) ), execution.getRunnerConnection() )
-            print "DEBUG: Sent command clientRunner for client {0} on host {1}, result:\n{2}".format( self.name, execution.host.name, result )
             m = re.match( '^([0-9][0-9]*)', result )
             if not m:
                 raise Exception( "Could not retrieve PID for execution {0} of client {1} on host {2} from result:\n{3}".format( execution.getNumber(), execution.client.name, execution.host.name, result ) )
-            print "DEBUG: client {2}: self.pids[{0}] = '{1}'".format( execution.getNumber(), m.group(1), self.name )
             self.pids[execution.getNumber()] = m.group( 1 )
         finally:
             try:
@@ -504,7 +501,6 @@ class client(coreObject):
         res = False
         try:
             self.pid__lock.acquire()
-            print "DEBUG: client {1}: self.pids = {0}".format( self.pids, self.name )
             if execution.getNumber() in self.pids:
                 res = True
         finally:
@@ -531,7 +527,6 @@ class client(coreObject):
             self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
                 raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
-            print "DEBUG: Checking for PID {0}".format( self.pids[execution.getNumber()] )
             connection = reuseConnection
             if not connection:
                 connection = execution.getRunnerConnection()
@@ -591,10 +586,8 @@ class client(coreObject):
             for killCounter in range( 0, len(killActions) ):
                 if killActions[killCounter] != 0:
                     res = execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ), connection )
-                    print "DEBUG: kill -{0} {1} : {2}".format( killActions[killCounter], theProgramPID, res )
                 time.sleep( killDelays[killCounter] )
                 result = execution.host.sendCommand( 'kill -0 {0} 2>/dev/null && echo "Y" || echo "N"'.format( theProgramPID ), connection )
-                print 'DEBUG: kill -0 {0} 2>/dev/null && echo "Y" || echo "N" : {1}'.format( theProgramPID, result )
                 if re.match( '^Y', result ) is None:
                     try:
                         self.pid__lock.acquire()

@@ -10,7 +10,6 @@ import errno
 import stat
 import subprocess
 import os
-import logging
 
 # ==== Paramiko is used for the SSH connections ====
 paramiko = None
@@ -160,10 +159,12 @@ class das4ConnectionObject(countedConnectionObject):
     
     def close(self):
         countedConnectionObject.close(self)
+        Campaign.debuglogger.closeChannel(self.getIdentification())
         try:
             self.sftp__lock.acquire()
             if self.sftpChannel:
                 self.sftpChannel.close()
+                Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED DURING CLOSE' )
                 del self.sftpChannel
                 self.sftpChannel = None
         finally:
@@ -171,15 +172,14 @@ class das4ConnectionObject(countedConnectionObject):
             self.client.close()
             del self.client
             self.client = None
+            Campaign.debuglogger.closeChannel( self.getIdentification() )
     
     def write(self, msg):
-        print "DEBUG: CONN {0} SEND:\n{1}".format( self.getIdentification(), msg )
         self.io[0].write( msg )
         self.io[0].flush()
     
     def readline(self):
         line = self.io[1].readline()
-        print "DEBUG: CONN {0} READLINE:\n{1}".format( self.getIdentification(), line )
         return line
     
     def createSFTPChannel(self):
@@ -194,6 +194,7 @@ class das4ConnectionObject(countedConnectionObject):
             chan = t.open_session()
             chan.exec_command(self.sftpScriptname)
             self.sftpChannel = paramiko.SFTPClient(chan)
+            Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL CREATED' )
         finally:
             self.sftp__lock.release()
         return False
@@ -208,6 +209,7 @@ class das4ConnectionObject(countedConnectionObject):
             self.sftpChannel.close()
             del self.sftpChannel
             self.sftpChannel = None
+            Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED' )
         finally:
             self.sftp__lock.release()
     
@@ -483,6 +485,7 @@ empty
         chan2.exec_command( 'ssh {0}'.format( self.nodeSet[0] ) )
         io = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
         obj = das4ConnectionObject( client, io, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ) )
+        Campaign.debuglogger.log( obj.getIdentification(), 'CREATED in scenario {2} for DAS4 host {0} to node {1}'.format( self.name, self.nodeSet[0], self.scenario.name ) )
         try:
             self.connections__lock.acquire()
             if self.isInCleanup():
@@ -511,6 +514,7 @@ empty
 
         @param  The connection to be closed.
         """
+        Campaign.debuglogger.closeChannel(connection.getIdentification())
         host.closeConnection(self, connection)
 
     def sendCommand(self, command, reuseConnection = True):
@@ -526,19 +530,18 @@ empty
         """
         connection = None
         try:
-            print "DEBUG: Host {0} entered sendCommand".format( self.name )
             connection = self.getConnection(reuseConnection)
-            print "DEBUG: Host {0} got lock in sendCommand on connection {1}".format( self.name, connection.getIdentification() )
             # Send command
             connection.write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            Campaign.debuglogger.log( connection.getIdentification(), 'SEND {0}'.format( command ) )
             # Read output of command
             res = ''
             line = connection.readline()
             while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
+                Campaign.debuglogger.log( connection.getIdentification(), 'RECV {0}'.format( line ) )
                 res += line
                 line = connection.readline()
             # Return output (ditch the last trailing \n)
-            print "DEBUG: Host {0} returning from sendCommand with connection {1}".format( self.name, connection.getIdentification() )
             return res.strip()
         finally:
             self.releaseConnection(reuseConnection, connection)
@@ -569,6 +572,7 @@ empty
                         raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localSourcePath, remoteDestinationPath, self.name ) )
                 if self.isInCleanup():
                     return
+                Campaign.debuglogger.log( connection.getIdentification(), 'SFTP SEND FILE {0} TO {1}'.format( localSourcePath, remoteDestinationPath ) )
                 sftp.put( localSourcePath, remoteDestinationPath )
                 sftp.chmod( remoteDestinationPath, os.stat(localSourcePath).st_mode )
             finally:
@@ -613,12 +617,14 @@ empty
                         return
                     if os.path.isdir( localPath ):
                         if not das4ConnectionObject.existsRemote(sftp, remotePath):
+                            Campaign.debuglogger.log( connection.getIdentification(), 'SFTP CREATE REMOTE DIR {0}'.format( remotePath ) )
                             sftp.mkdir( remotePath )
                             sftp.chmod( remotePath, os.stat(localPath).st_mode )
                         paths += [(os.path.join( localPath, path ), '{0}/{1}'.format( remotePath, path )) for path in os.listdir( localPath )]
                     else:
                         if das4ConnectionObject.existsRemote(sftp, remotePath) and das4ConnectionObject.isRemoteDir(sftp, remotePath):
                             raise Exception( "Sending file {0} to {1} on host {2} with overwrite, but the destination already exsits and is a directory".format( localPath, remotePath, self.name ) )
+                        Campaign.debuglogger.log( connection.getIdentification(), 'SFTP SEND FILE {0} TO {1}'.format( localPath, remotePath ) )
                         sftp.put( localPath, remotePath )
                         sftp.chmod( remotePath, os.stat(localPath).st_mode )
             finally:
@@ -655,6 +661,7 @@ empty
                 sftp = connection.sftpChannel
                 if self.isInCleanup():
                     return
+                Campaign.debuglogger.log( connection.getIdentification(), 'SFTP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
                 sftp.get( remoteSourcePath, localDestinationPath )
             finally:
                 if newConnection:
@@ -671,16 +678,15 @@ empty
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         # Send command
-        print "DEBUG: CONN MASTER SEND {0}".format( command+'\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
         self.masterIO[0].write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+        Campaign.debuglogger.log('das4_master', 'SEND {0}'.format( command ) )
         # Read output of command
         res = ''
         line = self.masterIO[1].readline()
-        print "DEBUG: CONN MASTER READ '{0}'".format( line )
         while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
+            Campaign.debuglogger.log('das4_master', 'RECV {0}'.format( line ) )
             res += line
             line = self.masterIO[1].readline()
-            print "DEBUG: CONN MASTER READ '{0}'".format( line )
         # Return output (ditch the last trailing \n)
         return res.strip()
 
@@ -712,17 +718,20 @@ empty
             chan2.set_combine_stderr( True )
             chan2.exec_command( 'bash -l' )
             self.masterIO = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
+            Campaign.debuglogger.log( 'das4_master', 'CREATED in scenario {2} for DAS4 host {0} to headnode {1}'.format( self.name, self.headNode, self.scenario.name ) )
             self.sendMasterCommand('module load prun')
             # Reserve nodes
             totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, das4)])
             maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, das4)])
             if self.isInCleanup():
+                Campaign.debuglogger.closeChannel( 'das4_master' )
                 self.masterConnection.close()
                 del self.masterConnection
                 self.masterConnection = None
                 return
             self.reservationID = self.sendMasterCommand('preserve -1 -# {0} {1} | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):$/\\1/" | grep -E "^[[:digit:]]*$"'.format( totalNodes, maxReserveTime ) )
             if self.reservationID == '' or not isPositiveInt( self.reservationID ):
+                Campaign.debuglogger.closeChannel( 'das4_master' )
                 self.masterConnection.close()
                 del self.masterConnection
                 self.masterConnection = None
@@ -799,6 +808,7 @@ empty
             # Create temporary persistent directory, if needed
             if not self.remoteDirectory:
                 if self.isInCleanup():
+                    Campaign.debuglogger.closeChannel( 'das4_master' )
                     self.masterConnection.close()
                     del self.masterConnection
                     self.masterConnection = None
@@ -943,6 +953,7 @@ empty
                 if res.splitlines()[-1] != "OK":
                     del self.masterIO
                     self.masterIO = None
+                    Campaign.debuglogger.closeChannel( 'das4_master' )
                     self.masterConnection.close()
                     del self.masterConnection
                     self.masterConnection = None
@@ -950,6 +961,7 @@ empty
                 self.tempPersistentDirectory = None
             del self.masterIO
             self.masterIO = None
+            Campaign.debuglogger.closeChannel( 'das4_master' )
             self.masterConnection.close()
             del self.masterConnection
             self.masterConnection = None
