@@ -32,7 +32,11 @@ def parseError( msg ):
 have_windll = False
 have_ifconfig = None
 try:
-    __import__('ctypes', globals(), locals(), ['windll', 'Structure', 'sizeof', 'POINTER', 'byref', 'c_ulong', 'c_uint', 'c_ubyte', 'c_char'])
+    libs = ['windll', 'Structure', 'sizeof', 'POINTER', 'byref', 'c_ulong', 'c_uint', 'c_ubyte', 'c_char']
+    ctypes = __import__('ctypes', globals(), locals(), libs)
+    for lib in libs:
+        if not hasattr(ctypes, lib):
+            raise ImportError()
     have_windll = True
 except ImportError:
     if os.path.exists( '/sbin/ifconfig' ):
