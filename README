@@ -1,480 +1,261 @@
-This document is the work-in-progress documentation of the P2P testing framework.
+The P2P Testing Framework is a framework for automated running of peer to peer clients. It supports different clients, different types of host and several ways of processing the output. Most importantly it is easily extended to include your needs. Campaign and scenario files decribe how a test is to be run (which client, which hosts, how to connect, how to process data, etc) in a simple declarative language. Python modules, subclasses of the core modules, are loaded to handle most of the specific parts, all glued together by the core of the framework.
+
+This document contains the general documentation, including a version history, the design of the framework and the parameters to the core modules. The HOWTO document gives a more introductory description of how to use the framework and how to extend it, both including examples. For a complete documentation of the framework, please run 'doxygen doxy' inside the Docs directory.
 
 = API Version History =
-1.0.4
-    + Added newCleanupScriptIndex / changed addCleanupScript
-            any file requesting a new cleanup script using addCleanupScript should no longer use the return value
-            of the function, but should call newCleanupScriptIndex directly after addCleanupScript returned, instead
-1.0.3
-    + Added hostGetAddress
-            hosts need updating to include this function, implementation where possible is encouraged
-1.0.2
-    + Added fileSendToHost__default and fileGetMetaName implementations
-            file modules need updating to call the new default functions in order to support the new metaFile parameter
-            the switch on $parameterName in fileReadSettings also needs updating in each file module to include metaFile as valid
-1.0.1
-    + Added hostGetPersistentTestDir
-            hosts need updating to include this function, clients need updating to use this function for storing logs
-    + Added clientPrepare
-            clients need updating to include this function
+2.0.0
+    - Complete port of the framework to python
+    - Many changes in the internal structure, campaign and scenario files should still work
+
+= Framework design =
+The python framework consists of the core script (ControlScripts/run_campaign.py), the core modules (ControlScripts/core/) and the extension modules (ControlScripts/modules). The core script parses the settings on the command line as well as campaign and scenario files in order to create the CampaignRunner and ScenarioRunner objects. This includes loading all necessary core modules and extension modules. The ScenarioRunner object knows how to run a full scenario, which is basically just stepping through all stages and instructing the loaded objects on what to do for each stage.
+
+== Core script ==
+The core script initializes everything and glues the parts together. Its ScenarioRunner class is of interest to extension modules, since it contains all the objects in an execution. Those objects are retrievable using the getObjects(...) and getObjectsDict(...) methods.
+
+The general flow of the framework is documented below in the Stages section.
+
+== Core modules ==
+The core modules are always available. Most of them are the parent classes for the extension modules and will be described below. The other core modules provide global services.
+
+=== core.campaign.Campaign ===
+A static class with global properties that hold for all campaigns being executed. Elements such as loggers and paths to important local directories are found here, but also a reference to the campaign currently being executed. An important service provided by the Campaign class is the ability to load modules. Using the loadModule(...) and loadCoreModule(...) functions all core and extension modules can be dynamically loaded.
+
+=== core.coreObject.coreObject ===
+The parent class of all extension modules and hence the parent class of all extension module parent classes. This class provides a few basic functions, such as naming and cleanup.
+
+=== core.debuglogger.debuglogger ===
+An instance of this class is always available through core.campaign.Campaign.debuglogger. It is used for logging communication between the commanding host (the host running the framework) and the hosts doing the actual work. Host modules use this object for logging their communications.
+
+=== core.execution ===
+The core of the P2P Testing Framework revolves around executions of clients on hosts operating on files. The execution object contains that combination: host, client and file. It also knows whether the execution is a seeder or a leecher and has a unique number across the campaign and hence across the scenario.
+
+Execution objects are declared along with the other objects and have the following parameters:
+- host          The name of the host object on which the execution should run. Required
+- client        The name of the client object which should be executed. Required
+- file          The name of the file object which is to be transferred. Requried
+- parser        The name of the parser object which should parse the logs of this execution. Optional, defaults to the parser specified with the client
+- seeder        Set to anything but '' to mark this execution as a seeding execution. Optional, defaults to ''
+
+See the description of the extension modules below or the HOWTO document for more information on using parameters.
+
+=== core.logger.logger ===
+The generic scenario logger object. An instance is always available through core.campaign.Campaign.logger. It is used for logging about anything that needs logging. Several convenience functions are provided to handle exceptions and tracebacks.
+
+=== core.meta.meta ===
+Contains a few static functions that allow creation of meta data, such as Merkle root hashes or torrent files.
+
+=== core.parsing ===
+This module provides several functions that make it easier to parse arguments in the scenario files. Often used are isPositiveInt(...) and isPositiveFloat(...).
+
+== Extension modules ==
+The extension modules provide all the actual functionality. Described here are the parent classes to the extension modules and their parameters. For the parameters of the specific extension modules see the documentation of their classes.
+
+To get a better idea of how to use the parameters in the configuration of the framework, please see the HOWTO document.
+
+=== host ===
+Host modules provide the connection to a host and the services to run commands on that host and to send or retrieve files. Each host modules keeps track of, usually, a number of connections to the host which can be used to send commands and send or retrieve files.
+
+Host objects also include information about traffic control that needs to be put on the host. Such traffic control is defined using parameters to the host object, but is implemented by the tc extension modules.
+
+Parameters:
+- name              The name of the host object. This name is used to refer to the host object in throughout the scenario. Usually required (particular extension modules sometimes provide a default)
+- remoteDirectory   The path to a directory on the remote host which can be used to store temporary files in during the scenario. Optional, a temporary directory will be created by default (in /tmp usually)
+
+By default the following host modules are provided:
+- host:local        Uses the local host, mainly for testing. If you wish to use the local host for serious scenarios consider using host:ssh to 127.0.0.1.
+- host:ssh          Uses a host that can be approached via SSH. This is the preferred way of contacting hosts.
+- host:das4         Special handler for those with access to the DAS4 system.
+
+==== tc ====
+TC modules provide traffic control to a host. They probably have special requirements on the host and your access to it, so be sure to always check that. Traffic control can be used to simulate a different networking environment, e.g. with lower speeds and lossy connections.
+
+TC modules don't have parameters of themselves, but use the parameters set on the host object they operate on. The following parameters are therefor set on the host object, but used by the TC module.
+
+Parameters:
+- tc                    The name of the TC module to load, without any prefixes. E.g. tc=netem to load the tc:netem module on the host. Optional, empty by default which disables TC
+- tcInterface           The name of the interface on which traffic control is to be applied. This should be an existing networking interface on the remote host. Optional, defaults to eth0
+- tcMaxDownSpeed        Maximum download speed to allow. To be specified in bits per second, possibly postfixed by kbit or mbit. E.g. tcMaxDownSpeed=10mbit for 10 mbit speeds. Optional, defaults to 0 meaning no restrictions
+- tcMaxDownBurst        Maximum burst in the download speed. Not allowed if tcMaxDownSpeed is not set. To be specified in bits per second. Optional, defaults to equal to tcMaxDownSpeed
+- tcMaxUpSpeed          Like tcMaxDownSpeed, but for upload speed.
+- tcMaxUpBurst          Like tcMaxDownBurst, but for upload speed.
+- tcLossChance          Chance to drop a packet. A floating point number between 0.0 and 100.0 inclusive, specifying the chance as a percentage. Optional, defaults to 0.0
+- tcDuplicationChance   Chance that a packet will be duplicated. A floating point number between 0.0 and 100.0 inclusive, specifying the chance as a percentage. Optional, defaults to 0.0
+- tcCorruptionChance    Chance that a packet will be corrupted. A floating point number between 0.0 and 100.0 inclusive, specifying the chance as a percentage. Optional, defaults to 0.0
+- tcDelay               The delay to introduce on each packet in ms, given as a positive integer. Optional, defaults to 0
+- tcJitter              The maximum deviation on the introduced delay, as set by tcDelay, in ms. Optional, defaults to 0
+
+By default the following tc modules are provided:
+- tc:netem              Uses the netem kernel module with the tc utility
+
+=== file ===
+File modules describe data to be transferred. Usually this will consist of one or more files. Also includes metadata for the file, such as Merkle root hashes or torrent files.
+
+Parameters:
+- name              The name of the file object. This name is used to refer to the file object in throughout the scenario. Required.
+- rootHash          The Merkle root hash of the file. Consists of 40 hexadecimal digits. Please take care that several ways of calculating the root hash are out there; pick the right one for the client you use. Optional.
+- metaFile          A file with metadata, such as a torrent file. This file will be made available to all client executions, both seeders and leechers. Should be a path to a file on the command machine. Optional.
+
+By default the following file modules are provided:
+- file:none         A dummy file object that simply provides no data.
+- file:local        Specified a local file or directory to use as data.
+- file:fakedata     Creates fake data on the remote host that is always the same, non-trivial, of configurable size and real.
+
+=== client ===
+Client modules run the client application that are to be tested. To run this they use the services and information from all parts of the execution. The client module is responsible for everything regarding the client, from downloading and compiling via running to killing and retrieving logs. This burden is partly offloaded to the builder and source extension modules, and mostly present in the parent class.
+
+Client objects also include information about where they are located and how they are to be built. Such information is defined using parameters to the client object, but is used by the source and builder extension modules.
+
+Parameters:
+- name                  The name of the client object.  This name is used to refer to the client object in throughout the scenario. Optional, defaults to the name of the extension module used
+- extraParameters       Extra parameters to be appended on the command line to the client. Client specific. Optional, defaults to ''
+- parser                The name of the parser object to be used to parse logs from this client. Optional, defaults to a new parser with the same name as the name of the extension module used
+
+By default the following client modules are provided:
+- client:http           Uses lighttpd and aria2 to provided HTTP(S) downloads
+- client:opentracker    Allows running the opentracker BitTorrent tracker software, useful in combination with other BitTorrent clients
+- client:utorrent       Uses the uTorrent binary clients with the webui
+- client:swift          Uses the libswift command line client
+
+==== source ====
+source modules instruct the framework how to retrieve the source or binaries of the client.
+
+source modules do not have parameters of themselves, but use the parameters set on the client object they operate on. The following parameters are therefor set on the client object, but used by the source module.
+
+Parameters:
+- source            The name of the source module to load, e.g. source=local to use source:local. Optional, defaults to source:directory
+- remoteClient      Set to anything but '' to signal that the sources are to be loaded, or found, on the remote host instead of the commanding host. Optional, defaults to ''
+- location          The location of the sources. The contents of this parameter depends on the source module used. Required.
+
+By default the following source modules are provided:
+- source:directory  Assumes the sources or binaries to be present in the directory pointed to by location; if remoteClient is set this is a directory on the remote host, otherwise on the commanding host
+- source:local      Assumes the sources or binaries to be present in the directory on the commanding host pointed to by location; if remoteClient is set this means the local sources are first uploaded before the builder starts
+- source:git        The location is a valid git repository that can be cloned
+
+==== builder ====
+builder modules know how to compile the sources of a client.
+
+builder modules do not have parameters of themselves, but use the parameters set on the client object they operate on. The following parameters are therefor set on the client object, but used by the builder module.
+
+Parameters:
+- builder       The name of the builder module to load, e.g. builder=make to use builder:make. Optional, default to builder:none
+
+By default the following builder modules are provided:
+- builder:none      The client has already been built. Compilation is skipped.
+- builder:make      Uses (GNU) make to build the client
+- builder:scons     Calls the scons building program to build the client
+
+=== parser ===
+parser modules know how to parse the output of a client. They are specified per execution or per client. A parser module takes as input the raw logs as retrieved from the remote host and outputs parsed logs.
+
+Parameters:
+- name                  The name of the parser object. This name will be used to refer to the parser object throughout the scenario. Optional, defaults to the name of the extension module used
+
+By default the following parser modules are provided:
+- parser:none           A dummy implementation parsing nothing
+- parser:http           A copy of parser:none for easier use with client:http
+- parser:aria2          The parser for logs from aria2 as retrieved by client:http
+- parser:lighttpd       The parser for logs from lighttpd as retrieved by client:http
+- parser:opentracker    A copy of parser:none for easier use of client:opentracker
+- parser:utorrent       The parser for logs from utorrent as retrieved by client:utorrent
+- parser:swift          The parser for logs from swift as retrieved by client:swift
+
+All parsers that are provided by default, except for parser:none and its clones, provide the same output format. It is not required to use this format: any format is fine as long as it's documented.
+
+=== processor ===
+processor modules can process raw and/or parsed logs into nicer datasets or visualizations or whatever.
+
+processor modules do not have generic parameters: just declaring their object to be present is usually enough. Do look at the particular extension module you use for parameters it might need, though.
+
+By default the following processor modules are provided:
+- processor:savehostname        Creates a simple text file for each execution with the name of the host object the execution ran on.
+- processor:saveisseeder        Creates a simple text file for each execution with "YES" in it if the execution was a seeder; "NO" is in it otherwise.
+- processor:gnuplot             Runs a given gnuplot script for each parsed log in an attempt to create nice graphs. The provided TestSpecs/processors/simple_log_gnuplot script is designed for the output of the parsers.
+
+=== viewer ===
+viewer modules take all the data together and provide a nice view of the data.
+
+viewer modules do not have generic parameters: just declaring their object to be present is usually enough. Do look at the particular extension module you use for parameters it might need, though.
+
+By default the following viewer modules are provided:
+- viewer:htmlcollection         Creates an HTML page that describes the whole scenario.
 
 = Stages =
+This section described the workflow inside the testing framework for each scenario. The code below is pseudocode that matches what the ScenarioRunner does.
+
+1) Collect all hosts that are part of an execution in a set executionHosts
+2) Call host.prepare() on each host in executionHosts, this prepares that hosts and sets up connections to them
+3) Collect all hosts that are part of an execution in a set executionHosts
+4) On all client object, call client.prepare(), this will prepare the client binaries,
+   including up/downloading source and compilations
+5) With each host in executionHosts
+    a) If the host requests TC
+        I) Analyse the hosts and clients to see which TC (inbound/outbound) (port restricted/fully restricted)
+           is needed
+        II) Load the tc module for this host
+        III) Check to see that the TC option needed can actually be loaded (calls tc.check(host) )
+            0) If not, try and fall back to more restrictive TC
+            0) If including fallbacks nothing is possible, fail the scenario
+        IV) Save the way TC is to be done in the host
+    b) Call client.prepareHost(host) for each client in host.clients,
+       which contains all clients that will run on the host
+6) With each host in executionHosts
+    a) Call file.sendToHost(host) for each file in host.files,
+       which contains all the files that will be seeded from or leeched to the host
+    b) Call file.sendToSeedingHost(host) for each file in host.seedingFiles,
+       which contains all the files that will be seeded from the host
+7) With each execution
+    a) Call execution.client.prepareExecution(execution)
+8) With each host in executionHosts
+    a) If the host reqests TC
+        I) Install the TC (calls tc.install(host) )
+9) With each execution
+    a) Prepare an execution specific connection to the host of the execution
+10) With each execution, in parallel
+    a) Call execution.client.start(execution) to start the client on the host
+11) While the timelimit has not been reached
+    a) Sleep at most 5 seconds
+    b) With each execution
+        I) Call execution.client.isRunning(execution) to see if the client is still running
+            0) If so, stop checking the other executions and continue with 11
+12) With each execution, in parallel
+    a) Call execution.client.isRunning(execution) to see if the client is still running
+        I) If so, call execution.client.kill(execution) to have the client killed
+13) With each host in executionHost
+    a) If the host requests TC
+        I) Remote the TC (call tc.remove(host) )
+14) With each execution, in parallel
+    a) Call execution.client.retrieveLogs(execution) to retrieve the client logs for the execution
+    b) Call execution.runParsers(...)
+        I) If a parser is set for the execution
+            0) Call execution.parser.parseLogs(...)
+        II) Otherwise
+            0) Retrieve a parser p by calling execution.client.loadDefaultParser(execution)
+            0) Call p.parseLogs(...)
+15) With each host
+    a) Create a new connection to the host to use for cleanup
+16) With each execution
+    a) Call execution.client.hasStarted(execution) and execution.client.isRunning(execution)
+       to find out if the client is running
+        I) If so, call execution.client.kill(execution) to kill the client
+17) With each file
+    a) Call file.cleanup()
+18) With each host
+    a) With each client in host.clients, which contains all the clients that will/have run on the host
+        I) Call client.cleanupHost( host )
+19) With each client
+    a) Call client.cleanup()
+20) With each host
+    a) If the host requests TC
+        I) Try and remove TC (calls tc.remote(host) )
+    b) Call host.cleanup(), which also cleans up the connections, including the cleanup connection
+21) With each processor
+    a) Call processor.processLogs(...)
+22) With each viewer
+    a) Call viewer.createView(...)
+
+Steps 15 through 20 are the cleanup, which is at each call guarded against errors and will run always. Note that it can also run at any moment in time, e.g. due to an Exception being raised. So from any step before 15 one can always jump straight into 15. In case of such a jump the scenario stops after step 20. A particular jump is after step 5a: if the run is just a testrun step 5b will not be executed and once step 5 is done the jump to cleanup will be taken.
+
+Please note the peculiar collections of executionHost: once before and once after preparing the hosts. The framework explicitly allows for the collection of objects to be changed by the preparation of the hosts, as long as any host that is added is guaranteed to have been prepared if it's also part of an execution. This is for example exploited by host:das4 which creates a host object for every node in its preparation phase.
 
 This section is a setup for the flow of work in the testing framework. It's not entirely up to date at the moment, but should give an insight into what steps are done and in what order.
-
-The following are stages of the testing:
-- Host connection
-- Host preparation
-- Execution
-- Host cleanup
-- Log parsing
-- Log processing
-- Log showing
-
-== Host connection ==
-Requires: host address, connection method, connection parameters
-Provides: [host]
-Ensures: host available
-During host connection the host is connected first to make sure it is there. All host connection phases are executed prior to the first test.
-
-== Host preparation ==
-Requires: host specific preparation script, client specific preparation script, host parameters, client files, transmission file information, [host]
-Provides: [client]
-Ensures: host prepared for running test client
-During host preparation the host is fully set up to start running the test. Parameters for the host (such as traffic control) are set up and the host specific preparation script is run.
-The client is copied to the host and the  client specific preparation script is run.
-The file is generated or copied if needed (seeder).
-
-== Execution ==
-Requires: client parameters, [file], [host], [client]
-Provides: [logs]
-Ensures: test was run
-During execution the test is actually run. The client is run on the remote machine using the client parameters as specified in the configuration. Logs are saved somewhere.
-
-== Host cleanup ==
-Requires: host specific cleanup script, client specific cleanup script, [host], [client], [logs]
-Provides: [locallogs]
-Ensures: host cleaned up after test, logs available locally
-During host cleanup the logs are first copied to the local machine. After that the host preparation is reversed: the client specific cleanup script is run and the client is removed.
-The host specific cleanup script is run and the parameters for the host are reversed back to default.
-
-== Log parsing ==
-Requires: specific log parser script, [locallogs]
-Provides: [parsedlogs]
-Ensures: logs are parsed
-During log parsing the locally available logs of a test run are parsed using the specific log parser. This is a step that is separate for each client execution.
-
-== Log processing ==
-Requires: specific log processing script, [locallogs], [parsedlogs]
-Provides: [processedlogs]
-Ensures: logs have been processed
-During log processing, a global post processing for each scenario, all logs are taken together and processed. Examples of processing are plotting, analysing, etc. It's up to the log processor to decide which logs, raw or parsed, to use and what to do with them.
-
-== Log viewing ==
-Requires: specific log show script, [processedlogs]
-Provides: [result]
-Ensures: processed logs are shown
-During log viewing the processed logs are viewed. This can be an actual interactive viewing of the output, but could just as well be a conversion to an HTML page for later viewing.
-
-= Configuration =
-
-Configuration is one of the most important aspects of the framework: it's where you, the user, can tell the framework what to do. Since the framework can do a lot, it also offers a lot of configuration.
-
-Configuring the testing framework consists of writing a few plain text files, describing what parts you which to use and how those should be configured. The configuration can be viewed as a special purpose language, if that helps your thoughts. At least two files are needed: a campaign file and one or more files describing (parts of) scenarios.
-
-== Campaign files ==
-The campaign file describes the campaign, which is the set of scenarios to be run. This file is the primary entry point of your testing: you hand this file to the testing framework and all the magic will happen. In the campaign file you will declare which scenarios you wish to run, their names and in which files the details of those scenarios can be found. No other information is found inside a campaign file.
-
-The scenarios inside a campaign file are declared like any other object. They are effectively objects of the scenario type. See below for more information on objects and their declaration.
-
-The fact that scenarios can point to multiple scenario files means you can write simple scenario files to describe one or two objects and reuse those for multiple scenario.
-
-== Scenario files ==
-The scenario files describe the parts, or modules, of the testing framework that you wish to use. Each scenario file contains one or more objects of the following types:
-- host
-- client
-- file
-- execution
-- parser
-- processor
-- viewer
-
-These objects describe how the setup of your test looks like, how it should be run (interactions) and how any data should be parsed, processed and displayed. Most objects have subtypes referring to the actual implementations in modules in your testing environment. A number of such implementations are available by default, but you can add additional modules from other sources or by writing them yourself. Objects with subtypes are denoted with a colon in between, for example host:ssh for the ssh subtype of the host object type.
-
-=== Host objects ===
-Host objects refer to the (remote) hosts that will partake in your test. The way the testing framework should talk to the host is determined by the subtype of the object.
-
-=== Client objects ===
-Client objects refer to the peer-to-peer client, or program, that you wish to run. For each type and setup of a client you need to create one client object. This can be reused on multiple hosts. A common scenario would be to test how different seeding clients perform under a common load, say 10 leeching default clients. For this one would need only one client object for the leeching clients and one for each seeding client.
-
-=== File objects ===
-File objects describe the files that are to be transferred between the clients. This object also helps in generating often used metadata for the files, such as torrent files or a Merkle Root Hash. Subtypes of the file object type determine the actual data.
-
-=== Execution objects ===
-Executions describe the interaction between hosts, clients and files: which clients transfers which files on which hosts. As such, an execution consists of a host, a client and a file, all of them referred to by name (see the actual configuration options below). It can also flag an execution as being a seeder and optionally attach a parser to that specific execution. When a scenario is being run, the executions determine what clients are started and where.
-
-As an exception to the rule, execution objects do not have a subtype.
-
-=== Parser objects ===
-Parsers take the raw data files returned by the clients and parse them into a more general format ready for a processor. Parsers are often tightly coupled with the client, since they need to understand the format of its log files.
-
-=== Processor objects ===
-Processor objects take the output of the parsers and generate more comprehensible data from that, such as a graph or a statistical report.
-
-=== Viewer objects ===
-Viewers take the parsed logs and the processed data together and present them nicely, for example by generating an HTML page, or perhaps by reporting them to a web service.
-
-=== Hidden objects ===
-Some objects are not directly visible in the configuration. These are the builders, sources and traffic controllers. Enabling these modules is done via settings of the client and host objects. Their function is described below.
-
-==== Builders ====
-These objects know how to build a client from source. Examples are make and scons.
-
-==== Sources ====
-Sources have information about where the source of a client can be obtained. Examples are git and local.
-
-==== Traffic controllers ====
-Traffic controllers are rather complex of nature, in that they have the ability to change the network conditions between hosts. Currently only one module is available: netem. Traffic controllers can be enabled via the host object and will try to apply things like bandwidth shaping and error emulation to the network traffic concerning that host. This uses the inbound and outbound ports settings as (usually) hardcoded in each client object that is run on the host, or, if that will not work or is unavailable, will try to restrict all traffic between the hosts in the scenario. This also means that whenever 127.0.0.1 is one of those hosts, the test framework will refuse: it's quite dangerous to try and do so.
-
-== Configuration file format ===
-The general configuration format used is that of sections and key/value pairs. A section is started with a single line containing the object type and subtype between []. Then follow a number of key/value pairs, written as key=value on a single line, each. Comments are allowed by starting a line with a #. A simple example:
-
-# Some comment
-[host:ssh]
-name=myhost
-address=myhost.mydomain.com
-
-Here an object is declared of object type host and subtype ssh. It's options are name (value: "myhost") and address (value: "myhost.mydomain.com"). An object declaration stops with the next object header or the end of the file.
-
-Most objects have generic parameters as well as specific parameters. To use the host:ssh example again, it can be seen in the documentation below that the host object takes parameters such as name, preparation, cleanup, etc. The host:ssh object also takes parameters address, user, port and params. These are to be taken together: so a host:ssh object takes parameters name, preparation, address, port, etc. To make your life easier, most parameters have sensible defaults. In fact, despite the number of parameters a host:ssh object can take, the above is a valid declaration.
-
-Most objects are implemented as modules, found in the ControlScripts/modules/* directories. The host:ssh module, for example, is found in ControlScripts/modules/host/ssh. This similarity is no coincidence: the subtype host:ssh exists *because* the file ControlScripts/modules/host/ssh exists. Would it be renamed to ControlScripts/modules/host/ssh2, you could no longer use host:ssh but would suddenly have a host:ssh2 subtype available. Be sure to check out the module before you use it: despite documentation on their parameters being available below, the modules themselves always include more on how they function. The reason for this is simple: modules are in principle independent, and as such always carry their own documentation.
-
-While the subtypes of objects are implemented as modules and as such can easily be extended (want a subtype file:mydummyfile? create a module mydummyfile in the file directory and you're done), the object types are fully built in. Extending that would require extending the complete core of the testing framework.
-
-Among the parameters are quite a number that reference paths to files or directories. These can be given either as absolute paths or as paths relative to the directory that contains the ControlScripts/ directory.
-
-Below follow all the objects and their parameters.
-
-=== objecttype host ===
-parameters for all hosts:
-- name              -> required, the host can be referred to by its name, see also specific host type, no two hosts with the same name allowed
-- preparation       -> optional, script to be run as host specific preparation on the local host, defaults to none
-- cleanup           -> optional, script to be run as host specific cleanup on the local host, defaults to none
-- remoteFolder      -> optional, folder to use for temporary data storage (client, file, logs, ...), defaults to new temporary directory that will be purged on cleanup
-- tc                -> optional, if set to anything other than "" this enables traffic control using the tc module given by this parameter (e.g. for "tc=netem" the module tc:netem is used)
-- tc_iface          -> optional, interface for traffic control, defaults to eth0
-- tc_down           -> optional, maximum download speed, defaults to unlimited; this setting should be postfixed with 'kbit' or 'mbit', or nothing for mbit; this limit is applied to incoming traffic
-- tc_down_burst     -> optional, maximum download speed burst, defaults to unlimited; this setting should be postfixed with 'kbit' or 'mbit', or nothing for mbit; this limit is applied to incoming traffic
-- tc_up             -> optional, maximum upload speed, defaults to inlimited; this setting should be postfixed with 'kbit' or 'mbit', or nothing for mbit; this limit is applied to outgoing traffic
-- tc_up_burst       -> optional, maximum upload speed burst, defaults to unlimited; this setting should be postfixed with 'kbit' or 'mbit', or nothing for mbit; this limit is applied to outgoing traffic
-- tc_delay          -> optional, base delay for all packets being sent in ms, defaults to 0; this delay is applied to outgoing traffic
-- tc_jitter         -> optional, maximum deviation, in ms, in the delay introduced by tc_delay, defaults to 0; note that this can introduce reordering of packets!; the jitter is applied to incoming traffic
-- tc_duplication    -> optional, percentage of received packets that will be duplicated, defaults to 0.0; duplication is applied to incoming traffic
-- tc_loss           -> optional, percentage of received packets that will be lost, defaults to 0.0; loss is applied to incoming traffic
-- tc_corruption     -> optional, percentage of received packets that will be corrupted, defaults to 0.0; corruption is applied to incoming traffic
-
-==== host:local ====
-local host
-parameters:
-- name              -> required but may be left out, in which case it defaults to 'local'
-
-==== host:ssh ====
-remote single host adressable via ssh
-parameters:
-- name              -> required but may be left out, in which case it defaults to the address of the host, postfixed with a colon and the port if the port is not 22
-- hostname          -> required, IP address or hostname of host
-- port              -> optional, port to SSH to, defaults to 22
-- user              -> optional, username to connect to use for the SSH connection, defaults to '' which specifies no user to SSH (and hence will use logged in user)
-- params            -> optional, extra parameters to pass to SSH when connecting, defaults to ''
-
-==== host:test__ ====
-fake host that just logs a file
-
-=== objecttype client ===
-parameters:
-- name              -> optional, defaults to the name of the clienttype, no two clients with the same name are allowed
-- params            -> optional, extra parameters to pass to the client when executing it, defaults to ''
-- location          -> optional, defaults to $CLIENT_NAME, the directory in which the client is found, or the location of the source code as interpreted by the source module given in the source parameter when building the client
-- parser            -> optional, sets the name for the default parser object for executions with this client; if not given, the default parser for a client of subtype $CLIENT_SUBTYPE is the module parser:${CLIENT_SUBTYPE}
-- remoteClient      -> optional, if this is set to anything but "", the client should not be copied from the local machine to the remote machine, but is assumed to be present there, already; directory in this case point to the directory on the remote machine where the client is situated
-- builder           -> optional, specifies the subtype of the builder module to be used to build the client prior to running it; this building is done remotely in case of a remoteClient
-- source            -> optional, specifies the subtype of the source module to be used for providing the source code when building the client; this parameter changes the meaning of the parameter location: the latter contains source location within the context of the given source module; default to "directory"
-
-==== client:test__ ====
-fake client that just waits a bit
-parameters:
-- testTime          -> optional, positive integer, defaults to 1, the time to wait while 'running'
-
-=== objecttype file ===
-parameters:
-- name              -> required, the file can be referred to by its name, no two files with the same name allowed
-- rootHash          -> optional, the Merkle root hash of the file (40 hexadecimal digits)
-- metaFile          -> optional, the path to a local file containing meta data, such as a torrent file
-
-==== file:local ====
-a locally available file or directory, to be uploaded to any seeders
-parameters:
-- path              -> required, path to the file or directory on the local machine
-- torrent           -> optional, set to yes to enable automated generation of a torrent file for this file (do not set metaFile as well)
-- generateRootHash  -> optional, set to yes to enable automated generation of the SHA1 root hash for this file (do not set rootHash as well, make sure path points to a single file)
-- renameFile        -> optional, set to yes to enable forced renaming of the single file pointed to by path (do not set torrent as well)
-
-==== file:fakedata ====
-a generated file of fake data, generation will be done on the seeders themselves resulting in very low upload times (namely: only the generator)
-parameters:
-- size              -> required, size of the fake data file in bytes, must be a positive integer and a multiple of 4
-- fileName          -> optional, the name of the generated fake data file, defaults to "fakedata"
-- binary            -> optional, the path to the remote precompiled binary of the Utils/fakedata/ utility (use this if automatic compilation doesn't work)
-
-==== file:test__ ====
-small fake file for testing purposes
-
-=== objecttype execution ===
-All executions that are defined in a scenario are automatically used.
-parameters:
-- host              -> required, the name of the host object to run this execution on
-- client            -> required, the name of the client object to run
-- file              -> required, the name of the file object to run the client with
-- parser            -> optional, the name of the parser object to use for this execution; may be specified multiple times; if none are specified, the default parser for the client is used
-- seeder            -> optional, if set to anything but '' this flags the execution as a seeder and hence files will be copied to the remote host
-
-=== objecttype parser ===
-parameters:
-- name              -> optional, defaults to the name of the parsertype, no two parsers with the same name are allowed
-
-==== parser:test__ ====
-fake parser, just outputs a bogus log
-
-=== objecttype processor ===
-All processors that are defined in a scenario are automatically used.
-parameters:
-
-==== processor:test__ ====
-fake processor, just outputs a bogus parsed log
-
-=== objecttype viewer ===
-All viewers that are defined in a scenario are automatically used.
-parameters:
-
-==== viewer:test__ ====
-fake viewer, just outputs some bogus HTML
-
-=== objecttype scenario ===
-parameters:
-- name              -> required, used for creating a scenario specific result directory; hence this should be a valid directory name (not path, just a single name)
-- file              -> required, may be specified multiple times, the scenario files are all concatenated to form a single scenario configuration
-- timelimit         -> optional, defaults to 300, the maximum amount of seconds the scenario's executions may run
-- parallel          -> optional, set to 'no' to disallow the parallel management of clients
-
-= The testing environment and API =
-This is the general design for the testing environment. The environment is written completely in bash scripts. A single script, ControlScripts/run_campaign, provides the entry point for executing tests. This script should be provided with a single argument: the campaign file. The campaign specifies a number of scenarios that will be run.
-
-The scenario files are read by the environment and the required modules are checked for availability and loaded. The modules handle the more detailed functionality.
-
-Whenever you're implementing a module, or for more detailed documentation of the API of a module, please use the _skeleton_ subtype module as a basis (e.g. modules/hosts/_skeleton_ for the host API). Do not modify this file directly, but use it as reference for a typical sub-minimal implementation, or copy it to your own module as a good start.
-
-Note that each module has a _defaults_ implementation that specifies default implementations that can, and usually should, be called. Regard this as a super class for the module. Each module also has a _parser_.sh implementation, which is actually not a module implementation but the generic options parsers for all modules of that type. Finally, each module has a _skeleton_ implementation, which is an incomplete implementation with some details, all the default calls and a lot of comments. The _skeleton_ implementations should be used to start a new module implementation, since it provides the full API description and all default functionality.
-
-Each module also has a function call ${MODULE_TYPE}APIVersion(). This function is used for checking compatibilities. See the description of the function in the code for more details.
-
-== Global ==
-The following global API is available:
-- TEST_BASE_DIR                         -> points to the local directory from where the test was started
-- LOCAL_TEST_DIR                        -> points to a local directory where temporary files for the testing environment can be stored
-- TEST_ENV_DIR                          -> points to the local directory containing the testing environment's main script (i.e. the ControlScripts directory)
-- RESULTS_DIR                           -> points to the local directory where results for the campaign will be stored under; defaults to ${TEST_ENV_DIR}/../Results
-- CAMPAIGN_RESULTS_DIR                  -> points to the local directory where results for the current campaign will be stored under; will be set to ${RESULTS_DIR}/${CAMPAIGN_NAME} for each campaign
-- CAMPAIGN_ERROR_LOG                    -> points to a file that contains the error log for the current campaign; will be set to ${CAMPAIGN_RESULTS_DIR}/err.log
-- CLEANUP_TMP_FILES                     -> array of filenames which are the cleanup scripts; do not alter this array!
-- CLEANUP_MAX_INDEX                     -> internal tracker of used indices in CLEANUP_TMP_FILES; do not alter!
-- CLEANUP_LATEST_ADDED                  -> internal; do not use!
-- LINE_NUMBER                           -> used by the parsing functions for writing better errors; this should contain the line number of the line currently being parsed
-- reinitializeCleanup                   -> for those strange situation where you use cleanup and do not exit the testing environment, you should call reinitializeCleanup to make sure cleanup works again
-- fail                                  -> when something fails critically¸ call this function. cleanup will be run and the script will exit with -1 or, if given, the specified error code
-- cleanup                               -> does full cleanup based on the cleanup commands added through addCleanupCommand; should really be called before exit
-- addCleanupCommand                     -> adds a single command (first argument, string) to the cleanup string; an optional second argument can specify a the index of a different cleanup script than the general cleanup (see addCleanupScript)
-- addCleanupScript                      -> adds an extra cleanup script; cleanup scripts are executed in reverse order from which they are created; call newCleanupScriptIndex for the new index
-- newCleanupScriptIndex                 -> returns the index of the latest cleanup script added using newCleanupScriptIndex
-- removeCleanupScript                   -> removes a previously created cleanup script, which is indicated by the provided index
-- logError                              -> logs a single line (the first argument) to the most appropriate place given the context (achieved by overwriting the logError function)
-- run_campaign                          -> runs the campaign described by the campaign file passed in its first argument; do not call this
-- isSectionHeader                       -> parsing function that will return true (0) if the string given as its argument seems to be a section header
-- getSectionName                        -> parsing function that will output the name of the section header given as its argument (i.e. the string between [])
-- getParameterName                      -> parsing function that will output the name of the parameter line given as its argument (i.e. the string before the first =)
-- getParameterValue                     -> parsing function that will output the value of the parameter line given as its argument (i.e. the string after the first =)
-- loadFunctionsScript                   -> sources the file ${TEST_ENV_DIR}/functions/$1 or fails with a logged error if it doesn't exist
-- createTempFile                        -> create a local temporary file in a way that is safe with regard to signals (such as when the user presses Ctrl+C during a test run)
-- createTempDir                         -> create a local temporary directory in a way that is safe with regard to signals (such as when the user presses Ctrl+C during a test run)
-- createRemoteTempFile basedir          -> create a remote temporary file, potentially under a given base directory, in a portable way
-- createRemoteTempDir basedir           -> create a remote temporary directory, potentially under a given base directory, in a portable way
-- callNonBash                           -> try and call a non-bash handler for the current function; please read the function's documentation carefully before using
-Some variables in the global API may be specified in the environment in which the test environment is started, in order to override the automated default behaviour:
-- LOCAL_TEST_DIR
-- TEST_ENV_DIR
-- RESULTS_DIR
-
-== Hosts ==
-Hosts are handled completely by the module. The module, after being loaded, exposes the following API:
-- hostReadSettings settings ln          -> reads the settings for this host from settings, storing them in ${LOCAL_TEST_DIR}/hosts/$HOST_NAME; return false for failure; be sure to set HOST_NAME if it is "" at start of function
-- hostLoadSettings name                 -> reads the settings back from ${LOCAL_TEST_DIR}/hosts/name and ensures they are loaded
-- hostSendCommand command               -> sends the command to be executed on the host and echoes the output
-- hostSendFile file remote_path unsafe  -> sends the local file to the host, storing it in the (remote) directory pointed to by remote_path
-- hostSendFiles directory remote_path   -> sends the local directory to the host, storing it in the (remote) directory pointed to by remote_path; always unsafe, does no checking for succes
-- hostGetFile remote_file path unsafe   -> retrieves the (remote) file or directory from the host, storing it in the local directory pointed to by path
-- hostPrepare                           -> send the commands to the host to do the host specific preparation, also makes sure a temporary directory is created if needed
-- hostCleanup                           -> send the commands to the host to do the host specific cleanup, also removes a temporary directory if needed
-- hostGetTestDir                        -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment; valid between hostPrepare and the end of the execution of the client (i.e. as soon as the client stops executing this may be gone)
-- hostGetPersistentTestDir              -> outputs the (remote) directory on the host where (temporary) files are stored for the testing environment that will remain available until hostCleanup
-- hostGetSubnet                         -> outputs the external address(es) of the host(s) in the form of a subnet (either as a hostname or as an IP address); this is used for traffic control; "127.0.0.1" always is to be used for localhost and signifies that no traffic control should be done on that host
-The following global variables are available for each host:
-- HOSTS                                 -> a list of all loaded host objects, separated by spaces
-- HOST_NAME                             -> the name of the host object
-- HOST_PREPARATION                      -> the host specific preparation script
-- HOST_CLEANUP                          -> the host specific cleanup script
-- HOST_REMOTEFOLDER                     -> the remote folder to be used on the host
-- HOST_SUBTYPE                          -> the subtype of the host, as specified by the host module's name
-- HOST_CLEANUPIDX                       -> the index of the host's cleanup script
-- HOST_TC                               -> the name of the tc module that will be used to install traffic control, otherwise ""
-- HOST_TC_INBOUNDPORTS                  -> the space separated list of all ports to be used for restricted inbound traffic control; "" if no control is needed; "-1" if full control is needed
-- HOST_TC_OUTBOUNDPORTS                 -> the space separated list of all ports to be used for restricted outbound traffic control; "" if no control is needed; "-1" if full control is needed
-- HOST_TC_PROTOCOl                      -> the name of the protocol to be sued for restricted traffic control (TCP, UDP, ...); only has meaning for restricted control as specified above
-- HOST_TC_*                             -> all tc_* parameters, see there for more description
-- HOST_*                                -> reserved for host settings
-- HOST_${HOST_SUBTYPE}_*                -> specifically reserved for settings of hosts of $HOST_SUBTYPE
-
-== Traffic controllers (tc modules) ==
-Traffic controllers are handled by the module. The module, after being loaded, exposes the following API:
-- tcCheck                               -> checks whether traffic control can be installed on the currently loaded host with the currently loaded settings, returns true (0) iff traffic control can be enabled (requires host to be loaded, may use Hosts API)
-- tcInstall otherhosts                  -> installs traffic control on the currently loaded host, using the space separated list of other subnets for full control if needed; note that this function runs in a subprocess, so it can't change the environment (requires host to be loaded, may use Hosts API)
-- tcRemove                              -> removes traffic control on the currently loaded host; note that this function runs in a subprocess, so it can't change the environment (requires host to be loaded, may use Hosts API)
-No global variables are reserved for traffic controllers, all settings are saved in the HOST_TC_* variables.
-
-== Clients ==
-Clients are handled completely by the module. The module, after being loaded, exposes the following API:
-- clientReadSettings settings ln        -> reads the settings for this client from settings, storing them in ${LOCAL_TEST_DIR}/clients/$CLIENT_NAME
-- clientLoadSettings name               -> reads the settings back from ${LOCAL_TEST_DIR}/clients/name and ensures they are loaded
-- clientStart                           -> runs the client (requires host, file and execution to be loaded, may use the Hosts API, Files API and Executions API)
-- clientRunning                         -> returns whether the client is running on the host (requires host and execution to be loaded, may use the Hosts API and Executions API)
-- clientKill                            -> ends execution of the client on the host (requires host and execution to be loaded, may use the Hosts API and Executions API)
-- clientPrepareHost                     -> sends the client to the host and runs the client specific preparation on the host; note that the data files are not yet available on the host (requires host to be loaded, may use Hosts API)
-- clientPrepareExecution                -> sends execution specific files of the client to the host and runs the client/execution specific preparation on the host, possibly including runner scripts (requires host, file and execution to be loaded, may use Hosts API, Files API and Executions API)
-- clientCleanupExecution                -> runs the client/execution specific cleanup on the host (requires host, file and execution to be loaded, may use Hosts API, Files API and Executions API)
-- clientCleanupHost                     -> removes the client from the host and runs client specific cleanup on the host (requires host to be loaded, may use Hosts API)
-- clientCleanupFinal                    -> does the final cleanup for the client; called only once after all other cleanup has been done
-- clientRetrieveLogs logdir             -> retrieves client specific logs from the host, storing them in the local directory pointed to be logdir (requires host and execution to be loaded, may use Hosts API and Executions API)
-- clientLoadDefaultParser               -> loads the default parser for this client; this is either the parser named in ${CLIENT_DEFAULTPARSER} or parser:$CLIENT_SUBTYPE (only called from execution, may use Executions API)
-- clientTrafficProtocol                 -> returns the name of the protocol used for actual data traffic (this value is used for setting up traffic control); usual values are 'UDP', 'TCP', etc
-- clientTrafficInboundPorts             -> returns a space separated list of inbound ports on which *all* traffic is received (this is used to set up traffic controle); valid values depend on clientTrafficProtocol(); return "" if no such list can be given (e.g. when inbound ports are dynamically added)
-- clientTrafficOutboundPorts            -> returns a space separated list of outbound ports through which *all* traffic is sent (this is used to set up traffic control); valid values depend on clientTrafficProtocol(); return "" if no such list can be given (e.g. when outbound ports are dynamically added)
-The following global variables are available for each client:
-- CLIENTS                               -> a list of all loaded client objects by name, separated by spaces
-- CLIENT_NAME                           -> the name of the client object
-- CLIENT_PARAMS                         -> extra parameters to the client
-- CLIENT_CLEANUPIDX                     -> the index of the client's cleanup script
-- CLIENT_CLEANUPCLIENTINSERTPOINT       -> offset into the client's cleanup script where client execution should be killed
-- CLIENT_SUBTYPE                        -> the subtype of the client, as specified in the client module's name
-- CLIENT_LOCATION                       -> when not building: the directory where the client resides; when building: the location of the source code of the client as interpreted by the source module
-- CLIENT_PARSER                         -> the default parser object name for this client, if not set (i.e. "") the default parser for the client is parser:${CLIENT_SUBTYPE}
-- CLIENT_REMOTECLIENT                   -> if set to anything but "", this signifies the client is assumed to be present on the remote system, or to be built on the remote system
-- CLIENT_BUILDER                        -> if not "", this signifies the client needs to be built first using the builder module builder:$CLIENT_BUILDER
-- CLIENT_SOURCE                         -> the source module that provides the source code of the client, if CLIENT_BUILDER is set; changes the meaning of CLIENT_LOCATION
-- CLIENT_*                              -> reserved for client settings
-- CLIENT_${CLIENT_SUBTYPE}_*            -> specifically reserved for settings of clients of $CLIENT_SUBTYPE
-
-== Builders ==
-Builders are handled completely by the module. They have no settings and are used inside client objects. The module, after being loaded, exposes the following API:
-- builderBuildCommand                   -> outputs the command for building the source; will not attempt to build the source by itself
-- builderBuildLocal sourceDir           -> builds the source in the provided local directory; returns true (0) iff this seems to have succeeded
-- builderBuildRemote sourceDir          -> builds the source in the provided remote directory; returns true (0) iff this seems to have succeeded (requires host to be loaded, may use Hosts API)
-No global variables are reserved for builders.
-
-== Sources ==
-Sources are handled completely by the module. They have no settings and are inside client objects. The module, after being loaded, exposes the following API:
-- sourcePrepareCommand                  -> outputs the command for preparing the source in a directory; will no attempt to prepare the source by itself
-- sourcePrepareLocal                    -> prepares the source code for building in a local directory; this usually involves downloading the source
-- sourcePrepareRemote                   -> prepares the source code for building in a remote directory; this usually involves downloading the source remotely (requires host to be loaded, may use Hosts API)
-- sourceLocalLocation                   -> outputs the location in which a local source preparation would be done; should only be used after calling sourcePrepareLocal
-- sourceRemoteLocation                  -> outputs the location in which a remote source preparation would be done; should only be used after calling sourcePrepareRemote (requires host to be loaded, may use Hosts API)
-No global variables are reserved for builders.
-
-== Files ==
-Files are handled completely by the module. The module, after being loaded, exposes the following API:
-- fileReadSettings settings ln          -> reads the settings for this file from settings, storing them in ${LOCAL_TEST_DIR}/files/name
-- fileLoadSettings name                 -> reads the settings back from ${LOCAL_TEST_DIR}/files/name and ensures they are loaded
-- fileSendToHost                        -> sends the required files to the host (requires host to be loaded, may use Hosts API)
-- fileSendToSeedingHost                 -> sends the files required for seeding to the host (requires host to be loaded, may use Hosts API)
-- fileGetName                           -> returns the filename, this is the path to (the root directory of) the actual data on the currently loaded host; this file will only be available for seeding executions (requires host and execution to be loaded, may use Hosts API and Executions API)
-- fileGetMetaName                       -> returns the filename of the metadata file, if any, on the currently loaded host (requires host to be loaded, may use Hosts API)
-- fileGetRootHash                       -> returns the Merkle root hash of the file, if any is known
-The following global variables are available for each file:
-- FILES                                 -> a list of all loaded file objects by name, separated by spaces
-- FILE_NAME                             -> the name of the file object
-- FILE_SUBTYPE                          -> the subtype of the file, as specified in the file module's name
-- FILE_ROOTHASH                         -> the SHA1 Merkle Root Hash for the file, or "" if unknown
-- FILE_METAFILE                         -> path on the local machine to the meta file of the file, or "" if no metaFile was specified
-- FILE_*                                -> reserved for file settings
-- FILE_${FILE_SUBTYPE}_*                -> specifically reserved for settings of files of $FILE_SUBTYPE
-
-== Parsers ==
-Parsers are handled completely by the module. The module, after being loaded, exposes the following API:
-- parserReadSettings settings ln        -> reads the settings for this parser from settings, storing them in ${LOCAL_TEST_DIR}/parsers/name
-- parserLoadDefaultSettings             -> load the default settings for this parser
-- parserLoadSettings name               -> reads the settings back from ${LOCAL_TEST_DIR}/parsers/name and ensures they are loaded
-- parserParseLogs logDir outputDir      -> parses the logs for the current execution which are situated in logDir, putting the result in outputDir (requires execution to be loaded, may use Execution API)
-The following global variables are reserved for parsers:
-- PARSER_NAME                           -> the name of the parser object; note that this can be "" if the default settings have been loaded!
-- PARSER_SUBTYPE                        -> the subtype of the parser, as specified in the parser module's name
-- PARSER_*                              -> reserved for parser settings
-- PARSER_${PARSER_SUBTYPE}_*            -> specifically reserved for settings of parsers of $PARSER_SUBTYPE
-
-== Processors ==
-Processors are handled completely by the module. The module, after being loaded, exposes the following API:
-- processorReadSettings settings ln     -> reads the settings for this processor from settings, storing them in ${LOCAL_TEST_DIR}/processors/proc_${PROCESSOR_NUMBER}
-- processorLoadSettings number          -> reads the settings back from ${LOCAL_TEST_DIR}/processors/proc_number and ensures they are loaded
-- processorProcessLogs logDir resultDir -> processes the raw and parsed logs found in the base directory under, respectively, exec_${execNum}/logs/ and exec_{$execNum}/parsedLogs/, placing the results in resultDir; execNum here ranges from 0 to ($EXECUTION_COUNT - 1), corresponding to the executions; if any of the APIs are needed to get more information about the execution or its parts, use the respective APIs to load them and query them, starting with the Execution API (loadExecution, etc)
-The following global variables are reserved for processors:
-- PROCESSOR_COUNT                       -> the total number of processor objects defined in the scenario
-- PROCESSOR_NUMBER                      -> the zero-based number of the currently loaded processor
-- PROCESSOR_SUBTYPE                     -> the subtype of the processor, as specified in the processor module's name
-- PROCESSOR_*                           -> reserved for processor settings
-- PROCESSOR_${PROCESSOR_SUBTYPE}_*      -> specifically reserved for settings of processors of $PROCESSOR_SUBTYPE
-
-== Viewers ==
-Viewers are handled completely by the module. The module, after being loaded, exposes the following API:
-- viewerReadSettings settings ln        -> reads the settings for this viewer from settings, storing them in ${LOCAL_TEST_DIR}/viewers/view_${VIEWER_NUMBER}
-- viewerLoadSettings number             -> reads the settings back from ${LOCAL_TEST_DIR}/viewers/view_number and ensures they are loaded
-- viewerCreateView processedDir viewDir -> creates the view from the processed data in processedDir, placing the resulting view in viewDir
-The following global variables are reserved for viewers:
-- VIEWER_COUNT                          -> the total number of viewer objects defined in the scenario
-- VIEWER_NUMBER                         -> the zero-based number of the currently loaded viewer
-- VIEWER_SUBTYPE                        -> the subtype of the viewer, as specified in the viewer module's name
-- VIEWER_*                              -> reserved for viewer settings
-- VIEWER_${VIEWER_SUBTYPE}_*            -> specifically reserved for settings of viewers of $VIEWER_SUBTYPE
-
-== Execution ==
-Executions are built in. The expose the following API:
-- executionLoadSettings number          -> Loads the settings for a particular execution (numbered from 0 to $((EXECUTION_COUNT - 1)))
-- executionIsSeeder                     -> Returns true (0) iff this execution is supposed to be a seeder
-- executionNumber                       -> Outputs the number of the current execution; use this zero-based integer for execution specific things
-- executionLoadHost                     -> Loads the host object of the execution.
-- executionLoadClient                   -> Loads the client object of the execution.
-- executionLoadFile                     -> Loads the file object of the execution.
-- executionRunParsers inDir outDir      -> Loads the parser objects of the execution and has them parse the logs; uses inDir and outDir as arguments to parserParseLogs (requires client to be loaded, may use Client API)
-The following global variables are reserved for the execution:
-- EXECUTION_COUNT                       -> the total number of executions known for the current scenario
-- EXECUTION_NUMBER                      -> the zero-based number of the currently loaded execution
-- EXECUTION_HOST                        -> the name of the host object defining which host(s) this execution will run on
-- EXECUTION_CLIENT                      -> the name of the client object defining which client will be run for this execution
-- EXECUTION_FILE                        -> the name of the file object defining which file(s) will be involved in this execution
-- EXECUTION_SEEDER                      -> flag, if anything else than "", this execution is a supposed to be a pure seeder
-- EXECUTION_PARSER                      -> the array with names of parser objects to use for this execution, or ( ) for the default parser of the client
-- EXECUTION_*                           -> reserved for execution settings
-
-== Scenario ==
-Scenarios are built in.
-The following global variables are reserved for the scenario:
-- SCENARIO_NAME                         -> the name of the currently loaded scenario
-- SCENARIO_TIMELIMIT                    -> number of seconds the scenario may run
-- SCENARIO_PARALLEL                     -> 0 iff the scenario is NOT allowed to try managing clients in parallel
-- SCENARIO_*                            -> reserved for scenario settings
