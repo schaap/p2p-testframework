@@ -1,9 +1,8 @@
 #!/usr/bin/python
 
 #
-# YET TO BE PORTED, in order
-#
-#    tc:netem
+# Future options
+# - workload types (currently: all at once; allow timeout before starting client, make timeouts configurable using pluggable models)
 #
 
 
@@ -980,12 +979,8 @@ Debug options are read from left to right; the last basedir is chosen. E.g. --de
                 Campaign.getCurrentCampaign().deadlyScenarios = deadlyScenarios
                 Campaign.getCurrentCampaign().readCampaignFile(justScenario)
             except Exception as exc:
-                Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
-                Campaign.logger.exceptionTraceback()
-                if Campaign.logger.loggingToFile():
-                    Campaign.logger.closeLogFile()
-                    Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ) )
-                    Campaign.logger.exceptionTraceback()
+                Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
+                Campaign.logger.exceptionTraceback( True )
             finally:
                 Campaign.debuglogger.cleanup()
 

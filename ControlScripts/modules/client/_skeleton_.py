@@ -8,6 +8,19 @@ from core.client import client
 # is the actual object you're creating, which, incidentally, must be named equal to the module it is in. For example:
 # suppose you copy this file to modules/client/rudeClient.py then the name of your class would be rudeClient.
 
+#
+# TODO: Whenever you're building a new client runner, make sure to test your client separately. It is important, in
+# particular, that your client functions with input and output all redirected. Try the following:
+#    ( commands_to_run_your_client ) < /dev/null > stdout_log 2> stderr_log
+# This should start and succesfully run your client (press Ctrl+C to kill it). You can also try
+#    ( commands_to_run_your_client ) > stdout_log 2> stderr_log &
+# This should do the same but in the background. If you press Enter now and then (i.e. execute an empty command)
+# there should NOT appear a line saying something like:
+#    [1]+  Stopped
+# If something like that *does* show up your client can't run without getting input and won't run within the
+# framework without you solving this. An idea one could explore is a utility like screen.
+#
+
 def parseError( msg ):
     """
     A simple helper function to make parsing a lot of parameters a bit nicer.
