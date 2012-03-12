@@ -36,6 +36,7 @@ Execution objects are declared along with the other objects and have the followi
 - file          The name of the file object which is to be transferred. Requried
 - parser        The name of the parser object which should parse the logs of this execution. Optional, defaults to the parser specified with the client
 - seeder        Set to anything but '' to mark this execution as a seeding execution. Optional, defaults to ''
+- timeout       A non-negative floating point number that indicates a number of seconds to wait before actually starting the client after the scenario starts. Optional, defaults to 0
 
 See the description of the extension modules below or the HOWTO document for more information on using parameters.
 

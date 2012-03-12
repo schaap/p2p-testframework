@@ -1,4 +1,4 @@
-from core.parsing import isValidName
+from core.parsing import isValidName, isPositiveFloat
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -31,6 +31,8 @@ class execution(coreObject):
     number = None           # The number of this execution
     
     runnerConnection = None # A specific connection to use for running a client
+    
+    timeout = None          # A number of seconds to wait before starting the client (float)
 
     # @static
     executionCount = 0      # The total number of executions
@@ -89,6 +91,12 @@ class execution(coreObject):
         elif key == 'seeder':
             if value != '':
                 self.seeder = True
+        elif key == 'timeout':
+            if self.timeout != None:
+                parseError( "The timeout was already set: {0}".format( self.timeout ) )
+            if not isPositiveFloat( value ):
+                parseError( "The timeout must be a non-negative floating point number." )
+            self.timeout = float(value)
         else:
             parseError( 'Unknown parameter name: {0}'.format( key ) )
 
@@ -107,6 +115,8 @@ class execution(coreObject):
             raise Exception( "Execution defined at line {0} must have a client.".format( self.declarationLine ) )
         if not self.fileName:
             raise Exception( "Execution defined at line {0} must have a file.".format( self.declarationLine ) )
+        if self.timeout == None:
+            self.timeout = 0
 
     def resolveNames(self):
         """

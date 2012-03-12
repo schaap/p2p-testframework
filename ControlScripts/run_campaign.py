@@ -3,6 +3,7 @@
 #
 # Future options
 # - workload types (currently: all at once; allow timeout before starting client, make timeouts configurable using pluggable models)
+# -- timeout added
 #
 
 
@@ -122,6 +123,18 @@ class BusyExecutionThread(threading.Thread):
 class ClientRunner(BusyExecutionThread):
     """Simple runner for client.start()"""
     def doTask(self):
+        startTime = time.time() + self.execution.timeout
+        diffTime = startTime - time.time()
+        while diffTime > 0:
+            if diffTime > 5:
+                time.sleep(5)
+            else:
+                time.sleep(diffTime)
+            if self.inCleanup:
+                return
+            diffTime = startTime - time.time()
+        if self.inCleanup:
+            return
         self.execution.client.start( self.execution )
     
     def prepareConnection(self):
