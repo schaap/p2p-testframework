@@ -146,6 +146,17 @@ By default the following builder modules are provided:
 - builder:make      Uses (GNU) make to build the client
 - builder:scons     Calls the scons building program to build the client
 
+=== workload ===
+workload generator modules can change the executions such that the arrival times of the clients simulate specific workloads.
+
+Parameters:
+- apply             Specifies the name of a client object to apply the workload to; this means every execution of that client (but see applyToSeeders) will be changed to be included in the generated workload. Optional and may be specified multiple times. If apply is enver specified then all clients that are part of a (non-seeding) execution are added as soon as all objects have been loaded.
+- applyToSeeders    By default a workload generator will only change non-seeding executions. Set this to 'yes' to have it change seeding executions as well. Optional
+- offset            Starting time of the simulated workload from the start of the scenario in seconds. Optional, floating point
+
+By default the following workload generator modules are provided:
+- workload:linear   Creates a division of the clients to arrive at a linear rate
+
 === parser ===
 parser modules know how to parse the output of a client. They are specified per execution or per client. A parser module takes as input the raw logs as retrieved from the remote host and outputs parsed logs.
 
@@ -187,9 +198,11 @@ This section described the workflow inside the testing framework for each scenar
 1) Collect all hosts that are part of an execution in a set executionHosts
 2) Call host.prepare() on each host in executionHosts, this prepares that hosts and sets up connections to them
 3) Collect all hosts that are part of an execution in a set executionHosts
-4) On all client object, call client.prepare(), this will prepare the client binaries,
+4) With each workload generator
+    a) Call workload.applyWorkload(), which changes the executions
+5) On all client object, call client.prepare(), this will prepare the client binaries,
    including up/downloading source and compilations
-5) With each host in executionHosts
+6) With each host in executionHosts
     a) If the host requests TC
         I) Analyse the hosts and clients to see which TC (inbound/outbound) (port restricted/fully restricted)
            is needed
@@ -200,32 +213,32 @@ This section described the workflow inside the testing framework for each scenar
         IV) Save the way TC is to be done in the host
     b) Call client.prepareHost(host) for each client in host.clients,
        which contains all clients that will run on the host
-6) With each host in executionHosts
+7) With each host in executionHosts
     a) Call file.sendToHost(host) for each file in host.files,
        which contains all the files that will be seeded from or leeched to the host
     b) Call file.sendToSeedingHost(host) for each file in host.seedingFiles,
        which contains all the files that will be seeded from the host
-7) With each execution
+8) With each execution
     a) Call execution.client.prepareExecution(execution)
-8) With each host in executionHosts
+9) With each host in executionHosts
     a) If the host reqests TC
         I) Install the TC (calls tc.install(host) )
-9) With each execution
+10) With each execution
     a) Prepare an execution specific connection to the host of the execution
-10) With each execution, in parallel
+11) With each execution, in parallel
     a) Call execution.client.start(execution) to start the client on the host
-11) While the timelimit has not been reached
+12) While the timelimit has not been reached
     a) Sleep at most 5 seconds
     b) With each execution
         I) Call execution.client.isRunning(execution) to see if the client is still running
             0) If so, stop checking the other executions and continue with 11
-12) With each execution, in parallel
+13) With each execution, in parallel
     a) Call execution.client.isRunning(execution) to see if the client is still running
         I) If so, call execution.client.kill(execution) to have the client killed
-13) With each host in executionHost
+14) With each host in executionHost
     a) If the host requests TC
         I) Remote the TC (call tc.remove(host) )
-14) With each execution, in parallel
+15) With each execution, in parallel
     a) Call execution.client.retrieveLogs(execution) to retrieve the client logs for the execution
     b) Call execution.runParsers(...)
         I) If a parser is set for the execution
@@ -233,30 +246,28 @@ This section described the workflow inside the testing framework for each scenar
         II) Otherwise
             0) Retrieve a parser p by calling execution.client.loadDefaultParser(execution)
             0) Call p.parseLogs(...)
-15) With each host
+16) With each host
     a) Create a new connection to the host to use for cleanup
-16) With each execution
+17) With each execution
     a) Call execution.client.hasStarted(execution) and execution.client.isRunning(execution)
        to find out if the client is running
         I) If so, call execution.client.kill(execution) to kill the client
-17) With each file
+18) With each file
     a) Call file.cleanup()
-18) With each host
+19) With each host
     a) With each client in host.clients, which contains all the clients that will/have run on the host
         I) Call client.cleanupHost( host )
-19) With each client
+20) With each client
     a) Call client.cleanup()
-20) With each host
+21) With each host
     a) If the host requests TC
         I) Try and remove TC (calls tc.remote(host) )
     b) Call host.cleanup(), which also cleans up the connections, including the cleanup connection
-21) With each processor
+22) With each processor
     a) Call processor.processLogs(...)
-22) With each viewer
+23) With each viewer
     a) Call viewer.createView(...)
 
-Steps 15 through 20 are the cleanup, which is at each call guarded against errors and will run always. Note that it can also run at any moment in time, e.g. due to an Exception being raised. So from any step before 15 one can always jump straight into 15. In case of such a jump the scenario stops after step 20. A particular jump is after step 5a: if the run is just a testrun step 5b will not be executed and once step 5 is done the jump to cleanup will be taken.
+Steps 16 through 21 are the cleanup, which is at each call guarded against errors and will run always. Note that it can also run at any moment in time, e.g. due to an Exception being raised. So from any step before 16 one can always jump straight into 16. In case of such a jump the scenario stops after step 21. A particular jump is after step 6a: if the run is just a testrun step 6b will not be executed and once step 6 is done the jump to cleanup will be taken.
 
 Please note the peculiar collections of executionHost: once before and once after preparing the hosts. The framework explicitly allows for the collection of objects to be changed by the preparation of the hosts, as long as any host that is added is guaranteed to have been prepared if it's also part of an execution. This is for example exploited by host:das4 which creates a host object for every node in its preparation phase.
-
-This section is a setup for the flow of work in the testing framework. It's not entirely up to date at the moment, but should give an insight into what steps are done and in what order.

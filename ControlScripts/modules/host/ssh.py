@@ -256,6 +256,14 @@ class ssh(host):
         if not paramiko and not self.user:
             self.user = getpass.getuser()
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        host.resolveNames(self)
+
     def setupNewConnection(self):
         """
         Create a new connection to the host.

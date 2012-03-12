@@ -99,6 +99,14 @@ class gnuplot(processor):
         if not self.script:
             raise Exception( "Gnuplot processor must have a script defined" )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        processor.resolveNames(self)
+
     def processLogs(self, baseDir, outputDir):
         """
         Process the raw and parsed logs found in the base directory.

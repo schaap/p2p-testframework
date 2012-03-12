@@ -116,6 +116,14 @@ class swift(client):
             else:
                 self.listenAddress = ":{0}".format( self.listenPort )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        client.resolveNames(self)
+
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.

@@ -147,6 +147,16 @@ class _skeleton_(host):
         #   if self.hostname == self.username:
         #       raise Exception( "You're either confused or incredibly vain. Not acceptable either way." )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        host.resolveNames(self)
+        # TODO: Do any name resolutions here.
+        # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+
     def setupNewConnection(self):
         """
         Create a new connection to the host.

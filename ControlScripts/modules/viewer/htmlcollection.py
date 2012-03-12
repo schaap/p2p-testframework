@@ -80,6 +80,14 @@ class htmlcollection(viewer):
         """
         viewer.checkSettings(self)
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        viewer.resolveNames(self)
+
     def createView(self, processedDir, viewDir):
         """
         Create the view from the processed data.
@@ -158,6 +166,9 @@ class htmlcollection(viewer):
                                     fOut.write( '<td>YES</td>' )
                                 else:
                                     fOut.write( '<td>NO</td>' )
+                                continue
+                            if ('timeout', '') == col:
+                                fOut.write( '<td>{0} s</td>'.format( e.timeout ) )
                                 continue
                             mime = external.magic.magic.Magic( mime=True ).from_file( f )
                             if mime[:6] == 'image/':

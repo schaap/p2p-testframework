@@ -120,12 +120,9 @@ class execution(coreObject):
 
     def resolveNames(self):
         """
-        Resolve the names as given for host, client and file.
-
-        This method allows hosts, clients and files to be declared after the execution that uses them.
+        Resolve any names given in the parameters.
         
-        This method is called after all objects have been initialized. It fills in the host, client and file
-        class variables, and the parser class variable if applicable.
+        This methods is called after all objects have been initialized.
         """
         if self.hostName not in self.scenario.getObjectsDict('host'):
             raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )

@@ -75,6 +75,19 @@ class opentracker(client):
         else:
             client.parseSetting(self, key, value)
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        client.resolveNames(self)
+        for f in self.changeTrackers:
+            if f not in self.scenario.getObjectsDict( 'file' ):
+                raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the latter was never declared.".format( self.name, f ) )
+            if not self.scenario.getObjectsDict( 'file' )[f].metaFile or not os.path.exists( self.scenario.getObjectsDict( 'file' )[f].metaFile ) or os.path.isdir( self.scenario.getObjectsDict( 'file' )[f].metaFile ):
+                raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter does not exist or is a directory.".format( self.name, f ) )
+
     def checkSettings(self):
         """
         Check the sanity of the settings in this object.
@@ -114,11 +127,6 @@ class opentracker(client):
             if not newTracker:
                 raise Exception( "Client {0} was instructed to change some torrent files to update their trackers, but host {1} won't give an address for that.".format( self.name, host.name ) )
             newTracker = 'http://{0}:{1}/announce'.format( newTracker, self.port )
-            for f in self.changeTrackers:
-                if f not in self.scenario.getObjectsDict( 'file' ):
-                    raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the latter was never declared.".format( self.name, f ) )
-                if not self.scenario.getObjectsDict( 'file' )[f].metaFile or not os.path.exists( self.scenario.getObjectsDict( 'file' )[f].metaFile ) or os.path.isdir( self.scenario.getObjectsDict( 'file' )[f].metaFile ):
-                    raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter does not exist or is a directory.".format( self.name, f ) )
             for f in self.changeTrackers:
                 _, tmpFile = tempfile.mkstemp('.torrent')
                 try:

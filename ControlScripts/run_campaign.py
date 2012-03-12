@@ -62,7 +62,7 @@ def loadModule( moduleType, moduleSubType ):
 
     @return The class with the name moduleSubType in the module modules.moduleType.moduleSubType
     """
-    if moduleType == 'host' or moduleType == 'client' or moduleType == 'file' or moduleType == 'parser' or moduleType == 'processor' or moduleType == 'viewer' or moduleType == 'tc' or moduleType == 'builder' or moduleType =='source':
+    if moduleType == 'host' or moduleType == 'client' or moduleType == 'file' or moduleType == 'parser' or moduleType == 'processor' or moduleType == 'viewer' or moduleType == 'tc' or moduleType == 'builder' or moduleType =='source' or moduleType == 'workload':
         if moduleSubType == '':
             raise Exception( "A {0} must have a subtype (line {1}".format( moduleType, Campaign.currentLineNumber ) )
     elif moduleType == 'execution':
@@ -286,8 +286,9 @@ class ScenarioRunner:
         # Check sanity
         if len( self.getObjects('execution') ) == 0:
             raise Exception( "No executions found in scenario {0}".format( self.name ) )
-        for execution in self.getObjects('execution'):
-            execution.resolveNames()
+        for resolveObjects in ['execution', 'client', 'file', 'host', 'parser', 'processor', 'viewer', 'workload']:
+            for obj in self.getObjects(resolveObjects):
+                obj.resolveNames()
         
         # Fill in extra cross-object data
         for execution in self.getObjects('execution'):
@@ -330,6 +331,9 @@ class ScenarioRunner:
         # All executions must refer to prepared hosts, which means that any host.prepare() that alters the executions
         # must take precautions to ensure this.
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
+        # Now change all those executions as needed to get the right workloads
+        for workload in self.getObjects('workload'):
+            workload.applyWorkload()
         # Prepare all clients
         for client in self.getObjects('client'):
             client.prepare()

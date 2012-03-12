@@ -79,6 +79,14 @@ class file(coreObject):
         if self.name == '':
             raise Exception( "File object declared at line {0} was not given a name".format( self.declarationLine ) )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        pass
+
     def getFileDir(self, host):
         """
         Returns the path on the remote host where this file's files can reside.

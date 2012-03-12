@@ -126,6 +126,14 @@ class http(client):
         elif self.port < 1024:
             Campaign.logger.log( "Using a privileged port for host {0} is not recommended: {1}.".format( self.name, self.port ) )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        client.resolveNames(self)
+
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.

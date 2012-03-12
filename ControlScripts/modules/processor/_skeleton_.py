@@ -106,6 +106,16 @@ class _skeleton_(processor):
         #   if not self.content:
         #       self.content = ["This is useless"]
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        processor.resolveNames(self)
+        # TODO: Do any name resolutions here.
+        # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+
     def processLogs(self, baseDir, outputDir):
         """
         Process the raw and parsed logs found in the base directory.

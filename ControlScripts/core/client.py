@@ -132,15 +132,6 @@ class client(coreObject):
                 raise Exception( "Client object declared at line {0} was not given a name and default name {1} was already taken".format( self.declarationLine, self.__class__.__name__ ) )
             else:
                 self.name = self.__class__.__name__
-        if self.parser:
-            if self.parser not in self.scenario.getObjectsDict( 'parser' ):
-                raise Exception( "Client {0} refers to parser named {1}, but that is not declared".format( self.name, self.parser ) )
-        else:
-            try:
-                __import__( 'modules.parser.'+self.__class__.__name__, globals(), locals(), self.__class__.__name__ )
-                Campaign.loadModule( 'parser', self.__class__.__name__ )
-            except ImportError:
-                raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{1} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
         if not self.builder:
             try:
                 __import__( 'modules.builder.none', globals(), locals(), 'none' )
@@ -168,6 +159,22 @@ class client(coreObject):
         # pylint: enable-msg=E1121
         if not self.sourceObj:
             raise Exception( "Could not instantiate source module source:{0} for client {1}".format( self.source, self.name ) )
+
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        if self.parser:
+            if self.parser not in self.scenario.getObjectsDict( 'parser' ):
+                raise Exception( "Client {0} refers to parser named {1}, but that is not declared".format( self.name, self.parser ) )
+        else:
+            try:
+                __import__( 'modules.parser.'+self.__class__.__name__, globals(), locals(), self.__class__.__name__ )
+                Campaign.loadModule( 'parser', self.__class__.__name__ )
+            except ImportError:
+                raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{1} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
 
     def prepare(self):
         """

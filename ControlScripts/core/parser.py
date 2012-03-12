@@ -64,6 +64,14 @@ class parser(coreObject):
             else:
                 self.name = self.__class__.__name__
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        pass
+
     # This method has unused arguments; that's fine
     # pylint: disable-msg=W0613
     def parseLogs(self, execution, logDir, outputDir):

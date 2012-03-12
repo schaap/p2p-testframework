@@ -99,6 +99,16 @@ class _skeleton_(core.file.file):
         #   if not self.filename:
         #       raise Exception( "A dummy file still needs a filename, dummy." )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        core.file.file.resolveNames(self)
+        # TODO: Do any name resolutions here.
+        # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+
     def sendToHost(self, host):
         """
         Send any required file to the host.

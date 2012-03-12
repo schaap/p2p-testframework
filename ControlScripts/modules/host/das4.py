@@ -434,6 +434,14 @@ empty
             if not self.headNode:
                 raise Exception( "No headnode was specified for host {0} and this host was not detected to be in one of the hosting networks. Please specify a headnode.")
     
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        host.resolveNames(self)
+
     #
     # General flow:
     # - prepare

@@ -96,6 +96,14 @@ class fakedata(core.file.file):
                 if not os.path.exists( os.path.join( Campaign.testEnvDir, 'Utils', 'fakedata', f ) ):
                     raise Exception( "A file seems to be missing from Utils/fakedata: {0} is required to build the fakedata utility.".format( f ) )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        core.file.file.resolveNames(self)
+
     def sendToHost(self, host):
         """
         Send any required file to the host.

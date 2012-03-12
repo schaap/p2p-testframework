@@ -99,6 +99,16 @@ class _skeleton_(viewer):
         #   if not self.content:
         #       self.content = ["Nice view. Kinda useless, though."]
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        viewer.resolveNames(self)
+        # TODO: Do any name resolutions here.
+        # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+
     def createView(self, processedDir, viewDir):
         """
         Create the view from the processed data.

@@ -106,6 +106,16 @@ class _skeleton_(parser):
         # Note that this method should result in a valid parser object if called directly after the constructor.
         # That is the default parser setting.
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        parser.resolveNames(self)
+        # TODO: Do any name resolutions here.
+        # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+
     def parseLogs(self, execution, logDir, outputDir):
         """
         Parse the logs for the current execution.

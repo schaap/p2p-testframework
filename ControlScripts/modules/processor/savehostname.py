@@ -58,6 +58,14 @@ class savehostname(processor):
         """
         processor.checkSettings(self)
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        processor.resolveNames(self)
+
     def processLogs(self, baseDir, outputDir):
         """
         Process the raw and parsed logs found in the base directory.

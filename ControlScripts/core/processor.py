@@ -14,10 +14,10 @@ class processor(coreObject):
     When subclassing processor be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
-    number = None           # The number of this execution
+    number = None           # The number of this processor
 
     # @static
-    processorCount = 0      # The total number of executions
+    processorCount = 0      # The total number of processors
 
     def __init__(self, scenario):
         """
@@ -59,6 +59,14 @@ class processor(coreObject):
         Any defaults may be set here as well.
 
         An Exception is raised in the case of insanity.
+        """
+        pass
+
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
         """
         pass
 

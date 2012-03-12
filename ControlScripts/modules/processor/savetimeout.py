@@ -1,27 +1,32 @@
-from core.parser import parser
+from core.processor import processor
 
-class opentracker(parser):
+import os
+
+class savetimeout(processor):
     """
-    A dummy parser.
+    A very simple processor that simply saves the timeout of the host on which each execution was done.
     
-    This parser will just ignore the logs of the client.
+    Extra parameters:
+    - [none]
     
-    This parser is basically just a copy of none with a different name.
-
     Raw logs expected:
-    - none or any
-
-    Parse log files created:
     - none
+    
+    Parsed logs expected:
+    - none
+    
+    Processed log files created:
+    - 'timeout_{0}'.format( execution.getNumber() )
+    -- contains one line: the timeout of the execution in seconds (float)
     """
 
     def __init__(self, scenario):
         """
-        Initialization of a generic parser object.
+        Initialization of a generic processor object.
 
-        @param  scenario        The ScenarioRunner object this parser object is part of.
+        @param  scenario        The ScenarioRunner object this processor object is part of.
         """
-        parser.__init__(self, scenario)
+        processor.__init__(self, scenario)
 
     def parseSetting(self, key, value):
         """
@@ -40,7 +45,7 @@ class opentracker(parser):
         @param  key     The name of the parameter, i.e. the key from the key=value pair.
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
-        parser.parseSetting(self, key, value)
+        processor.parseSetting(self, key, value)
 
     def checkSettings(self):
         """
@@ -51,7 +56,7 @@ class opentracker(parser):
 
         An Exception is raised in the case of insanity.
         """
-        parser.checkSettings(self)
+        processor.checkSettings(self)
 
     def resolveNames(self):
         """
@@ -59,21 +64,26 @@ class opentracker(parser):
         
         This methods is called after all objects have been initialized.
         """
-        parser.resolveNames(self)
+        processor.resolveNames(self)
 
-    def parseLogs(self, execution, logDir, outputDir):
+    def processLogs(self, baseDir, outputDir):
         """
-        Parse the logs for the current execution.
+        Process the raw and parsed logs found in the base directory.
 
-        Be sure to document in the header of your module which logs you expect to be present and with which filename.
+        The raw logs are found in self.getRawLogDir( execution, baseDir ).
+        The parsed logs are found in self.getParsedLogDir( execution, baseDir ).
+
+        Be sure to document in the header of your module which (parsed) logs you expect to be present and with which filename.
 
         Subclassers must override this method.
 
-        @param  execution   The execution for which to parse the logs.
-        @param  logDir      The path to the directory on the local machine where the logs reside.
-        @param  outputDir   The path to the directory on the local machine where the parsed logs are to be stored.
+        @param  baseDir     The base directory for the logs.
+        @param  outputDir   The path to the directory on the local machine where the processed logs are to be stored.
         """
-        pass
+        for e in self.scenario.getObjects( 'execution' ):
+            f = open( os.path.join( outputDir, 'timeout_{0}'.format( e.getNumber() ) ), 'w' )
+            f.write( "{}".format( e.timeout ) )
+            f.close()
 
     @staticmethod
     def APIVersion():

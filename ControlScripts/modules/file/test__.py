@@ -54,6 +54,14 @@ class test__(core.file.file):
         if not self.rootHash:
             self.rootHash = '97bb2117ad9bc68bc8bec3cca3a113ef30aebc37'
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        core.file.file.resolveNames(self)
+
     def sendToHost(self, host):
         """
         Send any required file to the host.

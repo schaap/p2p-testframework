@@ -53,6 +53,14 @@ class test__(viewer):
         """
         viewer.checkSettings(self)
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        viewer.resolveNames(self)
+
     def createView(self, processedDir, viewDir):
         """
         Create the view from the processed data.

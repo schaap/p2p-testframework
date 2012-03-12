@@ -12,10 +12,10 @@ class viewer(coreObject):
     When subclassing viewer be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
-    number = None           # The number of this execution
+    number = None           # The number of this viewer
 
     # @static
-    viewerCount = 0         # The total number of executions
+    viewerCount = 0         # The total number of viewers
 
     def __init__(self, scenario):
         """
@@ -48,6 +48,14 @@ class viewer(coreObject):
         """
         parseError( 'Unknown parameter name: {0}'.format( key ) )
     # pylint: enable-msg=W0613
+
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        pass
 
     def checkSettings(self):
         """

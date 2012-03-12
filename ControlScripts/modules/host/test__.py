@@ -72,6 +72,14 @@ class test__(host):
             self.remoteDirectory = '.'  # Since a temporary directory would otherwise be created...
         host.checkSettings(self)
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        host.resolveNames(self)
+
     def setupNewConnection(self):
         """
         Create a new connection to the host.

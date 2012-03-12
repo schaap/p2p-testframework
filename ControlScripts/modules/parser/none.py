@@ -51,6 +51,14 @@ class none(parser):
         """
         parser.checkSettings(self)
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        parser.resolveNames(self)
+
     def parseLogs(self, execution, logDir, outputDir):
         """
         Parse the logs for the current execution.

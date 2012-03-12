@@ -118,6 +118,16 @@ class _skeleton_(client):
         #   if self.postFixParams and len(self.postFixParams) > self.protocolVersion:
         #       raise Exception( "You really don't know how this client works, do you? ... Do I, actually?" )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        client.resolveNames(self)
+        # TODO: Do any name resolutions here.
+        # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.

@@ -456,6 +456,14 @@ class host(coreObject):
                 if self.tcJitter > self.tcDelay:
                     raise Exception( "Host {0} was given a jitter ({1}) and delay ({2}) for TC, but the jitter can't be larger tan the delay.".format( self.name, self.tcJitter, self.tcDelay ) )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        pass
+
     def setupNewConnection(self):
         """
         Create a new connection to the host.

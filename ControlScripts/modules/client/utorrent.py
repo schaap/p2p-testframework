@@ -67,6 +67,14 @@ class utorrent(client):
             if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ) ):
                 raise Exception( "The uTorrent client runner needs the utorrent runner scripts for wine. These are expected to be present in ClientWrappers/utorrent-windows/, but they aren't." )
 
+    def resolveNames(self):
+        """
+        Resolve any names given in the parameters.
+        
+        This methods is called after all objects have been initialized.
+        """
+        client.resolveNames(self)
+
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.
