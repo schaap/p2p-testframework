@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # USAGE:
-# $0 clientDir workingDir torrentFile [dataFile]
+# $0 clientDir workingDir torrentFile stopWhenSeeding [dataFile]
 #
 # clientDir will contain the lock files for sockets, this should be a shared directory for all clients on the same machine
 # workingDir will be cleaned out (rm -rf *), webui.zip and utorrent.exe will be copied in
 # torrentFile will be loaded and downloaded
+# stopWhenSeeding is 0 or 1; if 1 the client will be killed when the torrent has reached "Seeding" state
 # if dataFile is given, it will be copied to workingDir
 
 going=1
@@ -41,11 +42,21 @@ if [ ! -f "$3" ]; then
     exit -1
 fi
 
-if [ ! -z "$4" ]; then
-    if [ ! -f "$4" ]; then
-        echo "Not a file: $4"
+if [ "$4" != "0" -a "$4" != "1" ]; then
+    echo "Not 0 or 1: $4"
+    exit -1
+fi
+
+if [ ! -z "$5" ]; then
+    if [ ! -f "$5" ]; then
+        echo "Not a file: $5"
         exit -1
     fi
+fi
+
+stopWhenSeeding=0
+if [ $4 -eq 1 ]; then
+    stopWhenSeeding=1
 fi
 
 rm -f "$2"/* 2>/dev/null
@@ -55,8 +66,8 @@ cp webui.zip "$2/"
 cp utorrent.exe "$2/"
 cp settings.dat "$2/"
 
-if [ ! -z "$4" ]; then
-    cp "$4" "$2/"
+if [ ! -z "$5" ]; then
+    cp "$5" "$2/"
 fi
 
 mkdir -p "$2/torrents"
@@ -182,6 +193,11 @@ while [ $going -eq 1 ]; do
         fi
         date +"%s.%09N"
         cat "$2/wget.out"
+        if [ $stopWhenSeeding -eq 1 ]; then
+            if grep ",\"Seeding\"," "$2/wget.out" > /dev/null 2> /dev/null; then
+                going=0
+            fi
+        fi
     fi
     sleep 1
 done

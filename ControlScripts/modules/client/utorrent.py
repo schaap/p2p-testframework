@@ -8,12 +8,16 @@ class utorrent(client):
     uTorrent client runner.
     
     Extra parameters:
-    - useWine       If set to "yes" this will instruct client:utorrent to use the windows client under wine.
-                    Note that this requires the user to make sure wine and xvfb-run function correctly on
-                    the target hosts!
+    - useWine           If set to "yes" this will instruct client:utorrent to use the windows client under wine.
+                        Note that this requires the user to make sure wine and xvfb-run function correctly on
+                        the target hosts!
+    - stopWhenSeeding   If set to "yes" this will kill the client once the "Seeding" state has been reached.
+                        In order to make sure this goes right, please make sure the string "Seeding" is not to
+                        be found in the names of torrents or other (indirect) parameters of the torrent.
     """
 
     useWine = False
+    stopWhenSeeding = False
 
     def __init__(self, scenario):
         """
@@ -43,6 +47,9 @@ class utorrent(client):
         if key == 'useWine':
             if value == 'yes':
                 self.useWine = True
+        elif key == 'stopWhenSeeding':
+            if value == 'yes':
+                self.stopWhenSeeding = True
         else:
             client.parseSetting(self, key, value)
 
@@ -105,12 +112,15 @@ class utorrent(client):
 
         @param  execution           The execution to prepare this client for.
         """
+        stopWhenSeeding=0
+        if self.stopWhenSeeding:
+            stopWhenSeeding=1
         if not execution.file.getMetaFile(execution.host):
             raise Exception( "In order to use uTorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution) ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5} {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
         else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution) ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
     # pylint: enable-msg=W0221
 
     def start(self, execution):
