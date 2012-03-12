@@ -853,6 +853,7 @@ empty
                     ne.fileName = e.fileName
                     ne.parserName = e.parserName
                     ne.seeder = e.seeder
+                    ne.checkSettings()
                     ne.resolveNames()
                     if self.isInCleanup():
                         return
