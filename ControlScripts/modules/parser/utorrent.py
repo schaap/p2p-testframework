@@ -1,14 +1,7 @@
-from core.campaign import Campaign
 from core.parser import parser
 
 import os
 import re
-
-def parseError( msg ):
-    """
-    A simple helper function to make parsing a lot of parameters a bit nicer.
-    """
-    raise Exception( "Parse error for parser object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
 class utorrent(parser):
     """

@@ -314,7 +314,7 @@ class http(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ), '{0}/log.log'.format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
+        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
 
     def cleanupHost(self, host, reuseConnection = None):
         """

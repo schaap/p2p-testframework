@@ -270,7 +270,7 @@ class _skeleton_(client):
         # TODO: Implement this in order to get your logs out. Example:
         #
         #   execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ),
-        #       '{0}/log.log'.format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
+        #       os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
         #
         # The use of the execution.getRunnerConnection() connection prevents errors with multi-threading.
         pass

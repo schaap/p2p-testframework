@@ -130,7 +130,8 @@ class _skeleton_(core.file.file):
         # TODO: Send any extra files here. These are the files that are required by all executions, whether they're seeding or leeching.
         # Seeding specific files are to be sent in sendToSeedingHost(...).
         #
-        # Just having the default implementation send the meta file is usually enough.
+        # The default implementation will send the meta file. It is usually needed to create the remote data directory here. Example:
+        #    host.sendCommand( 'mkdir -p "{0}/files"'.format( self.getFileDir(host) )
 
     def sendToSeedingHost(self, host):
         """
@@ -148,7 +149,7 @@ class _skeleton_(core.file.file):
         # TODO: Send the actual files to a seeding host. sendToHost(...) has already been called.
         # Note that self.getFileDir(...) is not guaranteed to exist yet. Example:
         #
-        #   host.sendCommand( 'mkdir -p "{0}/files/"; touch "{0}/files/{1}"'.format( self.getFileDir(host), self.filename ) )
+        #   host.sendCommand( 'touch "{0}/files/{1}"'.format( self.getFileDir(host), self.filename ) )
 
     def getFile(self, host):
         """
@@ -175,6 +176,9 @@ class _skeleton_(core.file.file):
         #
         # This implementation assumes you don't really have files, which is unlikely but possible:
         return None
+    
+    # TODO: If your getFile(...) does not always return a path (e.g. for non-seeding hosts) or not always a path in the same parent directory,
+    # you may need to reimplement getDataDir(...)
 
     # TODO: More methods exist, but they are pretty standard and you're unlikely to want to change them. Look at core.file for more details.
 

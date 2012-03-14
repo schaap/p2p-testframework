@@ -2,6 +2,8 @@ from core.parsing import isPositiveInt, containsSpace
 from core.campaign import Campaign
 from core.client import client
 
+import os.path
+
 def parseError( msg ):
     """
     A simple helper function to make parsing a lot of parameters a bit nicer.
@@ -24,6 +26,8 @@ class swift(client):
                         have been prepared, and use that host's address.
     - wait              Specified the number of seconds to wait
                         (i.e. --wait to swift in seconds)
+    - chunkSize         Chunk size to be used by the swift process in bytes.
+                        Optional, defaults to 1024.
     
     The libswift client will require --wait for seeders. By default it is set to 900s for seeders.
     
@@ -47,6 +51,7 @@ class swift(client):
     listenPort = None           # Port to listen on
     tracker = None              # Tracker address
     wait = None                 # Time to wait
+    chunkSize = None            # base bin size
 
     def __init__(self, scenario):
         """
@@ -97,6 +102,12 @@ class swift(client):
             if not isPositiveInt( value, True ):
                 parseError( "wait must be a positive integer" )
             self.wait = int(value)
+        elif key == 'chunkSize':
+            if self.chunkSize:
+                parseError( "chunck size is already set: {0}".format( self.chunkSize ) )
+            if not isPositiveInt( value, True ):
+                parseError( "chunck size must be a positive integer" )                
+            self.chunkSize = int(value)
         else:
             client.parseSetting(self, key, value)
 
@@ -154,13 +165,6 @@ class swift(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        # The default implementation will create the client/execution specific directories, which can be found using
-        # self.getExecutionClientDir(...) and self.getExecutionLogDir(...)
-        #
-        # The default implemenation can also build a runner script that can be used with the default start(...)
-        # implementation. Subclassers are encouraged to use this possibility when they don't need much more elaborate
-        # ways of running their client.
-        #
         allParams = ""
         if execution.isSeeder():
             allParams += ' --file {0}'.format( execution.file.getFile(execution.host) )
@@ -175,6 +179,8 @@ class swift(client):
             allParams += ' --wait {0}s'.format( self.wait )
         if self.listenAddress:
             allParams += ' --listen {0}'.format( self.listenAddress )
+        if self.chunkSize:
+            allParams += ' --chunksize {0}'.format( self.chunkSize )
         if self.tracker:
             if self.tracker[0] == '@':
                 indirecttracker = self.tracker[1:]
@@ -222,7 +228,7 @@ class swift(client):
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
         if self.getExecutionLogDir(execution):
-            execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), "{0}/log.log".format( localLogDestination ), reuseConnection = execution.getRunnerConnection() )
+            execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
 
     def cleanupHost(self, host, reuseConnection = None):
         """

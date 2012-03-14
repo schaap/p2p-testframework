@@ -123,6 +123,8 @@ class fakedata(core.file.file):
         """
         core.file.file.sendToHost(self, host)
 
+        host.sendCommand( 'mkdir -p "{0}/files"'.format( self.getFileDir(host) ) )
+
     def sendToSeedingHost(self, host):
         """
         Send any files required for seeding hosts.
@@ -136,8 +138,6 @@ class fakedata(core.file.file):
         @param  host        The host to which to send the files.
         """
         core.file.file.sendToSeedingHost(self, host)
-        
-        res = host.sendCommand( 'mkdir -p "{0}/files"'.format( self.getFileDir(host) ) )
         
         binaryCommand = None
         if not self.binary:

@@ -164,6 +164,31 @@ class file(coreObject):
         # Note that this is the new name of getName(...), which made no sense in naming
         return None
     # pylint: enable-msg=W0613
+    
+    def getDataDir(self, host):
+        """
+        Returns the path to the dircetory containing the files on the remote seeding host.
+        
+        The path is always a directory and should point to the parent of self.getFile(...).
+        
+        This directory will always be available, after the file object has uploaded itself to the host.
+        
+        Note that this method can return None, meaning there is no such directory on the remote host.
+        
+        The default implementation just returns the parent directory of self.getFile(host), or None if that
+        returned None.
+        
+        @param  host        The host on which to find the directory
+        
+        @return The path to the parent directory containing the file(s) on the remote host, or None if that is not (yet) available.
+        """
+        f = self.getFile(host)
+        if f is None:
+            return None
+        if f[-1:] == '/':
+            f = f[:-1]
+        p = f.rfind('/')
+        return f[:p]
 
     def getMetaFile(self, host):
         """

@@ -1,20 +1,16 @@
 from core.parser import parser
-
 import os
 
-class swift(parser):
+class libtorrent(parser):
     """
-    Implementation of the basic swift parser.
+    Implementation for the libtorrent parser.
     
-    This module parses swift logs to create a data file.
+    This module basically copies the libtorrent log directly.
     
-    Extra parameters:
-    - [none]
-    
-    Raw logs expected:
+    Raw logs expected by this module:
     - log.log
     
-    Parsed log files creates by this module:
+    Parsed log files created by this module:
     - log.data
     -- relative time (seconds)
     -- % done
@@ -60,14 +56,6 @@ class swift(parser):
         """
         parser.checkSettings(self)
 
-    def resolveNames(self):
-        """
-        Resolve any names given in the parameters.
-        
-        This methods is called after all objects have been initialized.
-        """
-        parser.resolveNames(self)
-
     def parseLogs(self, execution, logDir, outputDir):
         """
         Parse the logs for the current execution.
@@ -83,35 +71,25 @@ class swift(parser):
         logfile = os.path.join(logDir, 'log.log')
         datafile = os.path.join(outputDir, 'log.data')
         if not os.path.exists( logfile ) or not os.path.isfile( logfile ):
-            raise Exception( "parser:swift expects the file log.log to be available for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            raise Exception( "parser:libtorrent expects the file log.log to be available for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         if os.path.exists( datafile ):
-            raise Exception( "parser:swift wants to create log.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+            raise Exception( "parser:libtorrent wants to create log.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         fl = None
         fd = None
         try:
             fl = open( logfile, 'r' )
             fd = open( datafile, 'w' )
             fd.write( "time percent upspeed dlspeed\n0 0 0 0\n" )
-            relTime = 0
-            up_bytes = 0
-            down_bytes = 0
+            
             for line in fl:
-                if line[:5] == 'SLEEP':
-                    relTime += 1
-                elif line[:4] == 'done' or line[:4] == 'DONE':
-                    # Split over ' ', then over ',', then over '(', then over ')', and keep it all in one array
-                    split = reduce( lambda x,y: x + y.split( ')' ), reduce(lambda x,y: x + y.split( '(' ), reduce(lambda x,y: x + y.split( ',' ), line.split( ' ' ), []), []), [])
-                    dlspeed = (int(split[16]) - down_bytes) / 1024.0
-                    down_bytes = int(split[16])
-                    upspeed = (int(split[10]) - up_bytes) / 1024.0
-                    up_bytes = int(split[10])
-                                        
-                    percent = 0
-                    if int(split[3]) > 0:
-                        percent = 100.0 * ( float(int(split[1])) / float(int(split[3])) )
+                if line[0].isdigit():
+                    s = line.split('\t')
+                    time = s[0]
+                    percent = s[1]
+                    up = int(s[2])/1024.0
+                    down = int(s[3])/1024.0
                         
-                    fd.write( "{0} {1} {2} {3}\n".format( relTime, percent, upspeed, dlspeed ) )
-                    relTime += 1
+                    fd.write( "{0} {1} {2} {3}\n".format( time, percent, up, down ) )
         finally:
             try:
                 if fd:

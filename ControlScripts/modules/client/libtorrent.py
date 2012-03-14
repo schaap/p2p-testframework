@@ -1,23 +1,16 @@
-from core.campaign import Campaign
 from core.client import client
 
-import os
+import os.path
 
-class utorrent(client):
+class libtorrent(client):
     """
-    uTorrent client runner.
+    libtorrent client runner.
+    
+    This module only accepts precompiled clients on the target hosts.
     
     Extra parameters:
-    - useWine           If set to "yes" this will instruct client:utorrent to use the windows client under wine.
-                        Note that this requires the user to make sure wine and xvfb-run function correctly on
-                        the target hosts!
-    - stopWhenSeeding   If set to "yes" this will kill the client once the "Seeding" state has been reached.
-                        In order to make sure this goes right, please make sure the string "Seeding" is not to
-                        be found in the names of torrents or other (indirect) parameters of the torrent.
+    - [none] 
     """
-
-    useWine = False
-    stopWhenSeeding = False
 
     def __init__(self, scenario):
         """
@@ -44,14 +37,7 @@ class utorrent(client):
         @param  key     The name of the parameter, i.e. the key from the key=value pair.
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
-        if key == 'useWine':
-            if value == 'yes':
-                self.useWine = True
-        elif key == 'stopWhenSeeding':
-            if value == 'yes':
-                self.stopWhenSeeding = True
-        else:
-            client.parseSetting(self, key, value)
+        client.parseSetting(self, key, value)
 
     def checkSettings(self):
         """
@@ -62,25 +48,11 @@ class utorrent(client):
 
         An Exception is raised in the case of insanity.
         """
+        if self.source or self.builder:
+            raise Exception( "client:libtorrent only supports remotely available prebuilt clients. This is to prevent compilation/compatibility hell." )
         client.checkSettings(self)
-        
-        if self.builder:
-            raise Exception( "client:utorrent does not support compilation from source... Where did you get those sources, anyway?" )
-        
-        if self.useWine:
-            if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ) ) or not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ) ):
-                raise Exception( "The uTorrent client runner, when using wine, needs the utorrent runner scripts for wine. These are expected to be present in ClientWrappers/utorrent-windows/, but they aren't." )
-        else:
-            if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ) ):
-                raise Exception( "The uTorrent client runner needs the utorrent runner scripts for wine. These are expected to be present in ClientWrappers/utorrent-windows/, but they aren't." )
-
-    def resolveNames(self):
-        """
-        Resolve any names given in the parameters.
-        
-        This methods is called after all objects have been initialized.
-        """
-        client.resolveNames(self)
+        if not self.isRemote:
+            raise Exception( "client:libtorrent requires itself to be a remotely available prebuilt client." )
 
     def prepare(self):
         """
@@ -112,15 +84,21 @@ class utorrent(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        stopWhenSeeding=0
-        if self.stopWhenSeeding:
-            stopWhenSeeding=1
+        if self.isInCleanup():
+            return
+        
         if not execution.file.getMetaFile(execution.host):
-            raise Exception( "In order to use uTorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
+            raise Exception( "In order to use libtorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
+        
+        datadir = execution.file.getDataDir(execution.host)
+        if datadir is None:
+            raise Exception( "File {0} did not give a data directory on the remote host, which is required to use libtorrent.".format( execution.file.name ) )
+        
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5} {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -s -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), datadir, self.getExecutionLogDir(execution) ) )
+        
         else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), datadir, self.getExecutionLogDir(execution) ) ) 
     # pylint: enable-msg=W0221
 
     def start(self, execution):
@@ -136,7 +114,7 @@ class utorrent(client):
         @param  execution       The execution this client is to be run for.
         """
         client.start(self, execution)
-
+        
     def retrieveLogs(self, execution, localLogDestination):
         """
         Retrieve client specific logs for the given execution.
@@ -146,8 +124,8 @@ class utorrent(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
-        execution.host.getFile( '{0}/errlog.log'.format( self.getExecutionLogDir( execution ) ), os.path.join( localLogDestination, 'errlog.log' ), reuseConnection = execution.getRunnerConnection() )
+        if self.getExecutionLogDir(execution):
+            execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
 
     def cleanupHost(self, host, reuseConnection = None):
         """
@@ -228,10 +206,7 @@ class utorrent(client):
         
         @return    List of binaries.
         """
-        if self.useWine:
-            return [ 'webui.zip', 'utorrent.exe' ]
-        else:
-            return [ 'webui.zip', 'utserver' ]
+        return ['libtorrent']
     
     def getSourceLayout(self):
         """
@@ -266,11 +241,6 @@ class utorrent(client):
         
         @return    The files that are always to be uploaded.
         """
-        if self.useWine:
-            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ), 'ut_server_logging'),
-                    (os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ), 'settings.dat')]
-        else:
-            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ), 'ut_server_logging')]
         return None
 
     @staticmethod
