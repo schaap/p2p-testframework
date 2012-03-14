@@ -76,8 +76,7 @@ class logger:
 
         @param  alwaysPrint     Set to True to make sure this message is printed to the screen as well as being logged.
         """
-        for line in traceback.format_exc( ):
-            self.logPre( line, alwaysPrint )
+        self.logPre( traceback.format_exc(), alwaysPrint )
     
     def localTraceback(self, alwaysPrint = False):
         """
