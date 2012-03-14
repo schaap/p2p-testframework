@@ -40,6 +40,7 @@ class debuglogger:
             msg += '\n'
         if self.combined:
             self.fileObject.write( '{1:012.4f} CHANNEL {0}: '.format( channelnumber, float(t) ) + msg )
+            self.fileObject.flush()
         if self.separate:
             if channelnumber not in self.fileObjects:
                 self.fileObjects[channelnumber] = open( os.path.join( self.basedir, 'debug_channel_{0}'.format( channelnumber ) ), 'a' )
