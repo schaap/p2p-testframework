@@ -33,6 +33,8 @@ class execution(coreObject):
     runnerConnection = None # A specific connection to use for running a client
     
     timeout = None          # A number of seconds to wait before starting the client (float)
+    
+    keepSeeding = False     # Set to True to have this execution keep on seeding when all leechers are done
 
     # @static
     executionCount = 0      # The total number of executions
@@ -97,6 +99,9 @@ class execution(coreObject):
             if not isPositiveFloat( value ):
                 parseError( "The timeout must be a non-negative floating point number." )
             self.timeout = float(value)
+        elif key == 'keepSeeding':
+            if value != '':
+                self.keepSeeding = False
         else:
             parseError( 'Unknown parameter name: {0}'.format( key ) )
 
@@ -117,6 +122,8 @@ class execution(coreObject):
             raise Exception( "Execution defined at line {0} must have a file.".format( self.declarationLine ) )
         if self.timeout == None:
             self.timeout = 0
+        if not self.isSeeder() and self.keepSeeding:
+            Campaign.logger.log( "Warning: Execution define at line {0} is declared to keep seeding, but it's not a seeder.".format( self.declarationLine ))
 
     def resolveNames(self):
         """
@@ -145,7 +152,7 @@ class execution(coreObject):
         @return True iff this execution is a seeder.
         """
         return self.seeder
-
+    
     def getNumber(self):
         """
         Returns the number of this execution.

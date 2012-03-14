@@ -477,7 +477,9 @@ class ScenarioRunner:
         while sleepTime > 0:
             time.sleep( sleepTime )
             for execution in self.getObjects('execution'):
-                if execution.client.isRunning(execution):
+                if execution.isSeeder() and not execution.keepSeeding:
+                    continue
+                if (not execution.client.hasStarted(execution)) or execution.client.isRunning(execution):
                     break
             else:
                 print "All client have finished before time is up"

@@ -37,6 +37,7 @@ Execution objects are declared along with the other objects and have the followi
 - parser        The name of the parser object which should parse the logs of this execution. Optional, defaults to the parser specified with the client
 - seeder        Set to anything but '' to mark this execution as a seeding execution. Optional, defaults to ''
 - timeout       A non-negative floating point number that indicates a number of seconds to wait before actually starting the client after the scenario starts. Optional, defaults to 0
+- keepSeeding   Set to anything but '' to make sure this seeding execution has to end by itself before the scenario ends; normally seeders are killed when all leechers have finished
 
 See the description of the extension modules below or the HOWTO document for more information on using parameters.
 
@@ -99,7 +100,8 @@ Parameters:
 
 By default the following file modules are provided:
 - file:none         A dummy file object that simply provides no data.
-- file:local        Specified a local file or directory to use as data.
+- file:local        Specifies a local file or directory to use as data.
+- file:remote       Specifies a remote file or directory to use as data.
 - file:fakedata     Creates fake data on the remote host that is always the same, non-trivial, of configurable size and real.
 
 === client ===

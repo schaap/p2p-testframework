@@ -124,9 +124,9 @@ class remote(core.file.file):
         if isdir == "D":
             if self.renameFile:
                 raise Exception( "The renameFile parameter to file:remote is not allowed for directories and {0} seems to be a directory on host {1}.".format( self.path, host.name ) )
-            host.sendCommand( 'cp "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
-        elif isdir == "F":
             host.sendCommand( 'cp -r "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
+        elif isdir == "F":
+            host.sendCommand( 'cp "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
         else:
             raise Exception( "file:remote got an unexpected response from host {2} when trying to see if {0} is a directory or a file: {1}".format( self.path, res, host.name ) )
 
