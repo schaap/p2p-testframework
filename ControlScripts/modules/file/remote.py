@@ -1,6 +1,5 @@
-import os
-import tempfile
-
+# These imports are needed to access the parsing functions (which you're likely to use in parameter parsing),
+# the Campaign data object and the file parent class.
 from core.campaign import Campaign
 import core.file
 
@@ -10,29 +9,21 @@ def parseError( msg ):
     """
     raise Exception( "Parse error for file object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
-class local(core.file.file):
+class remote(core.file.file):
     """
-    File implementation for local files or directories.
+    File implementation for remote files or directories.
+    
+    This file module is similar to file:local, except that it uses already available upload to prevent uploading it for
+    every scenario. This can be a great boost in scenario speed when dealing with large files.
 
     Extra parameters:
-    - path                  The path to the actual file or directory on the local machine.
-    - generateTorrent       Set this to "yes" to have a torrent file automatically generated from the file;
-                            the torrent file will be uplaoded and its location available through getMetaFile(...).
-                            The metaFile parameter must not be set in this case.
-    - generateRootHash      Set this to "yes" to have the SHA1 root hash automatically generated from the file;
-                            the rootHash parameter must not be set in this case. path must refer to a single file
-                            for a root hash to be calculated.
+    - path                  The path to the actual file or directory on the remote machine.
     - renameFile            Set this to "yes" to have the file renamed when uploaded to an automatically generated
-                            name. This is forbidden when automated torent generation is requested. Not valid if
-                            path points to a directory.
+                            name. Not valid if path points to a directory.
     """
 
     path = None                 # The path of the local file or directory
-    generateTorrent = False     # True iff automated torrent generation is requested
-    generateRootHash = False    # True iff automated root hash calculation is requested
     renameFile = False          # True iff the single file is to be renamed after uploading
-    
-    tempMetaFile = None         # The temporary file created for the meta file
 
     def __init__(self, scenario):
         """
@@ -60,19 +51,9 @@ class local(core.file.file):
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
         if key == 'path':
-            if not os.path.exists( value ):
-                parseError( "File or directory '{0}' does not exist".format( value ) )
             if self.path:
                 parseError( "A file or directory was already given" )
             self.path = value
-        elif key == 'torrent' or key == 'generateTorrent':
-            if key == 'torrent':
-                Campaign.logger.log( "Please do not use the torrent parameter of file:local anymore. It is deprecated. Use generateTorrent instead." )
-            if value == 'yes':
-                self.generateTorrent = True
-        elif key == 'generateRootHash':
-            if value == 'yes':
-                self.generateRootHash = True
         elif key == 'renameFile':
             if value == 'yes':
                 self.renameFile = True
@@ -92,27 +73,6 @@ class local(core.file.file):
 
         if not self.path:
             raise Exception( "file:local {0} must have a local path specified".format( self.name ) )
-        if self.metaFile and self.generateTorrent:
-            raise Exception( "file:local {0} has requested automated torrent generation, but a meta file was already given".format( self.name ) )
-        if self.rootHash and self.generateRootHash:
-            raise Exception( "file:local {0} has requested automated root hash calculation, but a root hash was already given".format( self.name ) )
-        if os.path.isdir( self.path ):
-            if self.generateRootHash:
-                raise Exception( "file:local {0} has requested automated root hash calculation, but {1} is a directory, for which root hashes aren't supported".format( self.name, self.path ) )
-            if self.renameFile:
-                raise Exception( "file:local {0} has requested the uploaded file to be renamed, but {1} is a directory, for which this is not supported".format( self.name, self.path ) )
-        meta = Campaign.loadCoreModule('meta')
-        # PyLint really doesn't understand dynamic loading
-        # pylint: disable-msg=E1101
-        if self.generateRootHash:
-            self.rootHash = meta.calculateMerkleRootHash( self.path ).encode( 'hex' )
-        if self.generateTorrent:
-            if self.isInCleanup():
-                return
-            _, self.tempMetaFile = tempfile.mkstemp('.torrent')
-            self.metaFile = self.tempMetaFile
-            meta.generateTorrentFile( self.path, self.metaFile)
-        # pylint: enable-msg=E1101
 
     def resolveNames(self):
         """
@@ -159,10 +119,16 @@ class local(core.file.file):
         if not self.getFileDir(host):
             return
         core.file.file.sendToSeedingHost(self, host)
-        if os.path.isdir( self.path ):
-            host.sendFiles( self.path, '{0}'.format( self.getFile(host) ) )
+        res = host.sendCommand( '[ -d "{0}" ] && echo "D" || echo "F"'.format( self.path ) )
+        isdir = res.splitlines()[-1] 
+        if isdir == "D":
+            if self.renameFile:
+                raise Exception( "The renameFile parameter to file:remote is not allowed for directories and {0} seems to be a directory on host {1}.".format( self.path, host.name ) )
+            host.sendCommand( 'cp "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
+        elif isdir == "F":
+            host.sendCommand( 'cp -r "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
         else:
-            host.sendFile( self.path, '{0}'.format( self.getFile(host) ) )
+            raise Exception( "file:remote got an unexpected response from host {2} when trying to see if {0} is a directory or a file: {1}".format( self.path, res, host.name ) )
 
     def getFile(self, host):
         """
@@ -183,32 +149,34 @@ class local(core.file.file):
         """
         if not self.getFileDir(host):
             return None
-        if os.path.isdir( self.path ):
+        res = host.sendCommand( '[ -d "{0}" ] && echo "D" || echo "F"'.format( self.path ) )
+        isdir = res.splitlines()[-1] 
+        if isdir == "D":
             if self.path[-1:] == '/':
-                name = os.path.basename( self.path[:-1] )
+                p = self.path[:-1].rfind('/')
+                if p == -1:
+                    name = self.path[:-1]
+                else:
+                    name = self.path[:p]
             else:
-                name = os.path.basename( self.path )
-        else:
+                p = self.path.rfind('/')
+                if p == -1:
+                    name = self.path
+                else:
+                    name = self.path[:p]
+        elif isdir == "F":
             if self.renameFile:
                 name = 'inputFile'
             else:
-                name = os.path.basename( self.path )
+                p = self.path.rfind('/')
+                if p == -1:
+                    name = self.path
+                else:
+                    name = self.path[:p]
+        else:
+            raise Exception( "file:remote got an unexpected response from host {2} when trying to see if {0} is a directory or a file: {1}".format( self.path, res, host.name ) )
         return '{0}/files/{1}'.format( self.getFileDir(host), name )
-
-    def cleanup(self):
-        """
-        Cleans up the file object.
-        
-        Do not assume anything has been or has not been done.
-        Check everything and make sure things are clean when you're done.
-        
-        The default implementation does nothing.
-        """
-        core.file.file.cleanup(self)
-        if self.tempMetaFile:
-            os.remove( self.tempMetaFile )
-            self.tempMetaFile = None
-
+    
     @staticmethod
     def APIVersion():
         return "2.0.0"
