@@ -194,7 +194,7 @@ class opentracker(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        pass
+        client.retrieveLogs(self, execution, localLogDestination)
 
     def cleanupHost(self, host, reuseConnection = None):
         """

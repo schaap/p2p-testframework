@@ -314,7 +314,9 @@ class http(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
+        if self.getExecutionLogDir(execution):
+            execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
+        client.retrieveLogs(self, execution, localLogDestination)
 
     def cleanupHost(self, host, reuseConnection = None):
         """
@@ -385,30 +387,30 @@ class http(client):
         """
         return [self.port]
 
-    def loadDefaultParser(self, execution):
+    def loadDefaultParsers(self, execution):
         """
-        Loads the default parser for the given execution.
+        Loads the default parsers for the given execution.
 
         The order in which parsers are determined is this (first hit goes):
-        - The parser given in the execution object
-        - The parser given in the client object
+        - The parsers given in the execution object
+        - The parsers given in the client object
         - The parser object with the same name as the client
         - The parser with the same name as the client
         The second, third and fourth are to be loaded by this method.
         
         @param  execution       The execution for which to load a parser.
 
-        @return The parser instance.
+        @return The list of parser instances.
         """
-        if self.parser:
-            return self.scenario.getObjectsDict( 'parser' )[self.parser]
+        if self.parsers:
+            return self.loadDefaultParsers(execution)
         else:
             if execution.isSeeder():
                 parserType = 'lighttpd'
             else:
                 parserType = 'aria2'
             if parserType in self.scenario.getObjectsDict( 'parser' ):
-                return self.scenario.getObjectsDict( 'parser' )[parserType]
+                return [self.scenario.getObjectsDict( 'parser' )[parserType]]
             else:
                 modclass = Campaign.loadModule( 'parser', parserType )
                 # *Sigh*. PyLint. Dynamic loading!
@@ -416,7 +418,7 @@ class http(client):
                 obj = modclass( self.scenario )
                 # pylint: enable-msg=E1121
                 obj.checkSettings()
-                return obj
+                return [obj]
 
     @staticmethod
     def APIVersion():

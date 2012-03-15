@@ -9,6 +9,9 @@ import os
 import stat
 from subprocess import Popen, STDOUT, PIPE
 import subprocess
+from binascii import hexlify
+import time
+import sys
 
 paramiko = None
 try:
@@ -181,6 +184,57 @@ class sshParamikoConnectionObject(countedConnectionObject):
         attribs = sftp.stat(remotePath)
         return stat.S_ISDIR( attribs.st_mode )
 
+class sshWarnHostKeyPolicy(paramiko.MissingHostKeyPolicy):
+    allowedKeys = {}
+    disallowing = False
+    
+    def __init__(self):
+        paramiko.MissingHostKeyPolicy.__init__(self)
+    
+    def missing_host_key(self, client, hostname, key):
+        if sshWarnHostKeyPolicy.disallowing:
+            raise Exception( "Key {0} for host {1} disallowed: Not allowing any new keys after one was disallowed.".format( hexlify( key.get_fingerprint() ), hostname ) )
+        if hostname in sshWarnHostKeyPolicy.allowedKeys:
+            if sshWarnHostKeyPolicy.allowedKeys[hostname] != key.get_fingerprint():
+                print "!!! ERROR !!! ERROR !!!"
+                print "Host {0} was allowed with key {1} earlier during this session, but now it suddenly has key {2}. Disallowing.".format( hostname, hexlify(sshWarnHostKeyPolicy.allowedKeys[hostname]), hexlify(key.get_fingerprint()) )
+                print "This means something is seriously wrong."
+                print "!!! ERROR !!! ERROR !!!"
+                Campaign.logger.log( "ERROR! paramiko: Disallowing unknown SSH key {2} for hostname {0}, since it already had key {1} before. This means something is seriously wrong.".format( hostname, hexlify(sshWarnHostKeyPolicy.allowedKeys[hostname]), hexlify(key.get_fingerprint()) ) )
+            else:
+                return
+        try:
+            print "!!! WARNING !!! WARNING !!!"
+            print "paramiko could not verify the following host key using the loaded system host keys: "
+            print "host: {0}".format(hostname)
+            print "key:  {0}".format(hexlify(key.get_fingerprint()))
+            print "The key will be added and allowed for the current session in 10 seconds."
+            print "Press Ctrl+C to abort."
+            print "!!! WARNING !!! WARNING !!!"
+            print "5",
+            sys.stdout.flush()
+            time.sleep(1)
+            print "4",
+            sys.stdout.flush()
+            time.sleep(1)
+            print "3",
+            sys.stdout.flush()
+            time.sleep(1)
+            print "2",
+            sys.stdout.flush()
+            time.sleep(1)
+            print "1",
+            sys.stdout.flush()
+            time.sleep(1)
+            print "Allowing"
+            client.get_host_keys().add( hostname, key.get_name(), key )
+            Campaign.logger.log( "WARNING! paramiko: Allowing unknown SSH key {0} for hostname {1}".format( hexlify(key.get_fingerprint()), hostname ) )
+            sshWarnHostKeyPolicy.allowedKeys[hostname] = key.get_fingerprint()
+        except KeyboardInterrupt as e:
+            print "Rejecting"
+            sshWarnHostKeyPolicy.disallowing = True
+            raise e
+
 class ssh(host):
     """
     The SSH implementation of the host object.
@@ -280,6 +334,7 @@ class ssh(host):
             return
         if paramiko:
             client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(sshWarnHostKeyPolicy())
             client.load_system_host_keys()
             try:
                 client.connect( self.hostname, port = self.port, username = self.user )

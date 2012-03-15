@@ -134,9 +134,11 @@ class test__(client):
         host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'extraParameters', self.extraParameters) )
         if self.isInCleanup():
             return
-        host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'parser', self.parser) )
-        if self.isInCleanup():
-            return
+        if self.parsers:
+            for p in self.parsers:
+                host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'parser', p) )
+                if self.isInCleanup():
+                    return
         host.sendCommand( 'echo "{1}: {2}" >> "{0}/client_bin"'.format( theDir, 'source', self.source) )
         if self.isInCleanup():
             return
@@ -193,6 +195,7 @@ class test__(client):
         """
         if not os.path.exists( localLogDestination ) or not os.path.isdir( localLogDestination ):
             raise Exception( "Insane localLogDestination {0}".format( localLogDestination ) )
+        client.retrieveLogs(self, execution, localLogDestination)
         
     def cleanupHost(self, host, reuseConnection = None):
         """

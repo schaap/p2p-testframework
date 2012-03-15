@@ -267,13 +267,17 @@ class _skeleton_(client):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        # TODO: Implement this in order to get your logs out. Example:
+        # TODO: Implement this in order to get your logs out. The parent implementation will take care of cpu.log in case
+        # profiling was requested. Example:
         #
         #   execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir( execution ) ),
         #       os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
+        #   client.retrieveLogs(self, execution, localLogDestination)
         #
         # The use of the execution.getRunnerConnection() connection prevents errors with multi-threading.
-        pass
+        #
+        # This assumes you have no logs of your own:
+        client.retrieveLogs(self, execution, localLogDestination)
 
     def cleanupHost(self, host, reuseConnection = None):
         """

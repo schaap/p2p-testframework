@@ -18,13 +18,13 @@ class execution(coreObject):
     hostName = None         # The name of the host object
     clientName = None       # The name of the client object
     fileName = None         # The name of the file object
-    parserName = None       # The name of the parser object
+    parserNames = None      # The list of names of the parser objects
 
     host = None             # The host object
     client = None           # The client object
     # Yes, that's a warning below. That's OK, though.
     file = None             # The file object
-    parser = None           # The parser object
+    parsers = None          # The list of parser objects
 
     seeder = False          # True iff this execution is a seeder
 
@@ -85,11 +85,11 @@ class execution(coreObject):
                 parseError( "{0} is not a valid file object name".format( value ) )
             self.fileName = value
         elif key == 'parser':
-            if self.parserName:
-                parseError( "A parser was already given: {0}".format( self.parserName ) )
             if not isValidName( value ):
                 parseError( "{0} is not a valif parser object name".format( value ) )
-            self.parserName = value
+            if not self.parserNames:
+                self.parserNames = []
+            self.parserNames.append( value )
         elif key == 'seeder':
             if value != '':
                 self.seeder = True
@@ -137,13 +137,30 @@ class execution(coreObject):
             raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
         if self.fileName not in self.scenario.getObjectsDict('file'):
             raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, self.fileName ) )
-        if self.parserName and self.parserName not in self.scenario.getObjectsDict('parser'):
-            raise Exception( "Execution defined at line {0} refers to parser {1} which is never decalred".format( self.declarationLine, self.parserName ) )
+        if self.parserNames:
+            for parser in self.parserNames:
+                if parser not in self.scenario.getObjectsDict('parser'):
+                    try:
+                        Campaign.loadModule( 'parser', parser )
+                    except ImportError:
+                        raise Exception( "Execution defined at line {0} refers to parser {1} which is never declared".format( self.declarationLine, parser ) )
         self.host = self.scenario.getObjectsDict('host')[self.hostName]
         self.client = self.scenario.getObjectsDict('client')[self.clientName]
         self.file = self.scenario.getObjectsDict('file')[self.fileName]
-        if self.parserName:
-            self.parser = self.scenario.getObjectsDict('parser')[self.parserName]
+        if self.parserNames:
+            self.parsers = []
+            pdict = self.scenario.getObjectsDict( 'parser' )
+            for parser in self.parserNames:
+                if parser in pdict:
+                    self.parsers.append( pdict[parser] )
+                else:
+                    modclass = Campaign.loadModule( 'parser', parser )
+                    # *Sigh*. PyLint. Dynamic loading!
+                    # pylint: disable-msg=E1121
+                    obj = modclass( self.scenario )
+                    # pylint: enable-msg=E1121
+                    obj.checkSettings()
+                    self.parsers.append( obj )
 
     def isSeeder(self):
         """
@@ -182,11 +199,13 @@ class execution(coreObject):
         @param  outputDir   The path to the directory on the local machine where the parsed logs are to be stored.
         """
         # The parser loading has already been done
-        if self.parser:
-            self.parser.parseLogs( self, logDir, outputDir )
+        if self.parsers:
+            for parser in self.parsers:
+                parser.parseLogs( self, logDir, outputDir )
         else:
-            p = self.client.loadDefaultParser(self)
-            p.parseLogs(self, logDir, outputDir)
+            p = self.client.loadDefaultParsers(self)
+            for parser in p:
+                parser.parseLogs(self, logDir, outputDir)
 
     def getModuleType(self):
         """

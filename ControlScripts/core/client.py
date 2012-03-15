@@ -27,13 +27,15 @@ class client(coreObject):
     location = None             # String with the path to the location of the client; meaning depends on the way the client is to be found
     builder = None              # String with the name of the builder module to use to build the source; None for precompiled binaries
     
-    parser = None               # String with the name of the parser object to use
+    parsers = None              # List of strings with the names of the parser objects to use
 
     builderObj = None           # The instance of the builder module requested
     sourceObj = None            # The instance of the source module requested
 
     pids = {}                   # The process IDs of the running clients (dictionary execution-number->PID)
     pid__lock = None            # Lock object to guard the pids dictionary
+    
+    profile = False             # Flag to include external profiling code
 
     # For more clarity: the way source, isRemote, location and builder work together is as follows.
     #
@@ -94,11 +96,11 @@ class client(coreObject):
                 parseError( 'Location already set: {0}'.format( self.location ) )
             self.location = value
         elif key == 'parser':
-            if self.parser:
-                parseError( 'Parser already set for client: {0}'.format( self.parser ) )
             if not isValidName( value ):
                 parseError( 'Parser name given is not a valid name: {0}'.format( value ) )
-            self.parser = value
+            if not self.parsers:
+                self.parsers = []
+            self.parsers.append( value )
         elif key == 'builder':
             if self.builder:
                 parseError( 'Builder already set for client: {0}'.format( self.builder ) )
@@ -115,6 +117,8 @@ class client(coreObject):
             self.source = value
         elif key == 'remoteClient':
             self.isRemote = ( value != '' )
+        elif key == 'profile':
+            self.profile = ( value != '' )
         else:
             parseError( 'Unknown parameter name: {0}'.format( key ) )
 
@@ -166,9 +170,13 @@ class client(coreObject):
         
         This methods is called after all objects have been initialized.
         """
-        if self.parser:
-            if self.parser not in self.scenario.getObjectsDict( 'parser' ):
-                raise Exception( "Client {0} refers to parser named {1}, but that is not declared".format( self.name, self.parser ) )
+        if self.parsers:
+            for parser in self.parsers:
+                if parser not in self.scenario.getObjectsDict( 'parser' ):
+                    try:
+                        Campaign.loadModule( 'parser', parser )
+                    except ImportError:
+                        raise Exception( "Client {0} refers to parser named {1}, but that is not declared nor the name of parser module".format( self.name, parser ) )
         else:
             try:
                 __import__( 'modules.parser.'+self.__class__.__name__, globals(), locals(), self.__class__.__name__ )
@@ -455,7 +463,17 @@ class client(coreObject):
             else:
                 print "DEBUG: Preparing execution {0} of client {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine )
                 fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
-            fileObj.write( 'echo $!\n' )
+            if self.profile:
+                fileObj.write( 'myPid=$!\n' )
+                fileObj.write( 'echo $myPid\n' )
+                fileObj.write( '(while kill -0 $myPid > /dev/null 2> /dev/null; do ' )
+                fileObj.write( 'date "+%y-%m-%d %H:%M:%S.%N" >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
+                fileObj.write( 'ps -p $myPid -o %cpu,rss 2>&1 >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
+                fileObj.write( 'sleep 1;  done) &\n' )
+            else:
+                fileObj.write( 'echo $!\n' )
+            fileObj.close()
+
             fileObj.close()
             os.chmod( clientRunner, os.stat( clientRunner ).st_mode | stat.S_IXUSR )
             if self.isInCleanup():
@@ -592,7 +610,7 @@ class client(coreObject):
                 connection = execution.getRunnerConnection()
             for killCounter in range( 0, len(killActions) ):
                 if killActions[killCounter] != 0:
-                    res = execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ), connection )
+                    execution.host.sendCommand( 'kill -{0} {1}'.format( killActions[killCounter], theProgramPID ), connection )
                 time.sleep( killDelays[killCounter] )
                 result = execution.host.sendCommand( 'kill -0 {0} 2>/dev/null && echo "Y" || echo "N"'.format( theProgramPID ), connection )
                 if re.match( '^Y', result ) is None:
@@ -624,7 +642,9 @@ class client(coreObject):
         @param  execution               The execution for which to retrieve logs.
         @param  localLogDestination     A string that is the path to a local directory in which the logs are to be stored.
         """
-        pass
+        if self.getExecutionLogDir(execution):
+            if self.profile:
+                execution.host.getFile( '{0}/cpu.log'.format( self.getExecutionLogDir(execution) ), os.path.join( localLogDestination, 'cpu.log' ) )
 
     def cleanupHost(self, host, reuseConnection = None):
         """
@@ -647,25 +667,38 @@ class client(coreObject):
 
     # This method has unused argument execution; that's fine
     # pylint: disable-msg=W0613
-    def loadDefaultParser(self, execution):
+    def loadDefaultParsers(self, execution):
         """
-        Loads the default parser for the given execution.
+        Loads the default parsers for the given execution.
 
         The order in which parsers are determined is this (first hit goes):
-        - The parser given in the execution object
-        - The parser given in the client object
+        - The parsers given in the execution object
+        - The parsers given in the client object
         - The parser object with the same name as the client
         - The parser with the same name as the client
         The second, third and fourth are to be loaded by this method.
         
         @param  execution       The execution for which to load a parser.
 
-        @return The parser instance.
+        @return The list of parser instances.
         """
-        if self.parser:
-            return self.scenario.getObjectsDict( 'parser' )[self.parser]
+        if self.parsers:
+            plist = []
+            pdict = self.scenario.getObjectsDict( 'parser' )
+            for parser in self.parsers:
+                if parser in pdict:
+                    plist.append( pdict[parser] )
+                else:
+                    modclass = Campaign.loadModule( 'parser', parser )
+                    # *Sigh*. PyLint. Dynamic loading!
+                    # pylint: disable-msg=E1121
+                    obj = modclass( self.scenario )
+                    # pylint: enable-msg=E1121
+                    obj.checkSettings()
+                    plist.append( obj )
+            return plist
         elif self.__class__.__name__ in self.scenario.getObjectsDict( 'parser' ):
-            return self.scenario.getObjectsDict( 'parser' )[self.__class__.__name__]
+            return [self.scenario.getObjectsDict( 'parser' )[self.__class__.__name__]]
         else:
             modclass = Campaign.loadModule( 'parser', self.__class__.__name__ )
             # *Sigh*. PyLint. Dynamic loading!
@@ -673,8 +706,8 @@ class client(coreObject):
             obj = modclass( self.scenario )
             # pylint: enable-msg=E1121
             obj.checkSettings()
-            return obj
-        # pylint: enable-msg=W0613
+            return [obj]
+    # pylint: enable-msg=W0613
 
     def cleanup(self):
         """

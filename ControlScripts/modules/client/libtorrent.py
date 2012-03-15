@@ -126,6 +126,7 @@ class libtorrent(client):
         """
         if self.getExecutionLogDir(execution):
             execution.host.getFile( '{0}/log.log'.format( self.getExecutionLogDir(execution) ), os.path.join( localLogDestination, 'log.log' ), reuseConnection = execution.getRunnerConnection() )
+        client.retrieveLogs(self, execution, localLogDestination)
 
     def cleanupHost(self, host, reuseConnection = None):
         """
