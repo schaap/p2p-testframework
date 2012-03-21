@@ -208,52 +208,6 @@ class _skeleton_(client):
         client.prepareExecution(self, execution)
     # pylint: enable-msg=W0221
 
-    def start(self, execution):
-        """
-        Run the client for the provided execution.
-
-        All necessary files are already available on the host at this point.
-        Be sure to take self.extraParameters into account, here.
-
-        The PID of the running client should be saved in the dictionary self.pids, which is guarded by
-        self.pid__lock
-
-        @param  execution       The execution this client is to be run for.
-        """
-        # The default implementation is very well usable is you have created a runner script in
-        # prepareExecution(...). If not, this is where you should run your client. A small example that assumes a lot
-        # of preparation has been done elsewhere (which is not done in the examples above):
-        #
-        #   try:
-        #       self.pid__lock.acquire()
-        #       if self.isInCleanup():
-        #           self.pid__lock.release()
-        #           return
-        #       if execution.getNumber() in self.pids:
-        #           self.pid__lock.release()
-        #           raise Exception( "Don't run twice!" )
-        #       resp = execution.host.sendCommand(
-        #           'cd "{0}"; ./yourClientBinary --pidFile "{1}/pidFile" &; cat "{1}/pidFile"'.format(
-        #               self.getClientDir( execution.host ), self.getExecutionClientDir( execution ) ) )
-        #       m = re.match( "^([0-9][0-9]*)", resp )
-        #       if not m:
-        #           raise Exception( "Failure to start... or get PID, anyway." )
-        #       self.pids[execution.getNumber()] = m.group( 1 )
-        #   finally:
-        #       try:
-        #           self.pid__lock.release()
-        #       except RuntimeError:
-        #           pass
-        #
-        # As you can see the start(...) method quite quickly becomes quite elaborate with quite some possibilities
-        # for errors. That is why all of the above is highly discouraged: please use the simpleCommandLine or
-        # complexCommandLine named parameters to client.prepareExecution(...) in your implementation of
-        # prepareExecution(...) above and just use the following implementation:
-        client.start(self, execution)
-        #
-        # TODO: If you really, really must: override this implementation. Your risk.
-        #
-
     # TODO: If you really need a different detection whether your client is running, override isRunning(...)
 
     # TODO: If you can kill your client more effectively than sending a signal, override kill(...)
@@ -448,4 +402,4 @@ class _skeleton_(client):
     @staticmethod
     def APIVersion():
         # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
-        return "2.0.0"
+        return "2.1.0"

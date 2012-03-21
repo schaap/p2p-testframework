@@ -15,29 +15,30 @@ class execution(coreObject):
     Subclasses of execution do not exist.
     """
 
-    hostName = None         # The name of the host object
-    clientName = None       # The name of the client object
-    fileName = None         # The name of the file object
-    parserNames = None      # The list of names of the parser objects
+    hostName = None             # The name of the host object
+    clientName = None           # The name of the client object
+    fileName = None             # The name of the file object
+    parserNames = None          # The list of names of the parser objects
 
-    host = None             # The host object
-    client = None           # The client object
+    host = None                 # The host object
+    client = None               # The client object
     # Yes, that's a warning below. That's OK, though.
-    file = None             # The file object
-    parsers = None          # The list of parser objects
+    file = None                 # The file object
+    parsers = None              # The list of parser objects
 
-    seeder = False          # True iff this execution is a seeder
+    seeder = False              # True iff this execution is a seeder
 
-    number = None           # The number of this execution
+    number = None               # The number of this execution
     
-    runnerConnection = None # A specific connection to use for running a client
+    runnerConnection = None     # A specific connection to use for querying a client in parallel
+    executionConnection = None  # A specific connection to use for execution a client
     
-    timeout = None          # A number of seconds to wait before starting the client (float)
+    timeout = None              # A number of seconds to wait before starting the client (float)
     
-    keepSeeding = False     # Set to True to have this execution keep on seeding when all leechers are done
+    keepSeeding = False         # Set to True to have this execution keep on seeding when all leechers are done
 
     # @static
-    executionCount = 0      # The total number of executions
+    executionCount = 0          # The total number of executions
 
     def __init__(self, scenario):
         """
@@ -223,24 +224,35 @@ class execution(coreObject):
         """
         return self.number
 
-    def createRunnerConnection(self):
+    def createRunnerConnections(self):
         """
-        Creates a new connection on the included host that can be used to run clients.
+        Creates two new connections on the included host that can be used to do parallel queries to the client and to execute the client.
         
-        The connection will be held internally and requested for use through getRunnerConnection().
+        The connections will be held internally and requested for use through getRunnerConnection() and getExecutionConnection().
         """
         self.runnerConnection = self.host.setupNewConnection()
+        self.executionConnection = self.host.setupNewConnection()
     
     def getRunnerConnection(self):
         """
-        Returns a separate connection to be used to run a client.
+        Returns a separate connection to be used to query a client in parallel.
         
         Creates a new connection if needed.
         """
         if not self.runnerConnection:
-            self.createRunnerConnection()
+            self.createRunnerConnections()
         return self.runnerConnection
+
+    def getExecutionConnection(self):
+        """
+        Returns a separate connection to be used to execute a client.
+        
+        Creates a new connection if needed.
+        """
+        if not self.executionConnection:
+            self.createRunnerConnections()
+        return self.executionConnection
 
     @staticmethod
     def APIVersion():
-        return "2.0.0-core"
+        return "2.1.0-core"

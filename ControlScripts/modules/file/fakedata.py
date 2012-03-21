@@ -20,13 +20,13 @@ class fakedata(core.file.file):
     This module uses Utils/fakedata to generate the data for the files.
     
     Extra parameters:
-    - size      A positive integer, divisible by 4096, that denotes the size of the generated file in bytes. Required.
+    - ksize     A positive integer, divisible by 4, that denotes the size of the generated file in kbytes. Required.
     - binary    The path of the remote binary to use. This might be needed when g++ does not work on one of the hosts
                 this file is used on. Optional, defaults to "" which will have the binary compiled on the fly.
     - filename  The name of the file that will be created. Optional, defaults to "fakedata".
     """
     
-    size = None         # The size of the file in bytes
+    size = None         # The size of the file in kbytes
     binary = None       # Path to the remote binary to use
     filename = None     # The filename the resulting file should have  
 
@@ -56,10 +56,19 @@ class fakedata(core.file.file):
         @param  value   The value of the parameter, i.e. the value from the key=value pair.
         """
         if key == 'size':
+            Campaign.logger.log( "WARNING! The size parameter to file:fakedata is deprecated. Please use ksize instead.")
             if not isPositiveInt( value, True ):
                 parseError( "The size must be a positive, non-zero integer" )
             if self.size:
                 parseError( "Size already set: {0}".format(self.size) )
+            self.size = int(value)/4096
+        elif key == 'ksize':
+            if not isPositiveInt( value, True ):
+                parseError( "The ksize must be a positive, non-zero integer" )
+            if self.size:
+                parseError( "Size already set: {0}".format(self.size) )
+            if int(value) % 4 != 0:
+                parseError( "The ksize parameter should be a multiple of 4")
             self.size = int(value)
         elif key == 'binary':
             if self.binary:
@@ -86,7 +95,7 @@ class fakedata(core.file.file):
         core.file.file.checkSettings(self)
         
         if not self.size:
-            raise Exception( "The size parameter to file {0} is not optional".format( self.name ) )
+            raise Exception( "The ksize parameter to file {0} is not optional".format( self.name ) )
         if not self.filename:
             self.filename = 'fakedata'
         if not self.binary:
@@ -183,4 +192,4 @@ class fakedata(core.file.file):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0"
+        return "2.1.0"

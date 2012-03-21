@@ -196,29 +196,48 @@ class _skeleton_(host):
 
     # TODO: If you really must you can override getConnection. This is needed in case your connection object
     # is not a subclass of core.host.connectionObject. There is no real need for that, though.
+    
+    # TODO: If you really must you can override sendCommand. Normally that will just get you a connection and then
+    # call sendCommandAsyncStart and sendCommandAsyncEnd right after each other, which should work just fine.
 
-    def sendCommand(self, command, reuseConnection = True):
+    def sendCommandAsyncStart(self, command, reuseConnection):
         """
-        Sends a bash command to the remote host.
+        Sends a bash command to the remote host without waiting for the answer.
+        
+        Note that it is imperative that you call sendCommandAsyncEnd(...) after this call, or you will screw up your connection!
+
+        Be sure to call connection.setInAsync() as well.
 
         @param  command             The command to be executed on the remote host.
-        @param  reuseConnection     True for commands that are shortlived or are expected not to be parallel with other commands.
-                                    False to build a new connection for this command and use that.
-                                    A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        """
+        # TODO: Implement this! Example:
+        #
+        #   FIXME: WRITE EXAMPLE
+        #
+        raise Exception( "Not implemented" )
 
+    def sendCommandAsyncEnd(self, reuseConnection):
+        """
+        Retrieves the response to a bash command to the remote host that was sent earlier on.
+        
+        Note that this must not be called other than directly after sendCommandAsyncStart(...).
+        Do not call on just any connection or you will screw it up!
+
+        Be sure to call connection.clearInAsync() as well.
+
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         # TODO: Implement this! Example:
         #
-        #   connection = None
-        #   try:
-        #       connection = self.getConnection( reuseConnection )
-        #   FIXME: WRITE MORE EXAMPLE
-        #   finally:
-        #       self.releaseConnection( reuseConnection, connection )
+        #   FIXME: WRITE EXAMPLE
         #
         raise Exception( "Not implemented" )
-
+    
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
@@ -329,4 +348,4 @@ class _skeleton_(host):
     @staticmethod
     def APIVersion():
         # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version.
-        return "2.0.0"
+        return "2.1.0"

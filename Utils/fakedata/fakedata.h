@@ -9,7 +9,7 @@
  * Generates a fake data file in the file pointed to by f of size n bytes.
  *
  * @param   f       The fileno of the file to write.
- * @param   n       The exact number of bytes that will be written to f. Should be a multiple of 4 and no greater than 2^32.
+ * @param   n       The exact number of kilobytes blocks that will be written to f. Should be a multiple of 4 and no greater than 2^32.
  *
  * @return  0 for succes, non-0 otherwise.
  */

@@ -485,6 +485,8 @@ class client(coreObject):
     def start(self, execution):
         """
         Run the client for the provided execution.
+        
+        It is NOT advised to overwrite this method, nor should it be necessary.
 
         All necessary files are already available on the host at this point.
         Be sure to take self.extraParameters into account, here.
@@ -495,25 +497,45 @@ class client(coreObject):
 
         The PID of the running client will be saved in the dictionary self.pids, which is guarded by
         self.pid__lock
+        
+        PLEASE NOTE: This method *must* be a generator method that calls yield exactly twice: once after sending
+        the command and once at the end.
 
         @param  execution       The execution this client is to be run for.
         """
         try:
-            self.pid__lock.acquire()
+            self.pid__lock.acquire() 
             if self.isInCleanup():
+                try:
+                    self.pid__lock.release()
+                except RuntimeError:
+                    pass
+                yield
+                yield
                 return
             if execution.getNumber() in self.pids:
                 raise Exception( "Execution number {0} already present in list PIDs".format( execution.getNumber() ) )
-            result = execution.host.sendCommand( '{0}/clientRunnerScript'.format( self.getExecutionClientDir( execution ) ), execution.getRunnerConnection() )
-            m = re.match( '^([0-9][0-9]*)', result )
-            if not m:
-                raise Exception( "Could not retrieve PID for execution {0} of client {1} on host {2} from result:\n{3}".format( execution.getNumber(), execution.client.name, execution.host.name, result ) )
+        finally:
+            try:
+                self.pid__lock.release()
+            except RuntimeError:
+                pass
+        execution.host.sendCommandAsyncStart( '{0}/clientRunnerScript'.format( self.getExecutionClientDir( execution ) ), execution.getExecutionConnection() )
+        yield
+        result = execution.host.sendCommandAsyncEnd( execution.getExecutionConnection() )
+        #result = execution.host.sendCommand( '{0}/clientRunnerScript'.format( self.getExecutionClientDir( execution ) ), execution.getRunnerConnection() )
+        m = re.match( '^([0-9][0-9]*)', result )
+        if not m:
+            raise Exception( "Could not retrieve PID for execution {0} of client {1} on host {2} from result:\n{3}".format( execution.getNumber(), execution.client.name, execution.host.name, result ) )
+        try:
+            self.pid__lock.acquire() 
             self.pids[execution.getNumber()] = m.group( 1 )
         finally:
             try:
                 self.pid__lock.release()
             except RuntimeError:
                 pass
+        yield
     
     def hasStarted(self, execution):
         """
@@ -523,17 +545,14 @@ class client(coreObject):
         
         @return True iff the client has been started in the past.
         """
-        res = False
         try:
             self.pid__lock.acquire()
-            if execution.getNumber() in self.pids:
-                res = True
+            return execution.getNumber() in self.pids
         finally:
             try:
                 self.pid__lock.release()
             except RuntimeError:
                 pass
-        return res
 
     def isRunning(self, execution, reuseConnection = None ):
         """
@@ -547,22 +566,22 @@ class client(coreObject):
 
         @return True iff the client is running.
         """
-        res = False
+        pid = ''
         try:
             self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
                 raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
-            connection = reuseConnection
-            if not connection:
-                connection = execution.getRunnerConnection()
-            result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( self.pids[execution.getNumber()] ), connection )
-            res = re.match( '^Y', result ) is not None
+            pid = self.pids[execution.getNumber()]
         finally:
             try:
                 self.pid__lock.release()
             except RuntimeError:
                 pass
-        return res
+        connection = reuseConnection
+        if not connection:
+            connection = execution.getRunnerConnection()
+        result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( pid ), connection )
+        return re.match( '^Y', result ) is not None
 
     def kill(self, execution, reuseConnection = None ):
         """
@@ -832,4 +851,4 @@ class client(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0-core"
+        return "2.1.0-core"

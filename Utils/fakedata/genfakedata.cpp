@@ -18,7 +18,7 @@ int main( int argc, char** argv ) {
         printf( "Usage: %s outputfile size\n", argv[0] );
         printf( "Prints semi-non-trivial data to a file: at each 4th byte (0, 3, 7, ...) it prints a 32-bit counter (0, 1, 2, ...) in big-endian byte order\n" );
         printf( "- outputfile : the file to write to\n" );
-        printf( "- size : the desired size of the file (will be rounded up to a multiple of 4)\n" );
+        printf( "- size : the desired size of the file in KBytes (will be rounded up to a multiple of 4)\n" );
         return -1;
     }
 
@@ -29,10 +29,10 @@ int main( int argc, char** argv ) {
     }
     if( n & 0x3 ) {
         n = ( n & ~0X3 ) + 4;
-        printf( "Warning: size was given as %s, which is not a multiple of 4. %li bytes will be written instead.\n", argv[2], (long int) n );
+        printf( "Warning: size was given as %s, which is not a multiple of 4. %li kilobytes will be written instead.\n", argv[2], (long int) n );
     }
-    if( n > (long long int)16 * 1024 * 1024 * 1024 ) {
-        printf( "Fake data counter is 32 bits, meaning it can count to 4G and, printing 4 bytes for each count, can generate a maximum file size of 16G\n" );
+    if( n > (long long int)2 * 1024 * 1024 * 1024 ) {
+        printf( "Fake data counter is 32 bits, meaning it can count to 4G and, printing 4 bytes for each count, can generate a maximum file size of 16G. You will have repetition in your fake file.\n" );
         return -1;
     }
 

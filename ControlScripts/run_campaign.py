@@ -4,8 +4,13 @@
 # Future options
 # - workload types (currently: all at once; allow timeout before starting client, make timeouts configurable using pluggable models)
 # -- timeout added
+# - Document scenario
+# - Document all included modules in a big overview
+# - Check timing consistency of uTorrent
+# -- Seeders should only start measurements the moment the torrent is added
+# -- Leechers should only start measurements the moment they start receiving data
+# -- The difference between actual data received and reported speed is to be checked
 #
-
 
 # System imports
 import sys
@@ -21,7 +26,7 @@ from core.parsing import isSectionHeader, getModuleType, getSectionName, getModu
 import core.debuglogger
 
 # Global API version of the core
-APIVersion="2.0.0"
+APIVersion="2.1.0"
 
 def loadCoreModule( moduleType ):
     """
@@ -92,20 +97,45 @@ class BusyExecutionThread(threading.Thread):
         threading.Thread.__init__(self)
 
     def doTask(self):
-        """Be sure to override this to implement the actual task."""
+        """
+        Be sure to override this to implement the actual task.
+        
+        The task may have multiple steps that should be ended with a yield each.
+        
+        Also be sure to place yield at the end!
+        """
         raise Exception( "Not implemented!" )
-
+    
     def run(self):
         self.busy = True
         try:
-            self.doTask()
+            for _ in self.doTask():
+                pass
         except Exception as exc:
             self.raisedException = exc
             Campaign.logger.log( "Exception while running task in class {3} for execution with client {0} on host {1}: {2}".format( self.execution.client.name, self.execution.host.name, exc.__str__(), self.__class__.__name__ ) )
             Campaign.logger.exceptionTraceback()
         finally:
             self.busy = False
-
+    
+    def runSequentially(self, listOfThreads):
+        """
+        Runs the list of threads sequentially.
+        """
+        iters = [t.doTask() for t in listOfThreads]
+        running = True
+        itercount = len(iters)
+        while running:
+            running = False
+            for i in range(0, itercount):
+                iter_i = iters[i]
+                if iter_i is not None:
+                    try:
+                        iter_i.next()
+                        running = True
+                    except StopIteration:
+                        iters[i] = None
+            
     def isBusy(self):
         """True if the run method has been invoked and not ended yet."""
         return self.busy
@@ -120,25 +150,143 @@ class BusyExecutionThread(threading.Thread):
     def __str__(self):
         return "Task thread type {2} for execution with client {0} on host {1}".format( self.execution.client.name, self.execution.host.name, self.__class__.__name__ )
 
+class ClientRunnerHelperThread(threading.Thread):
+    running = False
+    iter_list = None
+    iter_list__lock = None
+    
+    def __init__(self):
+        threading.Thread.__init__(self)
+        self.cond = threading.Condition()
+        self.iter_list = []
+        self.iter_list__lock = threading.Lock()
+    
+    def run(self):
+        self.running = True
+        while self.running:
+            while self.running:
+                it = None
+                try:
+                    self.iter_list__lock.acquire()
+                    if len(self.iter_list):
+                        it = self.iter_list[0]
+                        del self.iter_list[0]
+                finally:
+                    self.iter_list__lock.release()
+                if it is None:
+                    break
+                try:
+                    it.next()
+                except Exception:
+                    pass
+            if self.running:
+                self.cond.acquire()
+                self.cond.wait()
+                self.cond.release()
+
 class ClientRunner(BusyExecutionThread):
     """Simple runner for client.start()"""
+    startTime = -1
+    doneStart = False
+    endTime = -1
+    
     def doTask(self):
-        startTime = time.time() + self.execution.timeout
-        diffTime = startTime - time.time()
+        self.startTime = time.time() + self.execution.timeout
+        self.doneStart = False
+        yield
+        diffTime = self.startTime - time.time()
         while diffTime > 0:
             if diffTime > 5:
                 time.sleep(5)
             else:
                 time.sleep(diffTime)
             if self.inCleanup:
+                yield
                 return
-            diffTime = startTime - time.time()
-        if self.inCleanup:
-            return
-        self.execution.client.start( self.execution )
-    
+            if self.endTime >= 0 and time.time() > self.endTime:
+                yield
+                return
+            diffTime = self.startTime - time.time()
+        if not self.inCleanup:
+            it = self.execution.client.start( self.execution )
+            it.next()
+            self.doneStart = True 
+            yield
+            self.doneStart = False
+            it.next()
+        yield
+        
+    def runSequentially(self, listOfThreads):
+        # Get all the iterators ready
+        iters = [(t.doTask(), t) for t in listOfThreads]
+        times = []
+        # Do the first step on all of them to get the startTime
+        for iter_i in iters:
+            iter_i[0].next()
+        for iter_i in iters:
+            times.append( (iter_i, iter_i[1].startTime) )
+        # Sort by starting time
+        sortTimes = sorted( times, cmp=lambda x,y: cmp(x[1], y[1]))
+        # Do step two (sending command) and place in queue for the second thread which will try another step (get result)
+        helper = ClientRunnerHelperThread()
+        try:
+            helper.start()
+            timeCounter = 0
+            while timeCounter < len(sortTimes):
+                sortTimes[timeCounter][0][0].next()
+                timeCounter += 1
+            timeCounter = 0
+            while timeCounter < len(sortTimes):
+                helper.iter_list__lock.acquire()
+                helper.iter_list.append(sortTimes[timeCounter][0][0])
+                helper.iter_list__lock.release()
+                helper.cond.acquire()
+                helper.cond.notify()
+                helper.cond.release()
+                timeCounter += 1
+        finally:
+            helper.running = False
+            helper.cond.acquire()
+            helper.cond.notify()
+            helper.cond.release()
+            helper.iter_list__lock.acquire()
+            l = list(helper.iter_list)
+            helper.iter_list = []
+            helper.iter_list__lock.release()
+            for it in l:
+                try:
+                    it.next()
+                except Exception:
+                    pass
+            helper.join(60)
+            if helper.is_alive():
+                Campaign.logger.log( "Warning! Helper thread for client starters still active 60 seconds after stopping it. This may cause failures.", True )
+        # Keep going through them in order: third step, fourth step, ..., until done
+        # If everything went smoothly above, this will just verify that each iterator is done
+        try:
+            running = True
+            timeCounter = 0
+            while running:
+                running = False
+                for timeCounter in range(0, len(sortTimes)):
+                    iter_i = sortTimes[timeCounter][0][0]
+                    if iter_i is not None:
+                        try:
+                            iter_i.next()
+                            running = True
+                        except StopIteration:
+                            sortTimes[timeCounter] = ((None, sortTimes[timeCounter][0][1]), sortTimes[timeCounter][1])
+        finally:
+            for timeCounter in range(0, len(sortTimes)):
+                c = sortTimes[timeCounter][0]
+                if c[0] is not None and c[1].doneStart:
+                    try:
+                        c[0].next()
+                    except Exception:
+                        pass
+            
     def prepareConnection(self):
-        self.execution.createRunnerConnection( )
+        self.execution.createRunnerConnections( )
 
     def cleanup(self):
         if self.execution.client.isRunning( self.execution ):
@@ -149,6 +297,7 @@ class ClientKiller(BusyExecutionThread):
     def doTask(self):
         if self.execution.client.isRunning( self.execution ):
             self.execution.client.kill( self.execution )
+        yield
 
 class LogProcessor(BusyExecutionThread):
     """Simple runner for client.retrieveLogs() and execution.runParsers()."""
@@ -159,9 +308,10 @@ class LogProcessor(BusyExecutionThread):
 
     def doTask(self):
         self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
-        if self.inCleanup:
-            return
-        self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
+        yield
+        if not self.inCleanup:
+            self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
+        yield
 
 class ScenarioRunner:
     """
@@ -448,67 +598,74 @@ class ScenarioRunner:
             execution.client.prepareExecution( execution )
         # All hosts that are part of an execution
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
-        # Apply traffic control to all hosts requiring it
-        for host in executionHosts:
-            if host.tc == '':
-                continue
-            host.tcObj.install( host, list(set([host.getSubnet() for host in executionHosts])) )
-        # Start all clients
-        execThreads = []
-        for execution in self.getObjects('execution'):
-            execThreads.append( ClientRunner( execution ) )
-        self.threads += execThreads
-        print "Starting all clients"
-        if self.doParallel:
+        # Try to make sure and TC is always removed
+        try:
+            # Apply traffic control to all hosts requiring it
+            for host in executionHosts:
+                if host.tc == '':
+                    continue
+                host.tcObj.install( host, list(set([host.getSubnet() for host in executionHosts])) )
+            # Start all clients
+            execThreads = []
+            for execution in self.getObjects('execution'):
+                execThreads.append( ClientRunner( execution ) )
+            self.threads += execThreads
+            print "Preparing connections to run clients over"
             # First prepare all connections (has to be done consecutively in order to allow throttling to prevent overloading)
             for thread in execThreads:
                 thread.prepareConnection()
-            # Then do the actual running as parallel as possible
+            # Precalculate when we should be done
+            endTime = time.time() + self.timelimit
             for thread in execThreads:
-                thread.start()
-        else:
-            for thread in execThreads:
-                thread.run()
-        print "Running..."
-
-        # While the time limit has not passed yet, keep checking whether all clients have ended, sleeping up to 5 seconds in between each check (note that a check takes time as well)
-        endTime = time.time() + self.timelimit
-        sleepTime = min( 5, self.timelimit )
-        while sleepTime > 0:
-            time.sleep( sleepTime )
-            for execution in self.getObjects('execution'):
-                if execution.isSeeder() and not execution.keepSeeding:
-                    continue
-                if (not execution.client.hasStarted(execution)) or execution.client.isRunning(execution):
-                    break
+                thread.endTime = endTime
+            if self.doParallel:
+                print "Starting all clients in parallel; not all clients may be running when this is done"
+                # Then do the actual running as parallel as possible
+                for thread in execThreads:
+                    thread.start()
             else:
-                print "All client have finished before time is up"
-                break
+                print "Starting all clients sequentially; this will take until the last client has started"
+                # Then do the actual running sequentially, but intelligently
+                execThreads[0].runSequentially(execThreads)
+            print "Running..."
+    
+            # While the time limit has not passed yet, keep checking whether all clients have ended, sleeping up to 5 seconds in between each check (note that a check takes time as well)
             sleepTime = max( 0, min( 5, endTime - time.time() ) )
-
-        print "All clients should be done now, checking and killing if needed."
-        
-        killThreads = []
-        for execution in self.getObjects('execution'):
-            killThreads.append( ClientKiller( execution ) )
-        self.threads += killThreads
-        if self.doParallel:
-            for thread in killThreads:
-                thread.start()
-            for thread in killThreads:
-                if thread.isAlive():
-                    thread.join( 60 )
+            while sleepTime > 0:
+                time.sleep( sleepTime )
+                for execution in self.getObjects('execution'):
+                    if execution.isSeeder() and not execution.keepSeeding:
+                        continue
+                    if (not execution.client.hasStarted(execution)) or execution.client.isRunning(execution):
+                        break
+                else:
+                    print "All client have finished before time is up"
+                    break
+                sleepTime = max( 0, min( 5, endTime - time.time() ) )
+    
+            print "All clients should be done now, checking and killing if needed."
+            
+            killThreads = []
+            for execution in self.getObjects('execution'):
+                killThreads.append( ClientKiller( execution ) )
+            self.threads += killThreads
+            if self.doParallel:
+                for thread in killThreads:
+                    thread.start()
+                for thread in killThreads:
                     if thread.isAlive():
-                        Campaign.logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
-        else:
-            for thread in killThreads:
-                thread.run()
-
-        print "Removing all traffic control from hosts."
-        for host in executionHosts:
-            if host.tc == '':
-                continue
-            host.tcObj.remove( host )
+                        thread.join( 60 )
+                        if thread.isAlive():
+                            Campaign.logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
+            else:
+                killThreads[0].runSequentially(killThreads)
+    
+        finally:
+            print "Removing all traffic control from hosts."
+            for host in executionHosts:
+                if host.tc == '':
+                    continue
+                host.tcObj.remove( host )
 
     def parseLogs(self):
         """
@@ -533,11 +690,31 @@ class ScenarioRunner:
                     if thread.isAlive():
                         Campaign.logger.log( "Warning! A log processor wasn't done after 60 seconds: {0}".format( thread.execution.client.name ) )
         else:
-            for thread in logThreads:
-                thread.run()
+            logThreads[0].runSequentially(logThreads)
         for thread in logThreads:
             if thread.isAlive() or thread.getException() is not None:
                 raise Exception( "One or more log processors failed." )
+
+    def tryParseLogs(self):
+        """
+        Retrieve and parse logs, but don't fail on anything.
+
+        This function should be called after executions have failed to salvage what can be found.
+        """
+        logThreads = []
+        for execution in self.getObjects('execution'):
+            execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.getNumber() ) )
+            os.makedirs( os.path.join( execdir, 'logs' ) )
+            os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
+            logThreads.append( LogProcessor( execution, execdir ) )
+        self.threads += logThreads
+        print "Salvaging logs and parsing them"
+        for thread in logThreads:
+            try:
+                thread.run()
+            except Exception:
+                Campaign.logger.log( "Could not salvage logs of client {0} in execution {1}. Ignoring.".format( thread.execution.client.name, thread.execution.getNumber() ) )
+                Campaign.logger.exceptionTraceback()
 
     def cleanup(self):
         """
@@ -661,6 +838,31 @@ class ScenarioRunner:
             self.setup()
             self.executeRun()
             self.parseLogs()
+        except Exception:
+            try:
+                # try, raise, finally: reraises the caught exception while preserving stack information
+                # everything in finally gets done before it's thrown on, but without their exceptions spoiling the original one
+                raise
+            finally:
+                self.tryParseLogs()
+                try:
+                    self.processLogs()
+                except Exception:
+                    Campaign.logger.log( "Failed to process salvaged logs" )
+                    Campaign.logger.exceptionTraceback()
+        # Also try and salvage logs on keyboard interrupts
+        except KeyboardInterrupt:
+            try:
+                # try, raise, finally: reraises the caught exception while preserving stack information
+                # everything in finally gets done before it's thrown on, but without their exceptions spoiling the original one
+                raise
+            finally:
+                self.tryParseLogs()
+                try:
+                    self.processLogs()
+                except Exception:
+                    Campaign.logger.log( "Failed to process salvaged logs" )
+                    Campaign.logger.exceptionTraceback()
         finally:
             self.cleanup()
         self.processLogs()

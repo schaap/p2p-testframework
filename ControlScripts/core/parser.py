@@ -107,4 +107,4 @@ class parser(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0-core"
+        return "2.1.0-core"

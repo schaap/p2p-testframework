@@ -134,6 +134,65 @@ class test__(host):
             self.releaseConnection(reuseConnection, connection)
         return ""
 
+    def sendCommandAsyncStart(self, command, reuseConnection):
+        """
+        Sends a bash command to the remote host without waiting for the answer.
+        
+        Note that it is imperative that you call sendCommandAsyncEnd(...) after this call, or you will screw up your connection!
+
+        Be sure to call connection.setInAsync() as well.
+
+        @param  command             The command to be executed on the remote host.
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        """
+        if command == '':
+            Campaign.logger.log( "Empty command to host {0}?".format( self.name ) )
+        if reuseConnection == True or reuseConnection == False:
+            raise Exception( "True or False passed as connection to sendCommandAsyncStart" ) 
+        try:
+            connection = self.getConnection(reuseConnection)
+            if connection.isInAsync():
+                Campaign.logger.log( "WARNING! Connection {0} of host {1} started an async command, but an async command was still running.".format( connection.getIdentification(), self.name ), True )
+                Campaign.logger.localTraceback( True )
+                res = self.sendCommandAsyncEnd(connection)
+                Campaign.logger.log( "WARNING! Output of ending the connection: {0}".format( res ), True )
+                connection.outOfOrderResult = res
+            self.writeCommandLog( "CONN {0}: ".format(connection.getIdentification()) + command + "\n" )
+            connection.setInAsync()
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+
+    def sendCommandAsyncEnd(self, reuseConnection):
+        """
+        Retrieves the response to a bash command to the remote host that was sent earlier on.
+        
+        Note that this must not be called other than directly after sendCommandAsyncStart(...).
+        Do not call on just any connection or you will screw it up!
+
+        Be sure to call connection.clearInAsync() as well.
+
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
+        """
+        if reuseConnection == True or reuseConnection == False:
+            raise Exception( "True or False passed as connection to sendCommandAsyncStart" ) 
+        try:
+            connection = self.getConnection(reuseConnection)
+            if not connection.isInAsync():
+                Campaign.logger.log( "WARNING! Connection {0} of host {1} ended an async command, but none was running. Returning ''.".format( connection.getIdentification(), self.name ), True )
+                Campaign.logger.localTraceback(True)
+                res = connection.outOfOrderResult
+                connection.outOfOrderResult = ''
+                return res
+            self.writeCommandLog( "CONN {0}: RECV".format(connection.getIdentification()) + "\n" )
+            connection.clearInAsync()
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+        return ""
+
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
@@ -228,4 +287,4 @@ class test__(host):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0"
+        return "2.1.0"

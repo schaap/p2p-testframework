@@ -40,6 +40,9 @@ class connectionObject():
     badFlag = False         # Internal flag to DEBUG locking. DO NOT USE!
     badFlag__lock = None    # Internal flag to DEBUG locking. DO NOT USE!
     
+    async = False           # Flag for asynchronous processing. DO NOT USE! Use setInAsync(), clearInAsync() and isInAsync() instead.
+    async__lock = None      # Lock to protect async
+    
     def __init__(self):
         """
         Initialization of the core connectionObject.
@@ -48,8 +51,9 @@ class connectionObject():
         """
         self.closeFlag__lock = threading.RLock()
         self.closeFlag = False
-        self.use__lock = threading.Lock()
+        self.use__lock = threading.RLock()
         self.badFlag__lock = threading.Lock()
+        self.async__lock = threading.Lock()
     
     def getIdentification(self):
         """
@@ -157,6 +161,38 @@ class connectionObject():
             self.unlockForUse()
         except RuntimeError:
             pass
+    
+    def setInAsync(self):
+        """
+        Marks the connection as having sent an asynchronous command.
+        """
+        try:
+            self.async__lock.acquire()
+            self.async = True
+        finally:
+            self.async__lock.release()
+    
+    def clearInAsync(self):
+        """
+        Marks the connection as having ended an asynchronous command.
+        """
+        try:
+            self.async__lock.acquire()
+            self.async = False
+        finally:
+            self.async__lock.release()
+    
+    def isInAsync(self):
+        """
+        Returns whether the connectino is marked as having sent an asynchronous command.
+        
+        @return    True iff an asynchronous command should be ended, first.
+        """
+        try:
+            self.async__lock.acquire()
+            return self.async
+        finally:
+            self.async__lock.release()
 
 class countedConnectionObject(connectionObject):
     """
@@ -582,8 +618,6 @@ class host(coreObject):
             if reuseConnection == False:
                 self.closeConnection(connection)
 
-    # This method has unused arguments; that's fine
-    # pylint: disable-msg=W0613
     def sendCommand(self, command, reuseConnection = True):
         """
         Sends a bash command to the remote host.
@@ -593,6 +627,49 @@ class host(coreObject):
                                     False to build a new connection for this command and use that.
                                     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
 
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
+        """
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            # Send command
+            self.sendCommandAsyncStart(command, connection)
+            # Read output of command
+            return self.sendCommandAsyncEnd(connection)
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+    
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
+    def sendCommandAsyncStart(self, command, reuseConnection):
+        """
+        Sends a bash command to the remote host without waiting for the answer.
+        
+        Note that it is imperative that you call sendCommandAsyncEnd(...) after this call, or you will screw up your connection!
+        
+        Be sure to call connection.setInAsync() as well.
+
+        @param  command             The command to be executed on the remote host.
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        """
+        raise Exception( "Not implemented" )
+    # pylint: enable-msg=W0613
+
+    # This method has unused arguments; that's fine
+    # pylint: disable-msg=W0613
+    def sendCommandAsyncEnd(self, reuseConnection):
+        """
+        Retrieves the response to a bash command to the remote host that was sent earlier on.
+        
+        Note that this must not be called other than directly after sendCommandAsyncStart(...).
+        Do not call on just any connection or you will screw it up!
+
+        Be sure to call connection.clearInAsync() as well.
+
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        
         @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
         """
         raise Exception( "Not implemented" )
@@ -832,4 +909,4 @@ class host(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0-core"
+        return "2.1.0-core"

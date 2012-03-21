@@ -291,20 +291,6 @@ class http(client):
             client.prepareExecution(self, execution, complexCommandLine=command)
     # pylint: enable-msg=W0221
 
-    def start(self, execution):
-        """
-        Run the client for the provided execution.
-
-        All necessary files are already available on the host at this point.
-        Be sure to take self.extraParameters into account, here.
-
-        The PID of the running client should be saved in the dictionary self.pids, which is guarded by
-        self.pid__lock
-
-        @param  execution       The execution this client is to be run for.
-        """
-        client.start(self, execution)
-
     def retrieveLogs(self, execution, localLogDestination):
         """
         Retrieve client specific logs for the given execution.
@@ -422,4 +408,4 @@ class http(client):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0"
+        return "2.1.0"

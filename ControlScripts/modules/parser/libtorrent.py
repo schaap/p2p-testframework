@@ -104,4 +104,4 @@ class libtorrent(parser):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0"
+        return "2.1.0"

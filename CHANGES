@@ -1,0 +1,22 @@
+This document describes API changes for the framework for each version (incrementally). Changes are documented here for sure, additions may be left out. Also, parameter changes are not documented here as they generate warnings as they come. Only changes in the python code are given.
+
+== 2.1.0 vs 2.0.0 ==
+- Changed core.client.client.parser to core.client.client.parsers and made it a list that can be None
+- Every extension module that can have parameters now has a resolveNames method
+- Changed core.client.client.start heavily: it is now an internal generator that uses asynchronous calls to speed up starting the client
+- Implementations of core.client.client should now also call their parent .retrieveLogs() instead of completely reimplementing it
+- changed core.execution.execution.parser and core.execution.execution.parserName to core.execution.parsers and core.execution.parserNames and made them lists
+- core.execution.execution now keeps track of 2 extra connections for client execution: one for execution, one for querying
+- core.file.file now has the getDataDir() function for finding the location of the data files, please use that instead of hardcoding e.g. /files/ in your code
+- core.host connection objects and their children now support asynchronous operation
+- core.host.host.sendCommand should no longer be implemented by subclasses: it calls the new .sendCommandAsyncStart(...) and .sendCommandAsyncEnd(...) methods in that order
+- core.host.host subclasses should implement .sendCommandAsyncStart(...) and .sendCommandAsyncEnd(...) instead of .sendCommand(...), which introduce support for asynchronous command execution (i.e. write the command at first (Start) and read the output later (End))
+- The new core.workload.workload extension module parent class has been added, along with an implementation
+- A client runner for a small libTorrent client was added
+- The fakedata utility has been changed to get a kbyte size argument instead of a byte size argument; file:fakedata has been changed accordingly
+- The new file:remote file handler can help out with big files
+- host:ssh handles unknown host keys more intelligently
+- parser:cpulog was added to support the new profile parameter to client objects
+- processor:savetimeout gives insight into the timeout field of an execution and hence the way a workload module ran
+- Scenarios can have the parallel=no parameter to be handled sequentially; this handling has been optimized a lot
+- Logs will now be salvaged and an attempt will be made at parsing and processing when a scenario fails

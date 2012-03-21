@@ -411,20 +411,74 @@ class ssh(host):
         try:
             connection = self.getConnection(reuseConnection)
             # Send command
-            connection.write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
-            Campaign.debuglogger.log( connection.getIdentification(), 'SEND {0}'.format( command ) )
+            self.sendCommandAsyncStart(command, connection)
             # Read output of command
+            return self.sendCommandAsyncEnd(connection)
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+    
+    def sendCommandAsyncStart(self, command, reuseConnection):
+        """
+        Sends a bash command to the remote host without waiting for the answer.
+        
+        Note that it is imperative that you call sendCommandAsyncEnd(...) after this call, or you will screw up your connection!
+
+        Be sure to call connection.setInAsync() as well.
+
+        @param  command             The command to be executed on the remote host.
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        """
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            if connection.isInAsync():
+                Campaign.logger.log( "WARNING! Connection {0} of host {1} started an async command, but an async command was still running.".format( connection.getIdentification(), self.name ), True )
+                Campaign.logger.localTraceback( True )
+                res = self.sendCommandAsyncEnd(connection)
+                Campaign.logger.log( "WARNING! Output of ending the connection: {0}".format( res ), True )
+                connection.outOfOrderResult = res
+            connection.write( command+'\n# `\n# \'\n# "\necho "\nblabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework"\n' )
+            connection.setInAsync()
+            Campaign.debuglogger.log( connection.getIdentification(), 'SEND {0}'.format( command ) )
+        finally:
+            self.releaseConnection(reuseConnection, connection)
+
+    def sendCommandAsyncEnd(self, reuseConnection):
+        """
+        Retrieves the response to a bash command to the remote host that was sent earlier on.
+        
+        Note that this must not be called other than directly after sendCommandAsyncStart(...).
+        Do not call on just any connection or you will screw it up!
+
+        Be sure to call connection.clearInAsync() as well.
+
+        @param  reuseConnection     A specific connection object as obtained through setupNewConnection(...) to reuse that connection.
+                                    Contrary to other methods True of False are explicitly not accepted.
+        
+        @return The result from the command. The result is stripped of leading and trailing whitespace before being returned.
+        """
+        connection = None
+        try:
+            connection = self.getConnection(reuseConnection)
+            if not connection.isInAsync():
+                Campaign.logger.log( "WARNING! Connection {0} of host {1} ended an async command, but none was running. Returning ''.".format( connection.getIdentification(), self.name ), True )
+                Campaign.logger.localTraceback(True)
+                res = connection.outOfOrderResult
+                connection.outOfOrderResult = ''
+                return res
             res = ''
             line = connection.readline()
             while line != '' and line.strip() != 'blabladibla__156987349253457979__noonesGonnaUseThis__right__p2ptestframework':
                 Campaign.debuglogger.log( connection.getIdentification(), 'RECV {0}'.format( line ) )
                 res += line
                 line = connection.readline()
+            connection.clearInAsync()
             # Return output (ditch the last trailing \n)
             return res.strip()
         finally:
             self.releaseConnection(reuseConnection, connection)
-
+            
     def sendFile(self, localSourcePath, remoteDestinationPath, overwrite = False, reuseConnection = True):
         """
         Sends a file to the remote host.
@@ -647,4 +701,4 @@ class ssh(host):
 
     @staticmethod
     def APIVersion():
-        return "2.0.0"
+        return "2.1.0"
