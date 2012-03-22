@@ -61,7 +61,7 @@ class fakedata(core.file.file):
                 parseError( "The size must be a positive, non-zero integer" )
             if self.size:
                 parseError( "Size already set: {0}".format(self.size) )
-            self.size = int(value)/4096
+            self.size = int(value)/1024
         elif key == 'ksize':
             if not isPositiveInt( value, True ):
                 parseError( "The ksize must be a positive, non-zero integer" )
