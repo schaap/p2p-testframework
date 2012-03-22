@@ -188,13 +188,17 @@ while [ $going -eq 1 ]; do
         # utorrent is unreliable in loading torrents that already exist when the client is started
         # so we only copy the torrent file in once the first response has been seen
         if [ $torrentloaded = 0 ]; then
-            cp "$3" "$2/torrents/"
+            date >&2
+            echo "Adding torrent file" >&2
+            cp "$3" "$2/torrents/" >&2
             torrentloaded=1
         fi
         date +"%s.%09N"
         cat "$2/wget.out"
         if [ $stopWhenSeeding -eq 1 ]; then
             if grep ",\"Seeding\"," "$2/wget.out" > /dev/null 2> /dev/null; then
+                echo "Stopped when seeding:" >&2
+                grep ",\"Seeding\"," "$2/wget.out" >&2
                 going=0
             fi
         fi

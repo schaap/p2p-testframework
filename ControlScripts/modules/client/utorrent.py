@@ -118,7 +118,7 @@ class utorrent(client):
         if not execution.file.getMetaFile(execution.host):
             raise Exception( "In order to use uTorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5} {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} 0 {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
         else:
             client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
     # pylint: enable-msg=W0221
