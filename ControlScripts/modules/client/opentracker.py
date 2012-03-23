@@ -25,7 +25,9 @@ class opentracker(client):
                         to a .torrent file; the torrent file will be changed to point to the dynamically
                         retrieved address of the first host running this client; the file object will be
                         altered to have their metaFile point to the changed torrent file before the files
-                        will be uploaded; can be specified multiple times.
+                        will be uploaded; can be specified multiple times. Note that the .torrent files to
+                        be altered must have a single tracker set already: the change is based on replacing
+                        the existing single tracker.
     """
     
     port = None                     # The port openTracker will listen on
