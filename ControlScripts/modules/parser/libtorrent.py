@@ -1,5 +1,6 @@
 from core.parser import parser
 import os
+import re
 
 class libtorrent(parser):
     """
@@ -82,12 +83,12 @@ class libtorrent(parser):
             fd.write( "time percent upspeed dlspeed\n0 0 0 0\n" )
             
             for line in fl:
-                if line[0].isdigit():
-                    s = line.split('\t')
-                    time = s[0]
-                    percent = s[1]
-                    up = int(s[2])/1024.0
-                    down = int(s[3])/1024.0
+                m = re.match( '^([0-9\\.]+)[ \\t]+([0-9\\.]+)[ \\t]+([0-9\\.]+)[ \\t]+([0-9\\.]+)[ \\t]*$', line )
+                if m:
+                    time = m.group(1)
+                    percent = m.group(2)
+                    up = int(m.group(3))/1024.0
+                    down = int(m.group(4))/1024.0
                         
                     fd.write( "{0} {1} {2} {3}\n".format( time, percent, up, down ) )
         finally:
