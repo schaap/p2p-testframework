@@ -2,14 +2,11 @@
 
 #
 # Future options
-# - workload types (currently: all at once; allow timeout before starting client, make timeouts configurable using pluggable models)
-# -- timeout added
-# - Document scenario
-# - Document all included modules in a big overview
 # - Check timing consistency of uTorrent
 # -- Seeders should only start measurements the moment the torrent is added
 # -- Leechers should only start measurements the moment they start receiving data
-# -- The difference between actual data received and reported speed is to be checked
+# - libtorrent parser sometimes fails to parse
+# - utorrent fails randomly?
 #
 
 # System imports
@@ -919,7 +916,7 @@ class CampaignRunner:
         scenarioName = ''
         scenarioFiles = []
         scenarioLine = 0
-        scenarioTimeLimit = 300
+        scenarioTimeLimit = 600
         scenarioParallel = True
         for line in fileObj:
             line = line.strip()

@@ -1,0 +1,316 @@
+This document contains all parameters that can be used with the delivered framework. It's main subdivision is by module type (i.e. scenario, file, host, client, etc) and those are divided into the extension modules that exist for that module. Note that when looking for akll parameters of an extension module, you should add the parameters of the parent module as well. So, for example, when looking at host:ssh one can see that hostname, user and port are parameters, but also name and remoteDirectory, etc.
+
+If you're not sure yet how to use these parameters, please read the HOWTO and/or the README first.
+
+= scenario =
+- name          The name of the scenario. Required.
+- file          Path to a file on the local machine to be included in the scenario description. Required.
+                May be specified multiple times, in which case the scenario description is the concatenation of the specified files.
+- parallel      Set to 'no' to make the scenario be handled sequentially. It will definitely be slower, but this can alleviate
+                problems with too many threads. Note that the relative timing of the clients is about the same as parallel handling.
+                Optional, defaults to '' which specified parallel handling.
+- timelimit     Positive integer number of seconds that specifies the maximum amount of time a scenario is allowed to run.
+                This limit only goes for the actual running, so from the moment the clients are started they are allowed to run for
+                this time. Optional, defaults to 600.
+- timeout       Alternative name of timelimit.
+
+
+= host =
+Note that the parameters of the tc modules are also part of the host object. See the README for more on that.
+
+- name                  The name of the host object. This name is used to refer to the host object in throughout the scenario.
+                        Usually required (particular extension modules sometimes provide a default)
+- remoteDirectory       The path to a directory on the remote host which can be used to store temporary files in during the scenario.
+                        Optional, a temporary directory will be created by default (in /tmp usually)
+- tc                    The name of the TC module to load, without any prefixes. E.g. tc=netem to load the tc:netem module
+                        on the host. Optional, empty by default which disables TC. By default tc=netem is provided in the tc:netem
+                        module.
+- tcInterface           The name of the interface on which traffic control is to be applied. This should be an existing
+                        networking interface on the remote host. Optional, defaults to eth0
+- tcMaxDownSpeed        Maximum download speed to allow. To be specified in bits per second, possibly postfixed by kbit or mbit.
+                        E.g. tcMaxDownSpeed=10mbit for 10 mbit speeds. Optional, defaults to 0 meaning no restrictions
+- tcMaxDownBurst        Maximum burst in the download speed. Not allowed if tcMaxDownSpeed is not set. To be specified in bits
+                        per second. Optional, defaults to equal to tcMaxDownSpeed
+- tcMaxUpSpeed          Like tcMaxDownSpeed, but for upload speed.
+- tcMaxUpBurst          Like tcMaxDownBurst, but for upload speed.
+- tcLossChance          Chance to drop a packet. A floating point number between 0.0 and 100.0 inclusive, specifying the chance
+                        as a percentage. Optional, defaults to 0.0
+- tcDuplicationChance   Chance that a packet will be duplicated. A floating point number between 0.0 and 100.0 inclusive,
+                        specifying the chance as a percentage. Optional, defaults to 0.0
+- tcCorruptionChance    Chance that a packet will be corrupted. A floating point number between 0.0 and 100.0 inclusive,
+                        specifying the chance as a percentage. Optional, defaults to 0.0
+- tcDelay               The delay to introduce on each packet in ms, given as a positive integer. Optional, defaults to 0
+- tcJitter              The maximum deviation on the introduced delay, as set by tcDelay, in ms. Optional, defaults to 0
+
+
+== host:local ==
+Uses the local host, mainly for testing. If you wish to use the local host for serious scenarios consider using host:ssh to 127.0.0.1.
+
+- [none]
+
+== host:ssh ==
+Uses a host that can be approached via SSH. This is the preferred way of contacting hosts.
+
+- hostname      The hostname of the host to be used over SSH. Hostnames and IP addresses are accepted.
+- port          The port on which the SSH daemon listens on the host; optional, defaults to 22.
+- user          The user name to be used for logging in over SSH.
+
+== host:das4 ==
+Special handler for those with access to the DAS4 system.
+
+- headnode              The hostname of the DAS4 host to SSH to initially. Optional, if left out the module
+                        will try and determine which network you're on and use the local entry node. If
+                        you're not on one of the networks of the institutes hosting DAS4 this will give an
+                        error.
+                        
+                        The automated lookup test uses dig -x for a reverse lookup on any inet address found
+                        in ifconfig, except 127.0.0.1, and tries to see if it matches any of the following
+                        networks:
+                            network        headnode
+                            -------        --------
+                            .vu.nl         fs0.das4.vu.nl
+                            .liacs.nl      fs1.das4.liacs.nl
+                            .uva.nl        fs4.das4.science.uva.nl
+                            .tudelft.nl    fs3.das4.tudelft.nl
+                            .astron.nl     fs5.das4.astron.nl
+                        Note that fs2.das4.science.uva.nl won't be used automatically.
+                        
+                        The above table also holds all valid values for this parameter, unless the
+                        headNodeOverride parameters is set.
+- nNodes                The number of nodes to request, a positive integer. Optional, defaults to 2.
+- reserveTime           A positive number of seconds to reserve the nodes; note that you should take into 
+                        account that the nodes need to be reserved during setup, so some setup steps can
+                        still occur between reservation and the actual running of the test scenarios. It
+                        is recommended to reserve the nodes for a few minutes more than the maximum
+                        execution time of the scenario. Optional, defaults to 900.
+- user                  The username to use for logging in on the DAS4 system. Required.
+- headnodeOverride      Set to anything but "" to override the validity checks on the headNode parameter.
+                        Use this for custom headNodes or to bypass DNS lookups by providing the IP of the
+                        headnode. Optional.
+
+= file =
+- name              The name of the file object. This name is used to refer to the file object in throughout the scenario.
+                    Required.
+- rootHash          The Merkle root hash of the file. Consists of 40 hexadecimal digits. Please take care that several
+                    ways of calculating the root hash are out there; pick the right one for the client you use. Optional.
+- metaFile          A file with metadata, such as a torrent file. This file will be made available to all client executions,
+                    both seeders and leechers. Should be a path to a file on the command machine. Optional.
+
+== file:none ==
+A dummy file object that simply provides no data.
+
+- [none]
+
+== file:local ==
+Specifies a local file or directory to use as data.
+
+- path                  The path to the actual file or directory on the local machine.
+- generateTorrent       Set this to "yes" to have a torrent file automatically generated from the file;
+                        the torrent file will be uplaoded and its location available through getMetaFile(...).
+                        The metaFile parameter must not be set in this case.
+- generateRootHash      Set this to "yes" to have the SHA1 root hash automatically generated from the file;
+                        the rootHash parameter must not be set in this case. path must refer to a single file
+                        for a root hash to be calculated.
+- renameFile            Set this to "yes" to have the file renamed when uploaded to an automatically generated
+                        name. This is forbidden when automated torent generation is requested. Not valid if
+                        path points to a directory.
+
+== file:remote ==
+Specifies a remote file or directory to use as data.
+
+- path                  The path to the actual file or directory on the remote machine.
+- renameFile            Set this to "yes" to have the file renamed when uploaded to an automatically generated
+                        name. Not valid if path points to a directory.
+
+== file:fakedata ==
+Creates fake data on the remote host that is always the same, non-trivial, of configurable size and real.
+
+- ksize     A positive integer, divisible by 4, that denotes the size of the generated file in kbytes. Required.
+- binary    The path of the remote binary to use. This might be needed when g++ does not work on one of the hosts
+            this file is used on. Optional, defaults to "" which will have the binary compiled on the fly.
+- filename  The name of the file that will be created. Optional, defaults to "fakedata".
+
+= client =
+Please note that the options for builder and source modules are given here as well, since they are also part of the client object. See the README for more on that. Also see below for a short description of the source and builder modules that are provided by default.
+
+- name                  The name of the client object.  This name is used to refer to the client object in throughout the scenario.
+                        Optional, defaults to the name of the extension module used
+- extraParameters       Extra parameters to be appended on the command line to the client. Client specific. Optional, defaults to ''
+- parser                The name of the parser object to be used to parse logs from this client. Optional, defaults to a new parser
+                        with the same name as the name of the extension module used; may be specified multiple times
+- profile               Set this to anything but "" to include external profiling code that will inspect CPU and memory usage every
+                        second, which will be captured in the raw cpu.log. Optional, defaults to ''
+- source                The name of the source module to load, e.g. source=local to use source:local. Optional, defaults to
+                        source:directory. The values source=local and source=git are also provided by default by the source:local
+                        and source:git modules.
+- remoteClient          Set to anything but '' to signal that the sources are to be loaded, or found, on the remote host instead of the
+                        commanding host. Optional, defaults to ''
+- location              The location of the sources. The contents of this parameter depends on the source module used. Required.
+- builder               The name of the builder module to load, e.g. builder=make to use builder:make. Optional, defaults
+                        to builder:none. The values builder=make and builder=scons are also provided by default by the builder:make
+                        and builder:scons modules.
+
+== client:http ==
+Uses lighttpd and aria2 to provided HTTP(S) downloads
+
+- useSSL :      Set to anything but "no" to enable HTTPS instead of HTTP; may be specified multiple
+                times, last declaration counts; optional, defaults to "no"
+- port :        Use the specified port for server instances (positive integer < 65536; default 3000)
+
+== client:opentracker ==
+Allows running the opentracker BitTorrent tracker software, useful in combination with other BitTorrent clients
+
+- port              The port on which the tracker will be listening; required, 1023 < positive int < 65536
+- changeTracker     The name of a file object for which the metaFile parameter has been set and points to a .torrent file; the
+                    torrent file will be changed to point to the dynamically retrieved address of the first host running this
+                    client; the file object will be altered to have their metaFile point to the changed torrent file before the
+                    files will be uploaded; can be specified multiple times.
+
+== client:utorrent ==
+Uses the uTorrent binary clients with the webui
+
+- useWine           If set to "yes" this will instruct client:utorrent to use the windows client under wine. Note that this requires
+                    the user to make sure wine and xvfb-run function correctly on the target hosts!
+- stopWhenSeeding   If set to "yes" this will kill the client once the "Seeding" state has been reached. In order to make sure this
+                    goes right, please make sure the string "Seeding" is not to be found in the names of torrents or other
+                    (indirect) parameters of the torrent.
+
+== client:swift ==
+Uses the libswift command line client
+
+- listenAddress     Which address to listen on (i.e. --listen to swift, together with listenPort)
+- listenPort        Which port to listen on (i.e. --listen to swift, together with listenAddress)
+- tracker           Specifies a tracker address (i.e. --tracker to swift); the tracker may be specified as @name or @name:port to
+                    load the named host inside the testing framework after all hosts have been prepared, and use that host's address.
+- wait              Specified the number of seconds to wait (i.e. --wait to swift in seconds)
+- chunkSize         Chunk size to be used by the swift process in bytes. Optional, defaults to 1024.
+
+== source:directory ==
+Assumes the sources or binaries to be present in the directory pointed to by location; if remoteClient is set this is a directory on the remote host, otherwise on the commanding host
+
+== source:local ==
+Assumes the sources or binaries to be present in the directory on the commanding host pointed to by location; if remoteClient is set this means the local sources are first uploaded before the builder starts
+
+== source:git ==
+The location is a valid git repository that can be cloned
+
+== builder:none ==
+The client has already been built. Compilation is skipped.
+
+== builder:make ==
+Uses (GNU) make to build the client
+
+== builder:scons ==
+Calls the scons building program to build the client
+
+= execution =
+- host          The name of the host object on which the execution should run. Required
+- client        The name of the client object which should be executed. Required
+- file          The name of the file object which is to be transferred. Requried
+- parser        The name of the parser object which should parse the logs of this execution.
+                Optional, can be specified multiple times. See the README for information on how parsers are selected.
+- seeder        Set to anything but '' to mark this execution as a seeding execution. Optional, defaults to ''
+- timeout       A non-negative floating point number that indicates a number of seconds to wait before actually starting the
+                client after the scenario starts. Optional, defaults to 0
+- keepSeeding   Set to anything but '' to make sure this seeding execution has to end by itself before the scenario ends;
+                normally seeders are killed when all leechers have finished
+
+= workload =
+- apply             Specifies the name of a client object to apply the workload to; this means every execution of that client 
+                    (but see applyToSeeders) will be changed to be included in the generated workload. Optional and may be specified
+                    multiple times. If apply is enver specified then all clients that are part of a (non-seeding) execution are
+                    added as soon as all objects have been loaded.
+- applyToSeeders    By default a workload generator will only change non-seeding executions. Set this to 'yes' to have it change
+                    seeding executions as well. Optional
+- offset            Starting time of the simulated workload from the start of the scenario in seconds. Optional, floating point
+
+== workload:linear ==
+Creates a division of the clients to arrive at a linear rate
+
+Only one may be specified:
+- duration        Time in seconds over which the peers should arrive. Arrival rate is calculated.
+- rate            Arrival rate in number of peers per second. Duration is calculated.
+- interval        Interval between the arrival of 2 peers in seconds. Duration is calculated.
+
+== workload:poisson ==
+Creates a division of the clients to arrive like a poisson process
+
+Only one may be specified:
+- duration        Time in seconds over which the peers should arrive. Arrival rate is calculated.
+- rate            Arrival rate in number of peers per second. Duration is calculated.
+
+= parser =
+- name      The name of the parser object. This name will be used to refer to the parser object throughout the scenario.
+            Optional, defaults to the name of the extension module used
+
+== parser:none ==
+A dummy implementation parsing nothing
+
+- [none]
+
+== parser:http ==
+A copy of parser:none for easier use with client:http
+
+- [none]
+
+== parser:aria2 ==
+The parser for logs from aria2 as retrieved by client:http
+
+- [none]
+
+== parser:lighttpd ==
+The parser for logs from lighttpd as retrieved by client:http
+
+- [none]
+
+== parser:opentracker ==
+A copy of parser:none for easier use of client:opentracker
+
+- [none]
+
+== parser:utorrent ==
+The parser for logs from utorrent as retrieved by client:utorrent
+
+- [none]
+
+== parser:swift ==
+The parser for logs from swift as retrieved by client:swift
+
+- [none]
+
+== parser:cpulog ==
+A parser for CPU logs as generated by having the profile parameter set on a client
+
+- [none]
+
+= processor =
+- [none]
+
+== processor:savehostname ==
+Creates a simple text file for each execution with the name of the host object the execution ran on.
+
+- [none]
+
+== processor:saveisseeder ==
+Creates a simple text file for each execution with "YES" in it if the execution was a seeder; "NO" is in it otherwise.
+
+- [none]
+
+== processor:savetimeout ==
+Creates a simple text file for each execution with the timeout in seconds (float) before the client was launched.
+
+- [none]
+
+== processor:gnuplot ==
+Runs a given gnuplot script for each parsed log in an attempt to create nice graphs.
+
+- script       Path to the fnuplot script to be run
+
+= viewer =
+- [none]
+
+== viewer:htmlcollection ==
+Creates an HTML page that describes the whole scenario.
+
+- [none]
+

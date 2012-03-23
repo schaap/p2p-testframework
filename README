@@ -166,6 +166,7 @@ Parameters:
 
 By default the following workload generator modules are provided:
 - workload:linear   Creates a division of the clients to arrive at a linear rate
+- workload:poisson  Creates a division of the clients to arrive like a poisson process
 
 === parser ===
 parser modules know how to parse the output of a client. They are specified per execution or per client. A parser module takes as input the raw logs as retrieved from the remote host and outputs parsed logs.
@@ -193,6 +194,7 @@ processor modules do not have generic parameters: just declaring their object to
 By default the following processor modules are provided:
 - processor:savehostname        Creates a simple text file for each execution with the name of the host object the execution ran on.
 - processor:saveisseeder        Creates a simple text file for each execution with "YES" in it if the execution was a seeder; "NO" is in it otherwise.
+- processor:savetimeout         Creates a simple text file for each execution with the timeout in seconds (float) before the client was launched.
 - processor:gnuplot             Runs a given gnuplot script for each parsed log in an attempt to create nice graphs.
 
 For the processor:gnuplot two scripts are provided as well:
