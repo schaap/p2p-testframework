@@ -61,6 +61,7 @@ class debuglogger:
     def cleanup(self):
         if self.combined:
             self.fileObject.close()
-        for f in list(self.fileObjects):
-            f.close()
+        delset = [f for f in self.fileObjects]
+        for f in delset:
+            self.fileObjects[f].close()
             

@@ -192,4 +192,4 @@ class fakedata(core.file.file):
 
     @staticmethod
     def APIVersion():
-        return "2.1.0"
+        return "2.2.0"

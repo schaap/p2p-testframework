@@ -514,6 +514,23 @@ class host(coreObject):
         """
         raise Exception( "Not implemented" )
 
+    def setupNewCleanupConnection(self):
+        """
+        Create a new connection to the host.
+        
+        This connection may not be dependent on the state of previous connections. In other words: this function should always work,
+        even if things have really blown up.
+
+        The returned object has no specific type, but should be usable as a connection object either by uniquely identifying it or 
+        simply by containing the needed information for it.
+
+        Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
+        connections will automatically closed and, hence, any calls using those connections will then fail.
+
+        @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
+        """
+        return self.setupNewConnection()
+
     def closeConnection(self, connection):
         """
         Close a previously created connection to the host.
@@ -909,4 +926,4 @@ class host(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.1.0-core"
+        return "2.2.0-core"

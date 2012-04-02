@@ -5,8 +5,7 @@
 # - Check timing consistency of uTorrent
 # -- Seeders should only start measurements the moment the torrent is added
 # -- Leechers should only start measurements the moment they start receiving data
-# - libtorrent parser sometimes fails to parse
-# - utorrent fails randomly?
+# - Multiplexing required for SSH connections over a headnode for DAS4 hosts
 #
 
 # System imports
@@ -23,7 +22,7 @@ from core.parsing import isSectionHeader, getModuleType, getSectionName, getModu
 import core.debuglogger
 
 # Global API version of the core
-APIVersion="2.1.0"
+APIVersion="2.2.0"
 
 def loadCoreModule( moduleType ):
     """
@@ -741,7 +740,7 @@ class ScenarioRunner:
         print "Setting up cleanup connections"
         for h in self.getObjects( 'host' ):
             try:
-                cleanupConnections[h] = h.setupNewConnection()
+                cleanupConnections[h] = h.setupNewCleanupConnection()
                 if cleanupConnections[h] is None:
                     cleanupConnections[h] = True
             except Exception as exc:

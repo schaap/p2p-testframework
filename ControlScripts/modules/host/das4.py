@@ -10,6 +10,60 @@ import errno
 import stat
 import subprocess
 import os
+import struct
+import time
+
+#==========================
+# Multiplexing connections
+#
+# This DAS4 host implementation will multiplex connections to the nodes over a single mux channel. This channel uses the following
+# protocol. Each message starts with 1 byte, the opcode. Depending on the opcode the rest of the message is interpreted.
+#
+# Muxer sends:
+# - +
+#    Setup a new connection. Bytes 1..4 contain the connection number of the new connection, the rest of the message up to the \n
+#    contains the hostname to connect to. Note the minimum length of 6 bytes before reading the contents.
+# - -
+#    Remove a connection. Bytes 1..4 contain the connection number of the connection to be removed. Note the exact length of 5
+#    bytes of the message.
+#
+# - 0
+#    A \n terminated message. Bytes 1..4 contain the connection number. The rest of the message, up to and including the \n contains
+#    the message to be passed on over that connection. Note the minimum length of 6 bytes before reading the contents. The message
+#    may not include \n.
+#
+# - 1
+#    A non-terminated message. Bytes 1..4 contain the connection number. Bytes 5..8 contain the length of the message. Note the
+#    minimum length of 9 bytes before reading any data, and the exact length being 9 + the message length. The message may include
+#    \n.
+#
+# - X
+#    Tells the demuxer to quit. No further operation can be expected.
+#
+# Demuxer sends:
+# - +
+#    Response to + from muxer. Followed by a single + for succes. Followed by - for failure. In the last case four bytes of error
+#    message length follow, followed by that many bytes error message.
+#
+# - -
+#    Response to - from muxer, or own signal that no more data will arrive for this connection. Followed by four bytes of connection
+#    number. Signals connection has been closed, either succesfully or unsuccesfully. No data for the closed connection will follow.
+#
+# - 0
+#    A \n terminated message. Bytes 1..4 contain the connection number. The rest of the message, up to and including the \n contains
+#    the message to be passed on over that connection. Note the minimum length of 6 bytes before reading the contents. The message
+#    may not include \n.
+#
+# - 1
+#    A non-terminated message. Bytes 1..4 contain the connection number. Bytes 5..8 contain the length of the message. Note the
+#    minimum length of 9 bytes before reading any data, and the exact length being 9 + the message length. The message may include
+#    \n.
+#
+# - X
+#    Tells the muxer the demuxer has quitted. Followed by four bytes of error message length, followed by that many bytes of error
+#    message. No further operation can be expected.
+#
+#==========================
 
 # ==== Paramiko is used for the SSH connections ====
 paramiko = None
@@ -138,8 +192,340 @@ def getHostnameByIP(ip):
     import socket
     socket.setdefaulttimeout(10)
     return socket.gethostbyaddr(ip)[0]
-# ==== /getHostnameByIP(ip)  
+# ==== /getHostnameByIP(ip)
+
+class stringbuffer():
+    buf = ''
+    
+    def __init__(self):
+        self.buf = ''
+    
+    def write(self, data):
+        self.buf += data
+    
+    def read(self, len_ = None):
+        if len_ == None:
+            res = self.buf
+            self.buf = ''
+            return res
+        actualLen = len_
+        if actualLen > len(self.buf):
+            actualLen = len(self.buf)
+        res = self.buf[:actualLen]
+        self.buf = self.buf[actualLen:]
+        return res
+    
+    def readline(self):
+        pos = self.buf.find('\n')
+        if pos == -1:
+            return self.read()
+        else:
+            return self.read(pos+1)
+
+class das4MuxConnectionObject(countedConnectionObject):
+    """
+    SSH connection object for multiplexed paramiko connections
+    """
+    
+    muxIO = None
+    muxIO__lock = None
+    connNumber = None
+    
+    inputBuffer = None
+    inputBuffer__lock = None
+    noMoreInput = False
+    
+    client = None
+    sftpChannel = None
+    sftp__lock = None
+    sftpScriptname = None
+    sftpConnectionList = None
+    
+    def __init__(self, connNumber, muxIO, muxIO__lock, client, sftpScriptName, sftpConnectionList):
+        countedConnectionObject.__init__(self)
+        self.muxIO = muxIO
+        self.connNumber = struct.pack( '!I', connNumber )
+        self.muxIO__lock = muxIO__lock
+        self.inputBuffer = stringbuffer()
+        self.inputBuffer__lock = threading.Lock()
+        self.client = client
+        self.sftp__lock = threading.Lock()
+        self.sftpScriptname = sftpScriptName
+        self.noMoreInput = False
+        self.sftpConnectionList = sftpConnectionList
    
+    def close(self):
+        countedConnectionObject.close(self)
+        num = struct.unpack( '!I', self.connNumber )[0]
+        try:
+            self.muxIO__lock[0].acquire()
+            self.muxIO[0].write( '-{0}'.format( self.connNumber ) )
+            self.muxIO[0].flush()
+        finally:
+            self.muxIO__lock[0].release()
+        try:
+            self.muxIO__lock[1].acquire()
+            try:
+                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '-{0}'.format( self.connNumber ) )
+            finally:
+                if num in self.muxIO[2]:
+                    del self.muxIO[2][num]
+        except Exception as e:
+            Campaign.logger.log( "Ignored exception while removing connection {0} from the list of mux connections: {1}".format( self.getIdentification(), e ) )
+            Campaign.logger.exceptionTraceback()
+        finally:
+            self.muxIO__lock[1].release()
+        try:
+            self.sftp__lock.acquire()
+            if self.sftpChannel:
+                self.sftpChannel.close()
+                Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED DURING CLOSE' )
+                del self.sftpChannel
+                self.sftpChannel = None
+                self.sftpConnectionList[1] = None
+        finally:
+            self.sftp__lock.release()
+            del self.sftpConnectionList
+            self.sftpConnectionList = None
+            del self.client
+            self.client = None
+            del self.muxIO
+            self.muxIO = None
+            del self.muxIO__lock
+            self.muxIO__lock = None
+            del self.inputBuffer
+            self.inputBuffer = None
+            del self.inputBuffer__lock
+            self.inputBuffer__lock = None
+            Campaign.debuglogger.closeChannel( self.getIdentification() )
+    
+    def write(self, msg):
+        multi = False
+        pos = msg.find( '\n' )
+        if pos != len(msg) - 1:
+            multi = True
+        try:
+            self.muxIO__lock[0].acquire()
+            if multi:
+                self.muxIO[0].write( '1{0}{1}{2}'.format( self.connNumber, struct.pack( '!I', len(msg) ), msg ) )
+            else:
+                self.muxIO[0].write( '0{0}{1}'.format( self.connNumber, msg ) )
+            self.muxIO[0].flush()
+        finally:
+            self.muxIO__lock[0].release()
+            
+    @staticmethod
+    def readmux(muxIO, muxIO__lock, expect):
+        """
+        Reads data from the mux channel and processes it as necessary.
+        
+        Data is written into the correct connection's inputBuffer and any other packet is a failure if not expected.
+        
+        The expect parameter tells the function what data to expect and, hence, finish on. The value of expect may be:
+            - '+' for expecting response to a '+' message, the function will return on succesfull connection setup and raise an error on received failure
+            - '-NNNN' for expecting response to a '-' message for connection with packed number NNNN, the function will return when
+                the response has been received
+            - '0NNNN' with NNNN being the packed connection number of the connection data is expected from; the function will
+                return when a \n has been written to the inputbuffer of the connection data is expected for, or no more data will
+                arrive
+        
+        
+        Note that the expect parameter is not checked for validity: incorrect values will lead to an infinite loop with hopefully an
+        Exception being raised in the near future.
+        
+        @param    muxIO          The muxIO tuple containing (mux write stream, mux read stream, mux connection map)
+        @param    muxIO__lock    The lock for the muxIO tuple; this will be acquired by the method
+        @param    expect         The expected message header, either '+', '-' or '0NNNN' with NNNN being a packed connection number
+        """
+        try:
+            muxIO__lock[1].acquire()
+            while True:
+                opcode = muxIO[1].read(1)
+                if opcode == '':
+                    raise Exception( "Unexpected EOF on mux channel; expected 1 byte opcode, got ''" )
+                elif opcode == 'X':
+                    # Muxer quit, failure
+                    buf = muxIO[1].read(4)
+                    if len(buf) < 4:
+                        raise Exception( "Remote demuxer suddenly quit, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf ) ) )
+                    errlen = struct.unpack( '!I', buf )[0]
+                    problem = muxIO[1].read(errlen)
+                    if len(problem) < errlen:
+                        raise Exception( "Remote demuxer suddenly quit, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem ) )
+                    raise Exception( "Remote demuxer suddenly quit. Reported problem: {0}".format( problem ) )
+                elif opcode == '+':
+                    # Response to a '+' message: new connection. Fail if unexpected
+                    if expect != '+':
+                        raise Exception( "A connection was apparently opened, but I was just reading data. Insanity." )
+                    # Read the result
+                    result = muxIO[1].read(1)
+                    if result == '+':
+                        # Succesful connection setup, we're done
+                        return
+                    elif result == '-':
+                        # Failed connection setup, read error message and raise exception
+                        buf = muxIO[1].read(4)
+                        if len(buf) < 4:
+                            raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf ) ) )
+                        errlen = struct.unpack( '!I', buf )[0]
+                        problem = muxIO[1].read(errlen)
+                        if len(problem) < errlen:
+                            raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem ) )
+                        raise Exception( "The connection could not be set up over the mux channel. Reported problem: {0}".format( problem ) )
+                    elif result == '':
+                        raise Exception( "Unexpected EOF on mux channel; expected 1 byte new connection result, got ''" )
+                    else:
+                        raise Exception( "Connection setup over mux channel went awry: incorrect result {0}".format( result ) )
+                elif opcode == '-':
+                    # Response to a '-' message: close connection. Done if expected
+                    connbuf = muxIO[1].read(4)
+                    if len(connbuf) < 4:
+                        raise Exception( "Unexpected EOF on mux channel; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ) ) )
+                    connNumber = struct.unpack( '!I', connbuf )[0]
+                    if connNumber in muxIO[2]:
+                        muxIO[2][connNumber].noMoreInput = True
+                        if expect == '0{0}'.format( connbuf ):
+                            return
+                    if expect == '-{0}'.format( connbuf ):
+                        return
+                elif opcode == '0' or opcode == '1':
+                    # Data for a connection: read the connection number
+                    connbuf = muxIO[1].read(4)
+                    if len(connbuf) < 4:
+                        raise Exception( "Unexpected EOF on mux channel; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ) ) )
+                    if opcode == '0':
+                        # Opcode '0': a single line of data, read that
+                        data = muxIO[1].readline()
+                        if data == '' or data[-1] != '\n':
+                            raise Exception( "Unexpected EOF on mux channel; expected a single line, got '{0}'".format( data ) )
+                        datalen = len(data)
+                    else:
+                        # Opcode '1': a number of characters of data, read them
+                        buf = muxIO[1].read(4)
+                        if len(buf) != 4:
+                            raise Exception( "Unexpected EOF on mux channel; expected 4 bytes length, got {0} bytes".format( len( buf ) ) )
+                        datalen = struct.unpack( '!I', buf )[0]
+                        data = muxIO[1].read(datalen)
+                        if len(data) != datalen:
+                            raise Exception( "Unexpected EOF on mux channel; expected {0} bytes of data, got {1} bytes: '{2}'".format( datalen, len(data), data ) )
+                    # A connection's data. Write into that connection's buffer.
+                    incomingConnNumber = struct.unpack( '!I', connbuf )[0]
+                    if incomingConnNumber not in muxIO[2]:
+                        raise Exception( "Received data on mux channel for unknown mux connection {0}. Data: {1}".format( incomingConnNumber, data ) )
+                    try:
+                        muxIO[2][incomingConnNumber].inputBuffer__lock.acquire()
+                        muxIO[2][incomingConnNumber].inputBuffer.write( data )
+                    finally:
+                        muxIO[2][incomingConnNumber].inputBuffer__lock.release()
+                    # Return if data was expected for this connection and a \n has been found
+                    if expect[0] == '0' and connbuf == expect[1:] and data.find( '\n' ) > -1:
+                        return
+                else:
+                    raise Exception( "Unexpected opcode over mux channel: {0}".format( opcode ) )
+        finally:
+            muxIO__lock[1].release()
+    
+    def readline(self):
+        try:
+            self.inputBuffer__lock.acquire()
+            if len(self.inputBuffer.buf) > 0:
+                if self.inputBuffer.buf.find('\n') > -1:
+                    return self.inputBuffer.readline()
+                elif self.noMoreInput:
+                    return self.inputBuffer.read()
+            elif self.noMoreInput:
+                return ''
+        finally:
+            self.inputBuffer__lock.release()
+        # No data available, we need to start reading the mux channel and return when we have data
+        haveLock = False
+        try:
+            while not self.muxIO__lock[1].acquire(False):
+                try:
+                    self.inputBuffer__lock.acquire()
+                    if len(self.inputBuffer.buf) > 0:
+                        if self.inputBuffer.buf.find('\n') > -1:
+                            return self.inputBuffer.readline()
+                        elif self.noMoreInput:
+                            return self.inputBuffer.read()
+                    elif self.noMoreInput:
+                        return ''
+                finally:
+                    self.inputBuffer__lock.release()
+                time.sleep(0.05)
+            haveLock = True
+            try:
+                # Check again, just to be sure
+                self.inputBuffer__lock.acquire()
+                if len(self.inputBuffer.buf) > 0:
+                    if self.inputBuffer.buf.find('\n') > -1:
+                        return self.inputBuffer.readline()
+            finally:
+                self.inputBuffer__lock.release()
+            # Do some reading
+            das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '0{0}'.format( self.connNumber ))
+            try:
+                # Now it's there
+                self.inputBuffer__lock.acquire()
+                return self.inputBuffer.readline()
+            finally:
+                self.inputBuffer__lock.release()
+        finally:
+            if haveLock:
+                self.muxIO__lock[1].release()
+    
+    def createSFTPChannel(self):
+        if self.isClosed():
+            raise Exception( "Can't create an SFTP channel for a closed SSH connection on connection {0}".format( self.getIdentification( ) ) )
+        try:
+            self.sftp__lock.acquire()
+            if self.sftpChannel:
+                return True
+            # Slightly more elaborate than client.open_sftp(), since we need special handling
+            if len(self.sftpConnectionList) > 1 and self.sftpConnectionList[1] is not None:
+                self.sftpChannel = self.sftpConnectionList[1]
+                return True
+            t = self.sftpConnectionList[0].get_transport()
+            chan = t.open_session()
+            chan.exec_command(self.sftpScriptname)
+            self.sftpChannel = paramiko.SFTPClient(chan)
+            self.sftpConnectionList.append( self.sftpChannel )
+            Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL CREATED' )
+        finally:
+            self.sftp__lock.release()
+        return False
+    
+    def removeSFTPChannel(self):
+        if self.isClosed():
+            return
+        try:
+            self.sftp__lock.acquire()
+            if not self.sftpChannel:
+                return
+            self.sftpChannel.close()
+            del self.sftpChannel
+            self.sftpChannel = None
+            self.sftpConnectionList[1] = None
+            Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED' )
+        finally:
+            self.sftp__lock.release()
+    
+    @staticmethod
+    def existsRemote(sftp, remotePath):
+        found = True
+        try:
+            sftp.stat( remotePath )
+        except IOError as e:
+            found = False
+            if not e.errno == errno.ENOENT:
+                raise e
+        return found
+
+    @staticmethod
+    def isRemoteDir(sftp, remotePath):
+        attribs = sftp.stat(remotePath)
+        return stat.S_ISDIR( attribs.st_mode )
+
 class das4ConnectionObject(countedConnectionObject):
     """
     SSH connection object for paramiko connections
@@ -163,7 +549,6 @@ class das4ConnectionObject(countedConnectionObject):
     
     def close(self):
         countedConnectionObject.close(self)
-        Campaign.debuglogger.closeChannel(self.getIdentification())
         try:
             self.sftp__lock.acquire()
             if self.sftpChannel:
@@ -293,21 +678,31 @@ class das4(host):
     warnings or errors will pop up if you try, though.  
     """
 
-    headNode = None                 # Address of the headNode to use
-    nNodes = None                   # Number of nodes to reserve
-    reserveTime = None              # Number of seconds to reserve the nodes
-    user = None                     # Username to use as login name on the DAS4
-    headNode_override = False       # Set to True to disable headNode validity checks
+    headNode = None                         # Address of the headNode to use
+    nNodes = None                           # Number of nodes to reserve
+    reserveTime = None                      # Number of seconds to reserve the nodes
+    user = None                             # Username to use as login name on the DAS4
+    headNode_override = False               # Set to True to disable headNode validity checks
     
-    masterConnection = None         # The master connection to the headnode; all slave hosts will connect through port
-                                    # forwards over this connection.
-    masterIO = []                   # Will be an array of length 2 with the input and output streams for masterConnection
+    masterConnection = None                 # The master connection to the headnode; all slave hosts will connect through port
+                                            # forwards over this connection.
+    masterIO = []                           # Will be an array of length 2 with the input and output streams for masterConnection
+    muxIO = []                              # Will be an array of length 3 with the input and output streams for the mux channel,
+                                            # and a map of existing mux channels
+    muxIO__lock = (threading.RLock(),threading.RLock)
+                                            # Locks for muxIO (write_lock, read_lock)
+    # @static
+    muxConnCount = 0                        # Number of created mux connections
+    # @static
+    muxConnCount__lock = threading.Lock()   # Lock for number of mux connections
+    sftpConnections = {}                    # Map from node name to [client, channel] for SFTP (or [client] is the channel has not
+                                            # been made yet)
     
-    tempPersistentDirectory = None  # String with the temporary persistent directory on the headnode
-    reservationID = None            # Reservation identifier
-    nodeSet = []                    # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
-    slaves = []                     # list of slaves of this master node, None for non-master nodes
-    bogusRemoteDir = False          # Flag to signal whether to ignore the value in self.remoteDirectory
+    tempPersistentDirectory = None          # String with the temporary persistent directory on the headnode
+    reservationID = None                    # Reservation identifier
+    nodeSet = []                            # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
+    slaves = []                             # list of slaves of this master node, None for non-master nodes
+    bogusRemoteDir = False                  # Flag to signal whether to ignore the value in self.remoteDirectory
     
     # DAS4 host objects come in three types:
     # - supervisor
@@ -344,8 +739,11 @@ class das4(host):
         """
         host.__init__(self, scenario)
         self.masterIO = None
+        self.muxIO = None
+        self.muxIO__lock = (threading.RLock(), threading.RLock())
         self.nodeSet = None
         self.slaves = None
+        self.sftpConnections = {}
 
     def parseSetting(self, key, value):
         """
@@ -483,6 +881,72 @@ empty
             return
         if not self.nodeSet or len(self.nodeSet) < 1:
             return
+        connNumber = None
+        try:
+            das4.muxConnCount__lock.acquire()
+            connNumber = das4.muxConnCount
+            das4.muxConnCount += 1
+        finally:
+            das4.muxConnCount__lock.release()
+        try:
+            self.muxIO__lock[0].acquire()
+            self.muxIO[0].write( '+{0}{1}\n'.format( struct.pack( '!I', connNumber ), self.nodeSet[0] ) )
+            self.muxIO[0].flush()
+        finally:
+            self.muxIO__lock[0].release()
+        try:
+            self.muxIO__lock[1].acquire()
+            # Do some reading
+            das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '+')
+            # Connection is ready, create and register object
+            if self.nodeSet[0] not in self.sftpConnections:
+                client = paramiko.SSHClient()
+                client.load_system_host_keys()
+                try:
+                    client.connect( self.headNode, username = self.user )
+                except paramiko.BadHostKeyException:
+                    raise Exception( "Bad host key for the headnode of host {0}. Please make sure the host key is already known to the system. The easiest way is usually to just manually use ssh to connect to the remote host once and save the host key.".format( self.name ) )
+                except paramiko.AuthenticationException:
+                    raise Exception( "Could not authenticate to the headnode of host {0}. Please make sure that authentication can proceed without user interaction, e.g. by loading an SSH agent or using unencrypted keys.".format( self.name ) )
+                self.sftpConnections[self.nodeSet[0]] = [client]
+            obj = das4MuxConnectionObject( connNumber, self.muxIO, self.muxIO__lock, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]] )
+            self.muxIO[2][connNumber] = obj
+        finally:
+            self.muxIO__lock[1].release()
+        Campaign.debuglogger.log( obj.getIdentification(), 'CREATED in scenario {2} for DAS4 host {0} to node {1} over mux channel'.format( self.name, self.nodeSet[0], self.scenario.name ) )
+        try:
+            self.connections__lock.acquire()
+            if self.isInCleanup():
+                obj.close()
+                return
+            self.connections.append( obj )
+        finally:
+            try:
+                self.connections__lock.release()
+            except RuntimeError:
+                pass
+        # The 'cd' below is absolutely necessary to make sure that automounts and stuff work correctly
+        res = self.sendCommand('cd; echo "READY"', obj )
+        if not res[-5:] == "READY":
+            raise Exception( "Connection to host {0} seems not to be ready after it has been made. Reponse: {1}".format( self.name, res ) )
+        return obj
+
+    def setupNewCleanupConnection(self):
+        """
+        Create a new connection to the host.
+
+        The returned object has no specific type, but should be usable as a connection object either by uniquely identifying it or 
+        simply by containing the needed information for it.
+
+        Connections created using this function can be closed with closeConnection(...). When cleanup(...) is called all created
+        connections will automatically closed and, hence, any calls using those connections will then fail.
+
+        @return The connection object for a new connection. This should be an instance of a subclass of core.host.connectionObject.
+        """
+        if self.isInCleanup():
+            return
+        if not self.nodeSet or len(self.nodeSet) < 1:
+            return
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         try:
@@ -512,7 +976,7 @@ empty
         # The 'cd' below is absolutely necessary to make sure that automounts and stuff work correctly
         res = self.sendCommand('cd; echo "READY"', obj )
         if not res[-5:] == "READY":
-            raise Exception( "Connection to host {0} seems not to be ready after it has been made. Reponse: {1}".format( self.name, res ) )
+            raise Exception( "Connection to host {0} seems not to be ready after it has been made. Response: {1}".format( self.name, res ) )
         return obj
 
     def closeConnection(self, connection):
@@ -749,6 +1213,10 @@ empty
             for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
                 if h.headNode != self.headNode:
                     raise Exception( "When multiple DAS4 host objects are declared, they must all share the same headnode. Two different headnodes have been found: {0} and {1}. This is unsupported.".format( self.headNode, h.headNode ) )
+            # Find python mux file
+            demux_script = os.path.join( Campaign.testEnvDir, 'Utils', 'python_ssh_demux', 'python_ssh_demux.py' )
+            if not os.path.exists(demux_script):
+                raise Exception( "For running the DAS4 the python_ssh_demux utility script is expected in {0}".format( demux_script ) )
             # Create connection to headnode
             self.masterConnection = paramiko.SSHClient()
             self.masterConnection.load_system_host_keys()
@@ -762,8 +1230,19 @@ empty
             chan2 = trans.open_session()
             chan2.set_combine_stderr( True )
             chan2.exec_command( 'bash -l' )
-            self.masterIO = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ) )
+            self.masterIO = (chan2.makefile( 'wb', -1 ), chan2.makefile( 'rb', -1 ))
             Campaign.debuglogger.log( 'das4_master', 'CREATED in scenario {2} for DAS4 host {0} to headnode {1}'.format( self.name, self.headNode, self.scenario.name ) )
+            masterSFTP = self.masterConnection.open_sftp()
+            Campaign.debuglogger.log( 'das4_master', 'SFTP CHANNEL CREATED' )
+            masterSFTP.put( demux_script, 'python_ssh_demux.py' )
+            Campaign.debuglogger.log( 'das4_master', 'SFTP SEND FILE {0} TO {1}'.format( demux_script, 'python_ssh_demux.py' ) )
+            masterSFTP.close()
+            Campaign.debuglogger.log( 'das4_master', 'SFTP CHANNEL REMOVED' )
+            chan2 = trans.open_session()
+            chan2.set_combine_stderr( True )
+            chan2.exec_command( 'python python_ssh_demux.py' )
+            self.muxIO = (chan2.makefile( 'wb', -1), chan2.makefile( 'rb', -1 ), {})
+            Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL CREATED' )
             self.sendMasterCommand('module load prun')
             # Reserve nodes
             totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, das4)])
@@ -844,6 +1323,9 @@ empty
                 h.nodeSet = nodeList[counter:nextCounter]
                 h.masterConnection = self.masterConnection
                 h.masterIO = self.masterIO
+                h.sftpConnections = self.sftpConnections
+                h.muxIO = self.muxIO
+                h.muxIO__lock = self.muxIO__lock
                 counter = nextCounter
             if counter != len(nodeList):
                 raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved. Insanity!".format( self.name, counter, totalNodes ) )
@@ -877,6 +1359,11 @@ empty
                 newObj.user = self.user
                 newObj.tempPersistentDirectory = self.tempPersistentDirectory
                 newObj.nodeSet = [self.nodeSet[c]]
+                newObj.masterConnection = self.masterConnection
+                newObj.masterIO = self.masterIO
+                newObj.sftpConnections = self.sftpConnections
+                newObj.muxIO = self.muxIO
+                newObj.muxIO__lock = self.muxIO__lock
                 newObj.copyhost(self)
                 newName = "{0}!{1}".format( self.name, c )
                 if newName in self.scenario.getObjectsDict('host'):
@@ -967,27 +1454,7 @@ empty
         @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
         host.cleanup(self, reuseConnection)
-        if not self.reservationID and self.masterConnection:
-            # Master host (and not supervisor)
-            if self.slaves and len(self.slaves) > 0:
-                for h in self.slaves:
-                    if not h.isInCleanup():
-                        h.cleanup()
-            if self.tempPersistentDirectory:
-                res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
-                if res.splitlines()[-1] != "OK":
-                    del self.masterIO
-                    self.masterIO = None
-                    del self.masterConnection
-                    self.masterConnection = None
-                    raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
-                self.tempPersistentDirectory = None
-            del self.masterIO
-            self.masterIO = None
-            del self.masterConnection
-            self.masterConnection = None
-            # / Master host
-        elif self.reservationID:
+        if self.reservationID:
             # Supervisor host
             for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
                 if not h.isInCleanup():
@@ -997,9 +1464,14 @@ empty
                     if not h.isInCleanup():
                         h.cleanup()
             self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
+            self.muxIO[0].write('X\n')
+            self.muxIO[0].flush()
             if self.tempPersistentDirectory:
                 res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
                 if res.splitlines()[-1] != "OK":
+                    del self.muxIO
+                    self.muxIO = None
+                    Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL REMOVED' )
                     del self.masterIO
                     self.masterIO = None
                     Campaign.debuglogger.closeChannel( 'das4_master' )
@@ -1008,13 +1480,51 @@ empty
                     self.masterConnection = None
                     raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
                 self.tempPersistentDirectory = None
+            del self.muxIO
+            self.muxIO = None
+            Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL REMOVED' )
             del self.masterIO
             self.masterIO = None
             Campaign.debuglogger.closeChannel( 'das4_master' )
             self.masterConnection.close()
             del self.masterConnection
             self.masterConnection = None
+            delset = [node for node in self.sftpConnections]
+            for node in delset:
+                if len(self.sftpConnections[node]) > 1 and self.sftpConnections[node][1] is not None:
+                    self.sftpConnections[node][1].close()
+                self.sftpConnections[node][0].close()
+                del self.sftpConnections[node][0]
+                del self.sftpConnections[node][1]
+                del self.sftpConnections[node]
             # / Supervisor host
+        else:
+            # Non-supervisor host (both master and slave)
+            if not self.reservationID and self.nNodes:
+                # Master host (and not supervisor)
+                if self.slaves and len(self.slaves) > 0:
+                    for h in self.slaves:
+                        if not h.isInCleanup():
+                            h.cleanup()
+                if self.tempPersistentDirectory:
+                    res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
+                    if res.splitlines()[-1] != "OK":
+                        del self.muxIO
+                        self.muxIO = None
+                        del self.masterIO
+                        self.masterIO = None
+                        del self.masterConnection
+                        self.masterConnection = None
+                        raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
+                    self.tempPersistentDirectory = None
+                # / Master host
+            del self.muxIO
+            self.muxIO = None
+            del self.masterIO
+            self.masterIO = None
+            del self.masterConnection
+            self.masterConnection = None
+            # / Non-supervisor host
 
     def getTestDir(self):
         """
@@ -1080,4 +1590,4 @@ empty
 
     @staticmethod
     def APIVersion():
-        return "2.1.0"
+        return "2.2.0"

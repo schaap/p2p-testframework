@@ -348,4 +348,4 @@ class _skeleton_(host):
     @staticmethod
     def APIVersion():
         # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version.
-        return "2.1.0"
+        return "2.2.0"
