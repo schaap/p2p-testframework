@@ -226,7 +226,7 @@ class stringbuffer():
         else:
             return self.read(pos+1)
 
-def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex):
+def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex, mux_connection_number):
     if host_.isInCleanup():
         return
     try:
@@ -234,10 +234,11 @@ def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex):
         muxIO[0].write('\n')
     finally:
         muxIO__lock[0].release()
+    Campaign.debuglogger.log( mux_connection_number, 'SEND \\n' )
     if host_.isInCleanup():
         return
     oldtimer = timerlist[timerindex]
-    timerlist[timerindex] = threading.Timer(30.0, keepAlive, args = [muxIO, muxIO__lock, host_, timerlist, timerindex])
+    timerlist[timerindex] = threading.Timer(30.0, keepAlive, args = [muxIO, muxIO__lock, host_, timerlist, timerindex, mux_connection_number])
     timerlist[timerindex].start()
     del oldtimer
 
@@ -249,6 +250,8 @@ class das4MuxConnectionObject(countedConnectionObject):
     muxIO = None
     muxIO__lock = None
     connNumber = None
+    unpackedConnNumber = None
+    muxConnectionNumber = None
     
     inputBuffer = None
     inputBuffer__lock = None
@@ -261,9 +264,10 @@ class das4MuxConnectionObject(countedConnectionObject):
     sftpConnectionList = None
     sftpChannelCreated = False
     
-    def __init__(self, connNumber, muxIO, muxIO__lock, client, sftpScriptName, sftpConnectionList):
+    def __init__(self, connNumber, muxIO, muxIO__lock, client, sftpScriptName, sftpConnectionList, muxConnectionNumber):
         countedConnectionObject.__init__(self)
         self.muxIO = muxIO
+        self.unpackedConnNumber = connNumber
         self.connNumber = struct.pack( '!I', connNumber )
         self.muxIO__lock = muxIO__lock
         self.inputBuffer = stringbuffer()
@@ -274,15 +278,17 @@ class das4MuxConnectionObject(countedConnectionObject):
         self.noMoreInput = False
         self.sftpConnectionList = sftpConnectionList
         self.sftpChannelCreated = False
+        self.muxConnectionNumber = muxConnectionNumber
    
     def close(self):
         countedConnectionObject.close(self)
-        num = struct.unpack( '!I', self.connNumber )[0]
+        num = self.unpackedConnNumber
         alreadyClosed = False
         try:
             self.muxIO__lock[0].acquire()
             self.muxIO[0].write( '-{0}'.format( self.connNumber ) )
             self.muxIO[0].flush()
+            Campaign.debuglogger.log( self.muxConnectionNumber, 'SEND - {0}'.format( self.connNumber ) )
         except socket.error as e:
             if e.args != 'Socket is closed':
                 raise
@@ -293,7 +299,7 @@ class das4MuxConnectionObject(countedConnectionObject):
             try:
                 self.muxIO__lock[1].acquire()
                 try:
-                    das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '-{0}'.format( self.connNumber ) )
+                    das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '-{0}'.format( self.connNumber ), self.muxConnectionNumber )
                 finally:
                     if num in self.muxIO[2]:
                         del self.muxIO[2][num]
@@ -340,8 +346,10 @@ class das4MuxConnectionObject(countedConnectionObject):
         try:
             self.muxIO__lock[0].acquire()
             if multi:
+                Campaign.debuglogger.log( self.muxConnectionNumber, 'SEND 1 - {0} - {1}'.format( len(msg), msg ) )
                 self.muxIO[0].write( '1{0}{1}{2}'.format( self.connNumber, struct.pack( '!I', len(msg) ), msg ) )
             else:
+                Campaign.debuglogger.log( self.muxConnectionNumber, 'SEND 0 - {1}'.format( len(msg), msg ) )
                 self.muxIO[0].write( '0{0}{1}'.format( self.connNumber, msg ) )
             self.muxIO[0].flush()
         finally:
@@ -351,7 +359,7 @@ class das4MuxConnectionObject(countedConnectionObject):
         pass
             
     @staticmethod
-    def readmux(muxIO, muxIO__lock, expect):
+    def readmux(muxIO, muxIO__lock, expect, mux_connection_number):
         """
         Reads data from the mux channel and processes it as necessary.
         
@@ -385,6 +393,7 @@ class das4MuxConnectionObject(countedConnectionObject):
             muxIO__lock[1].acquire()
             while True:
                 opcode = muxIO[1].read(1)
+                Campaign.debuglogger.log( mux_connection_number, 'RECV OPCODE {0}'.format( opcode ) )
                 if opcode == '':
                     if isinstance(muxIO[1], das4MuxConnectionObject):
                         Campaign.logger.log( "Unexpected EOF on secondary mux" )
@@ -395,11 +404,15 @@ class das4MuxConnectionObject(countedConnectionObject):
                     # Muxer quit, failure
                     buf = muxIO[1].read(4)
                     if len(buf) < 4:
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LEN {0}'.format( buf ) )
                         raise Exception( "Remote demuxer suddenly quit, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf ) ) )
                     errlen = struct.unpack( '!I', buf )[0]
+                    Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED LEN {0}'.format( errlen ) )
                     problem = muxIO[1].read(errlen)
                     if len(problem) < errlen:
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV TOO SHORT PROBLEM {0}'.format( problem ) )
                         raise Exception( "Remote demuxer suddenly quit, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem ) )
+                    Campaign.debuglogger.log( mux_connection_number, 'RECV PROBLEM {0}'.format( problem ) )
                     raise Exception( "Remote demuxer suddenly quit. Reported problem: {0}".format( problem ) )
                 elif opcode == '+':
                     # Response to a '+' message: new connection. Fail if unexpected
@@ -407,6 +420,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                         raise Exception( "A connection was apparently opened, but I was just reading data. Insanity." )
                     # Read the result
                     result = muxIO[1].read(1)
+                    Campaign.debuglogger.log( mux_connection_number, 'RECV RESULT {0}'.format( result ) )
                     if result == '+':
                         # Succesful connection setup, we're done
                         return
@@ -414,11 +428,15 @@ class das4MuxConnectionObject(countedConnectionObject):
                         # Failed connection setup, read error message and raise exception
                         buf = muxIO[1].read(4)
                         if len(buf) < 4:
+                            Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LEN {0}'.format( buf ) )
                             raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf ) ) )
                         errlen = struct.unpack( '!I', buf )[0]
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED LEN {0}'.format( errlen ) )
                         problem = muxIO[1].read(errlen)
                         if len(problem) < errlen:
+                            Campaign.debuglogger.log( mux_connection_number, 'RECV TOO SHORT PROBLEM {0}'.format( problem ) )
                             raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem ) )
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV PROBLEM {0}'.format( problem ) )
                         raise Exception( "The connection could not be set up over the mux channel. Reported problem: {0}".format( problem ) )
                     elif result == '':
                         raise Exception( "Unexpected EOF on mux channel; expected 1 byte new connection result, got ''" )
@@ -428,8 +446,10 @@ class das4MuxConnectionObject(countedConnectionObject):
                     # Response to a '-' message: close connection. Done if expected
                     connbuf = muxIO[1].read(4)
                     if len(connbuf) < 4:
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV BAD CONNNUMBER {0}'.format( connbuf ) )
                         raise Exception( "Unexpected EOF on mux channel; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ) ) )
                     connNumber = struct.unpack( '!I', connbuf )[0]
+                    Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED CONNNUMBER {0}'.format( connNumber ) )
                     if connNumber in muxIO[2]:
                         muxIO[2][connNumber].noMoreInput = True
                         if expect == '0{0}'.format( connbuf ):
@@ -442,24 +462,32 @@ class das4MuxConnectionObject(countedConnectionObject):
                     # Data for a connection: read the connection number
                     connbuf = muxIO[1].read(4)
                     if len(connbuf) < 4:
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV BAD CONNNUMBER {0}'.format( connbuf ) )
                         raise Exception( "Unexpected EOF on mux channel; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ) ) )
+                    incomingConnNumber = struct.unpack( '!I', connbuf )[0]
+                    Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED CONNNUMBER {0}'.format( struct.unpack( '!I', connbuf )[0] ) )
                     if opcode == '0':
                         # Opcode '0': a single line of data, read that
                         data = muxIO[1].readline()
                         if data == '' or data[-1] != '\n':
+                            Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LINE {0}'.format( data ) )
                             raise Exception( "Unexpected EOF on mux channel; expected a single line, got '{0}'".format( data ) )
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV LINE {0}'.format( data ) )
                         datalen = len(data)
                     else:
                         # Opcode '1': a number of characters of data, read them
                         buf = muxIO[1].read(4)
                         if len(buf) != 4:
+                            Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LEN {0}'.format( buf ) )
                             raise Exception( "Unexpected EOF on mux channel; expected 4 bytes length, got {0} bytes".format( len( buf ) ) )
                         datalen = struct.unpack( '!I', buf )[0]
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED LEN {0}'.format( datalen ) )
                         data = muxIO[1].read(datalen)
                         if len(data) != datalen:
+                            Campaign.debuglogger.log( mux_connection_number, 'RECV TOO SHORT DATA {0}'.format( data ) )
                             raise Exception( "Unexpected EOF on mux channel; expected {0} bytes of data, got {1} bytes: '{2}'".format( datalen, len(data), data ) )
+                        Campaign.debuglogger.log( mux_connection_number, 'RECV DATA {0}'.format( data ) )
                     # A connection's data. Write into that connection's buffer.
-                    incomingConnNumber = struct.unpack( '!I', connbuf )[0]
                     if incomingConnNumber not in muxIO[2]:
                         raise Exception( "Received data on mux channel for unknown mux connection {0}. Data: {1}".format( incomingConnNumber, data ) )
                     try:
@@ -471,7 +499,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                     # Return if data was expected for this connection and a \n has been found
                     if expect[0] == '0' and connbuf == expect[1:] and data.find( '\n' ) > -1:
                         return
-                    if expect[0] == '1' and dataLen >= expectLen:
+                    if expect[0] == '1' and connbuf == expect[1:5] and dataLen >= expectLen:
                         return
                 else:
                     raise Exception( "Unexpected opcode over mux channel: {0}".format( opcode ) )
@@ -520,7 +548,7 @@ class das4MuxConnectionObject(countedConnectionObject):
             finally:
                 self.inputBuffer__lock.release()
             # Do some reading
-            das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '0{0}'.format( self.connNumber ))
+            das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '0{0}'.format( self.connNumber ), self.muxConnectionNumber )
             try:
                 # Now it's there
                 self.inputBuffer__lock.acquire()
@@ -558,7 +586,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                 finally:
                     self.inputBuffer__lock.release()
                 # Do some reading
-                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '1{0}'.format( self.connNumber ))
+                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '1{0}'.format( self.connNumber ), self.muxConnectionNumber )
                 try:
                     # Now it's there
                     self.inputBuffer__lock.acquire()
@@ -601,7 +629,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                 finally:
                     self.inputBuffer__lock.release()
                 # Do some reading
-                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '1{0}{1}'.format( self.connNumber, struct.pack( '!I', len_ ) ))
+                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '1{0}{1}'.format( self.connNumber, struct.pack( '!I', len_ ) ), self.muxConnectionNumber )
                 try:
                     # Now it's there
                     self.inputBuffer__lock.acquire()
@@ -1042,10 +1070,11 @@ empty
                 self.muxIO[0].flush()
             finally:
                 self.muxIO__lock[0].release()
+            Campaign.debuglogger.log( 'das4_master_mux', 'SEND + {0} - {1} - {2} - {3} - {4}'.format( connNumber, len(self.nodeSet[0]), len('python python_ssh_demux.py'), self.nodeSet[0], 'python python_ssh_demux.py' ) )
             try:
                 self.muxIO__lock[1].acquire()
                 # Do some reading
-                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '+')
+                das4MuxConnectionObject.readmux(self.muxIO, self.muxIO__lock, '+', 'das4_master_mux' )
                 # Connection is ready, create and register object
                 createSFTP = False
                 if self.nodeSet[0] not in self.sftpConnections:
@@ -1059,11 +1088,12 @@ empty
                         raise Exception( "Could not authenticate to the headnode of host {0}. Please make sure that authentication can proceed without user interaction, e.g. by loading an SSH agent or using unencrypted keys.".format( self.name ) )
                     self.sftpConnections[self.nodeSet[0]] = [client]
                     createSFTP = True
-                obj = das4MuxConnectionObject( connNumber, self.muxIO, self.muxIO__lock, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]] )
+                obj = das4MuxConnectionObject( connNumber, self.muxIO, self.muxIO__lock, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]], 'das4_master_mux' )
                 self.secondaryMuxIO[self.nodeSet[0]] = (obj, obj, {})
                 self.secondaryMuxIO__lock[self.nodeSet[0]] = (threading.RLock(), threading.RLock())
+                Campaign.debuglogger.log('mux_{0}'.format( connNumber ), "PRIMARY MUX OPENED")
                 i = len(self.keepAliveTimers)
-                self.keepAliveTimers.append(threading.Timer(30.0, keepAlive, args=[self.secondaryMuxIO[self.nodeSet[0]], self.secondaryMuxIO__lock[self.nodeSet[0]], self, self.keepAliveTimers, i]))
+                self.keepAliveTimers.append(threading.Timer(30.0, keepAlive, args=[self.secondaryMuxIO[self.nodeSet[0]], self.secondaryMuxIO__lock[self.nodeSet[0]], self, self.keepAliveTimers, i, 'mux_{0}'.format( connNumber )]))
                 self.keepAliveTimers[i].start()
                 if createSFTP:
                     obj.createSFTPChannel()
@@ -1085,16 +1115,18 @@ empty
             muxIO_[0].flush()
         finally:
             muxIO__lock_[0].release()
+        Campaign.debuglogger.log( 'mux_{0}'.format( muxIO_[0].unpackedConnNumber ), 'SEND + {0} - {1} - {2} - {3} - {4}'.format( connNumber, len(self.nodeSet[0]), len('python python_ssh_demux.py'), self.nodeSet[0], 'python python_ssh_demux.py' ) )
         try:
             muxIO__lock_[1].acquire()
             # Do some reading
-            das4MuxConnectionObject.readmux(muxIO_, muxIO__lock_, '+')
+            das4MuxConnectionObject.readmux(muxIO_, muxIO__lock_, '+', 'mux_{0}'.format( muxIO_[0].unpackedConnNumber ) )
             # Connection is ready, create and register object
-            obj = das4MuxConnectionObject( connNumber, muxIO_, muxIO__lock_, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]] )
+            obj = das4MuxConnectionObject( connNumber, muxIO_, muxIO__lock_, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]], 'mux_{0}'.format( muxIO_[0].unpackedConnNumber ) )
             muxIO_[2][connNumber] = obj
         finally:
             muxIO__lock_[1].release()
         Campaign.debuglogger.log( obj.getIdentification(), 'CREATED in scenario {2} for DAS4 host {0} to node {1} over mux channel'.format( self.name, self.nodeSet[0], self.scenario.name ) )
+        Campaign.debuglogger.log('mux_{0}'.format( connNumber ), "SECONDARY MUX OPENED")
         try:
             self.connections__lock.acquire()
             if self.isInCleanup():
@@ -1424,8 +1456,9 @@ empty
             chan2.exec_command( 'python python_ssh_demux.py' )
             self.muxIO = (chan2.makefile( 'wb', -1), chan2.makefile( 'rb', -1 ), {})
             Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL CREATED' )
+            Campaign.debuglogger.log( 'das4_master_mux', 'CREATED' )
             i = len(self.keepAliveTimers)
-            self.keepAliveTimers.append(threading.Timer(30.0, keepAlive, args=[self.muxIO, self.muxIO__lock, self, self.keepAliveTimers, i]))
+            self.keepAliveTimers.append(threading.Timer(30.0, keepAlive, args=[self.muxIO, self.muxIO__lock, self, self.keepAliveTimers, i, 'das4_master_mux']))
             self.keepAliveTimers[i].start()
             self.sendMasterCommand('module load prun')
             # Reserve nodes
@@ -1708,11 +1741,13 @@ empty
                 if gotLock:
                     self.muxIO[0].write('X\n')
                     self.muxIO[0].flush()
+                    Campaign.debuglogger.log( 'das4_master_mux', 'SEND X\\n' )
             finally:
                 if gotLock:
                     self.muxIO__lock[0].release()
             del self.muxIO
             self.muxIO = None
+            Campaign.debuglogger.closeChannel( 'das4_master_mux' )
             Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL REMOVED' )
             showError = False
             if self.tempPersistentDirectory:

@@ -184,15 +184,6 @@ while [ $going -eq 1 ]; do
     #       "torrentc": CACHE ID** (string integer)
     # }
     if [ ! -z "`cat \"$2/wget.out\"`" ]; then
-        # Lazy loading of the torrent using the dir_autoload functionality:
-        # utorrent is unreliable in loading torrents that already exist when the client is started
-        # so we only copy the torrent file in once the first response has been seen
-        if [ $torrentloaded = 0 ]; then
-            date >&2
-            echo "Adding torrent file" >&2
-            cp "$3" "$2/torrents/" >&2
-            torrentloaded=1
-        fi
         date +"%s.%09N"
         cat "$2/wget.out"
         if [ $stopWhenSeeding -eq 1 ]; then
@@ -201,6 +192,16 @@ while [ $going -eq 1 ]; do
                 grep ",\"Seeding\"," "$2/wget.out" >&2
                 going=0
             fi
+        fi
+        # Lazy loading of the torrent using the dir_autoload functionality:
+        # utorrent is unreliable in loading torrents that already exist when the client is started
+        # so we only copy the torrent file in once the first response has been seen
+        if [ $torrentloaded = 0 ]; then
+            date >&2
+            date +"%s.%09N" >&2
+            echo "Adding torrent file" >&2
+            cp "$3" "$2/torrents/" >&2
+            torrentloaded=1
         fi
     fi
     sleep 1
