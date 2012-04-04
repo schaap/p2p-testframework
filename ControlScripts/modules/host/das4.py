@@ -236,8 +236,10 @@ def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex):
         muxIO__lock[0].release()
     if host_.isInCleanup():
         return
+    oldtimer = timerlist[timerindex]
     timerlist[timerindex] = threading.Timer(30.0, keepAlive, args = [muxIO, muxIO__lock, host_, timerlist, timerindex])
     timerlist[timerindex].start()
+    del oldtimer
 
 class das4MuxConnectionObject(countedConnectionObject):
     """
@@ -1054,13 +1056,16 @@ empty
                     self.sftpConnections[self.nodeSet[0]] = [client]
                     createSFTP = True
                 obj = das4MuxConnectionObject( connNumber, self.muxIO, self.muxIO__lock, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]] )
+                self.secondaryMuxIO[self.nodeSet[0]] = (obj, obj, {})
+                self.secondaryMuxIO__lock[self.nodeSet[0]] = (threading.RLock(), threading.RLock())
+                i = len(self.keepAliveTimers)
+                self.keepAliveTimers.append(threading.Timer(30.0, keepAlive, args=[self.secondaryMuxIO[self.nodeSet[0]], self.secondaryMuxIO__lock[self.nodeSet[0]], self, self.keepAliveTimers, i]))
+                self.keepAliveTimers[i].start()
                 if createSFTP:
                     obj.createSFTPChannel()
                 self.muxIO[2][connNumber] = obj
             finally:
                 self.muxIO__lock[1].release()
-            self.secondaryMuxIO[self.nodeSet[0]] = (obj, obj, {})
-            self.secondaryMuxIO__lock[self.nodeSet[0]] = (threading.RLock(), threading.RLock())
         muxIO_ = self.secondaryMuxIO[self.nodeSet[0]]
         muxIO__lock_ = self.secondaryMuxIO__lock[self.nodeSet[0]]
         connNumber = None
@@ -1083,9 +1088,6 @@ empty
             # Connection is ready, create and register object
             obj = das4MuxConnectionObject( connNumber, muxIO_, muxIO__lock_, self.masterConnection, "{0}/das4_sftp/sftp_fwd_{1}".format( self.getPersistentTestDir(), self.nodeSet[0] ), self.sftpConnections[self.nodeSet[0]] )
             muxIO_[2][connNumber] = obj
-            i = len(self.keepAliveTimers)
-            self.keepAliveTimers.append(threading.Timer(30.0, keepAlive, args=[muxIO_, muxIO__lock_, self, self.keepAliveTimers, i]))
-            self.keepAliveTimers[i].start()
         finally:
             muxIO__lock_[1].release()
         Campaign.debuglogger.log( obj.getIdentification(), 'CREATED in scenario {2} for DAS4 host {0} to node {1} over mux channel'.format( self.name, self.nodeSet[0], self.scenario.name ) )
