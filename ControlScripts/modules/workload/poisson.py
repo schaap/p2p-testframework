@@ -104,6 +104,8 @@ class poisson(workload):
             executions = [e for e in self.scenario.getObjects('execution') if e.client.name in self.applyList]
         else:
             executions = [e for e in self.scenario.getObjects('execution') if e.client.name in self.applyList and not e.isSeeder()]
+        if len(executions) == 0:
+            return
         
         # The easiest way to get a poisson distribution is to just get random numbers
         times = sorted([random.uniform(0,1000) for _ in range( len(executions) * 1000 )])[::1000]
@@ -116,7 +118,10 @@ class poisson(workload):
         
         # Now shift and stretch
         offset = times[0] - self.offset
-        scale = duration / (times[-1] - times[0])
+        if times[-1] != times[0]:
+            scale = duration / (times[-1] - times[0])
+        else:
+            scale = duration
         actualTimes = [(t - offset) * scale for t in times]
         
         cnt = 0

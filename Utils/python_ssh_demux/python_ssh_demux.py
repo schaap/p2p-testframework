@@ -51,13 +51,18 @@ try:
                 # NOP for manual testing purposes
                 pass
             elif opcode == '+':
-                buf = sys.stdin.read(4)
-                if len(buf) != 4:
-                    raise Exception( 'Unexpected EOF on mux channel; expected 4 bytes of connection number, received {0} bytes'.format( len(buf) ) )
-                connNumber = struct.unpack( '!I', buf )[0]
-                hostname = sys.stdin.readline()
-                if hostname == '' or hostname[-1] != '\n':
-                    raise Exception( 'Incorrect hostname found for new connection' )
+                buf = sys.stdin.read(12)
+                if len(buf) != 12:
+                    raise Exception( 'Unexpected EOF on mux channel; expected 12 bytes of connection number and message lengths, received {0} bytes'.format( len(buf) ) )
+                connNumber = struct.unpack( '!I', buf[:4] )[0]
+                hostnameLen = struct.unpack( '!I', buf[4:8] )[0]
+                commandLen = struct.unpack( '!I', buf[8:] )[0]
+                hostname = sys.stdin.read(hostnameLen)
+                if len(hostname) != hostnameLen:
+                    raise Exception( "Unexpected EOF on mux channel; expected {0} bytes of hostname, received {1} bytes: '{2}'".format( hostnameLen, len(hostname), hostname ) )
+                command = sys.stdin.read(commandLen)
+                if len(command) != commandLen:
+                    raise Exception( "Unexpected EOF on mux channel; expected {0} bytes of command, received {1} bytes: '{2}'".format( commandLen, len(command), command ) )
                 if connNumber in connections:
                     problem = 'Connection number already used'
                     sys.stdout.write( '+-{0}{1}'.format( struct.pack( '!I', len(problem) ), problem ) )
@@ -68,7 +73,7 @@ try:
                         client = paramiko.SSHClient()
                         client.load_system_host_keys()
                         try:
-                            client.connect( hostname[:-1] )
+                            client.connect( hostname )
                         except paramiko.BadHostKeyException:
                             raise Exception( "Bad host key for node {0}. Please make sure the host key is already known to the DAS4 headnode system. The easiest way is usually to just manually use ssh to connect to the remote host once and save the host key.".format( hostname ) )
                         except paramiko.AuthenticationException:
@@ -76,7 +81,7 @@ try:
                         trans = client.get_transport()
                         chan = trans.open_session()
                         chan.set_combine_stderr( True )
-                        chan.exec_command( 'bash -l' )
+                        chan.exec_command( command )
                         chan.setblocking(False)
                         io = (chan.makefile( 'wb', -1 ), chan.makefile( 'rb', -1 ))
                         obj = Conn(io, hostname, client, connNumber, chan)
@@ -93,13 +98,14 @@ try:
                 if len(buf) != 4:
                     raise Exception( 'Unexpected EOF on mux channel; expected 4 bytes of connection number, received {0} bytes'.format( len(buf) ) )
                 connNumber = struct.unpack( '!I', buf )[0]
-                try:
-                    del connections[connNumber].io
-                    connections[connNumber].client.close()
-                    del connections[connNumber].client
-                    del connections[connNumber]
-                except Exception:
-                    pass
+                if connNumber in connections:
+                    try:
+                        del connections[connNumber].io
+                        connections[connNumber].client.close()
+                        del connections[connNumber].client
+                        del connections[connNumber]
+                    except Exception:
+                        pass
                 buildReadList()
                 sys.stdout.write( '-{0}'.format( buf ) )
                 sys.stdout.flush()
@@ -120,12 +126,13 @@ try:
                     buf = sys.stdin.read(datalen)
                     if len(buf) != datalen:
                         raise Exception( "Unexpected EOF on mux channel; expected {0} bytes of data, received {1} bytes: '{2}'".format( datalen, len(buf), buf ) )
-                if connNumber not in connections:
+                if connNumber in connections:
+                    connections[connNumber].channel.setblocking(True)
+                    connections[connNumber].io[0].write( buf )
+                    connections[connNumber].io[0].flush()
+                    connections[connNumber].channel.setblocking(False)
+                else:
                     raise Exception( "Received data for unknown connection {0}: '{1}'".format( connNumber, buf ))
-                connections[connNumber].channel.setblocking(True)
-                connections[connNumber].io[0].write( buf )
-                connections[connNumber].io[0].flush()
-                connections[connNumber].channel.setblocking(False)
             elif opcode == 'X':
                 break
             else:
@@ -155,7 +162,7 @@ try:
                     conn.isClosed = True
                     buildReadList()
                 sys.stdout.flush()
-
+            
 except Exception as e:
     msg = e.__str__() + '\n' + traceback.format_exc()
     sys.stdout.write( 'X{0}{1}'.format( struct.pack( '!I', len(msg) ), msg ) )
@@ -170,4 +177,3 @@ for connNumber in dellist:
         del connections[connNumber]
     except Exception:
         pass
-    

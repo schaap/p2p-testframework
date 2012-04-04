@@ -1,7 +1,7 @@
 [file:fakedata]
 name=file50
 size=52428800
-fileName=file_50M
+filename=file_50M
 generateRootHash=yes
 
 [client:swift]

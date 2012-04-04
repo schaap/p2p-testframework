@@ -6,6 +6,8 @@
 # -- Seeders should only start measurements the moment the torrent is added
 # -- Leechers should only start measurements the moment they start receiving data
 # - Multiplexing required for SSH connections over a headnode for DAS4 hosts
+# -- Currently 192 connections seems to result in trouble
+# - libtorrent scenarios seem to start with preexisting data... on empty (?) leechers
 #
 
 # System imports

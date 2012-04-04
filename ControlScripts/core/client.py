@@ -36,6 +36,7 @@ class client(coreObject):
     pid__lock = None            # Lock object to guard the pids dictionary
     
     profile = False             # Flag to include external profiling code
+    logStart = False            # Flag to include logging of the starting time of the client on the remote host
 
     # For more clarity: the way source, isRemote, location and builder work together is as follows.
     #
@@ -119,6 +120,8 @@ class client(coreObject):
             self.isRemote = ( value != '' )
         elif key == 'profile':
             self.profile = ( value != '' )
+        elif key == 'logStart':
+            self.logStart = ( value != '' )
         else:
             parseError( 'Unknown parameter name: {0}'.format( key ) )
 
@@ -457,6 +460,8 @@ class client(coreObject):
             if self.isRemote:
                 remoteClientDir = self.sourceObj.remoteLocation(self, execution.host)
             fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
+            if self.logStart:
+                fileObj.write( 'date > {0}/starttime.log\n'.format( self.getExecutionLogDir(execution) ) )
             if simpleCommandLine:
                 print "DEBUG: Preparing execution {0} of client {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine )
                 fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
@@ -570,7 +575,8 @@ class client(coreObject):
         try:
             self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
-                raise Exception( "Execution {0} of client {1} on host {2} is not known by PID".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+                Campaign.logger.log( "Execution {0} of client {1} on host {2} is not known by PID when checking for isRunning. Ignoring.".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+                return False
             pid = self.pids[execution.getNumber()]
         finally:
             try:
@@ -664,6 +670,8 @@ class client(coreObject):
         if self.getExecutionLogDir(execution):
             if self.profile:
                 execution.host.getFile( '{0}/cpu.log'.format( self.getExecutionLogDir(execution) ), os.path.join( localLogDestination, 'cpu.log' ) )
+            if self.logStart:
+                execution.host.getFile( '{0}/starttime.log'.format( self.getExecutionLogDir(execution) ), os.path.join( localLogDestination, 'starttime.log' ) )
 
     def cleanupHost(self, host, reuseConnection = None):
         """

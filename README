@@ -121,6 +121,7 @@ Parameters:
 - extraParameters       Extra parameters to be appended on the command line to the client. Client specific. Optional, defaults to ''
 - parser                The name of the parser object to be used to parse logs from this client. Optional, defaults to a new parser with the same name as the name of the extension module used; may be specified multiple times
 - profile               Set this to anything but "" to include external profiling code that will inspect CPU and memory usage every second, which will be captured in the raw cpu.log. Optional, defaults to ''
+- logStart              Set this to anything but "" to log the starting time of the client, which will be captured in the raw starttime.log. Note that this uses the local clock of the remote host. Optional, defaults to ''
 
 By default the following client modules are provided:
 - client:http           Uses lighttpd and aria2 to provided HTTP(S) downloads

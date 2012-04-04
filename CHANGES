@@ -1,5 +1,8 @@
 This document describes API changes for the framework for each version (incrementally). Changes are documented here for sure, additions may be left out. Also, parameter changes are not documented here as they generate warnings as they come. Only changes in the python code are given.
 
+== 2.2.0 vs 2.1.0 ==
+- Changed core.host.host to include a new setupNewCleanupConnection(...), which by default refers to setupNewConnection(...)
+
 == 2.1.0 vs 2.0.0 ==
 - Changed core.client.client.parser to core.client.client.parsers and made it a list that can be None
 - Every extension module that can have parameters now has a resolveNames method

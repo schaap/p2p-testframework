@@ -140,6 +140,11 @@ Please note that the options for builder and source modules are given here as we
                         with the same name as the name of the extension module used; may be specified multiple times
 - profile               Set this to anything but "" to include external profiling code that will inspect CPU and memory usage every
                         second, which will be captured in the raw cpu.log. Optional, defaults to ''
+- logStart              Set this to anything but "" to log the starting time of the client, which will be captured in the raw
+                        starttime.log. Note that this uses the local clock of the remote host. Optional, defaults to ''
+                        It's important to realize the effects of using the local clock: it assumes all clocks of the remote hosts
+                        to be equal, which is theoretically impossible. Always take a small error into account and be sure to check
+                        how much off those clocks are when you see strange things.
 - source                The name of the source module to load, e.g. source=local to use source:local. Optional, defaults to
                         source:directory. The values source=local and source=git are also provided by default by the source:local
                         and source:git modules.

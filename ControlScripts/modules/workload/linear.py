@@ -113,6 +113,9 @@ class linear(workload):
             executions = [e for e in self.scenario.getObjects('execution') if e.client.name in self.applyList]
         else:
             executions = [e for e in self.scenario.getObjects('execution') if e.client.name in self.applyList and not e.isSeeder()]
+        if len(executions) == 0:
+            return
+
         timeout = self.offset
         if self.interval:
             interval = self.interval
