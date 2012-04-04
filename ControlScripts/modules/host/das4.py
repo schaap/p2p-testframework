@@ -386,6 +386,10 @@ class das4MuxConnectionObject(countedConnectionObject):
             while True:
                 opcode = muxIO[1].read(1)
                 if opcode == '':
+                    if isinstance(muxIO[1], das4MuxConnectionObject):
+                        Campaign.logger.log( "Unexpected EOF on secondary mux" )
+                    else:
+                        Campaign.logger.log( "Unexpected EOF on primary mux" )
                     raise Exception( "Unexpected EOF on mux channel; expected 1 byte opcode, got ''" )
                 elif opcode == 'X':
                     # Muxer quit, failure
@@ -1689,8 +1693,6 @@ empty
                 finally:
                     if gotLock:
                         self.secondaryMuxIO__lock[hostname][0].release()
-                del self.secondaryMuxIO[hostname][0]
-                del self.secondaryMuxIO[hostname][1]
                 del self.secondaryMuxIO[hostname]
                 del self.secondaryMuxIO__lock[hostname]
             gotLock = False
