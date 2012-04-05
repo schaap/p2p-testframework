@@ -1593,7 +1593,7 @@ empty
                 if self.reservationFixed is None:
                     raise Exception( "Reservation for host {0} was made for {1} nodes, but only {2} were available? Insanity O_o".format( self.name, totalNodes, len(nodeList) ) )
                 else:
-                    raise Exception( "Preset reservation {0} only includes {2} nodes, but {1] are required".format( self.reservationFixed, len(nodeList), totalNodes ) )
+                    raise Exception( "Preset reservation {0} only includes {2} nodes, but {1} are required".format( self.reservationFixed, totalNodes, len(nodeList) ) )
             # See if we can reach all nodes
             for node in nodeList:
                 if self.isInCleanup():
@@ -1617,8 +1617,12 @@ empty
                 h.secondaryMuxIO = self.secondaryMuxIO
                 h.secondaryMuxIO__lock = self.secondaryMuxIO__lock
                 counter = nextCounter
-            if counter != len(nodeList):
-                raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved. Insanity!".format( self.name, counter, totalNodes ) )
+            if self.reservationFixed is None:
+                if counter != len(nodeList):
+                    raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved. Insanity!".format( self.name, counter, totalNodes ) )
+            else:
+                if counter > len(nodeList):
+                    raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but only  {2} were available. Insanity!".format( self.name, counter, totalNodes ) )
             # / Supervisor host
         if self.nNodes:
             # Master host part 1
