@@ -249,11 +249,18 @@ def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex, mux_connection_n
     """
     if host_.isInCleanup():
         return
+    alreadyClosed = False
     try:
         muxIO__lock[0].acquire()
         muxIO[0].write('\n')
+    except socket.error as e:
+        if e.args != 'Socket is closed':
+            raise
+        alreadyClosed = True
     finally:
         muxIO__lock[0].release()
+    if alreadyClosed:
+        return
     Campaign.debuglogger.log( mux_connection_number, 'SEND \\n' )
     if host_.isInCleanup():
         return
