@@ -846,6 +846,12 @@ class das4(host):
     - headnodeOverride      Set to anything but "" to override the validity checks on the headNode parameter.
                             Use this for custom headNodes or to bypass DNS lookups by providing the IP of the
                             headnode. Optional.
+    - reservation           If set this integer is the reservation number to be used for the nodes on the DAS4.
+                            The reservation must already be available when the run starts, will be assumed to be
+                            long enough (reserveTime will be ignored) and should include enough nodes for all
+                            host:das4 instances. The reservation will never be cancelled; this is left to the user.
+                            If any host:das4 instance has a reservation set this will be used. If multiple
+                            host:das4 instances have a reservation set it must be the same.
     
     Requirements of the DAS4 module:
     - You must be able to use SSH from the specified (or selected) headnode to the other nodes without interaction
@@ -899,6 +905,7 @@ class das4(host):
     
     tempPersistentDirectory = None          # String with the temporary persistent directory on the headnode
     reservationID = None                    # Reservation identifier
+    reservationFixed = False                # Flag to indicate a fixed reservation was used and hence should not be cancelled
     nodeSet = []                            # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
     slaves = []                             # list of slaves of this master node, None for non-master nodes
     bogusRemoteDir = False                  # Flag to signal whether to ignore the value in self.remoteDirectory
@@ -946,6 +953,7 @@ class das4(host):
         self.keepAliveTimers = []
         self.secondaryMuxIO = {}
         self.secondaryMuxIO__lock = {}
+        self.reservationFixed = False
 
     def parseSetting(self, key, value):
         """
@@ -991,6 +999,12 @@ class das4(host):
             if self.user:
                 parseError( "User already set: {0}".format( self.user ) )
             self.user = value
+        elif key == 'reservation':
+            if self.reservationFixed is not None:
+                parseError( "Reservation ID already set: {0}".format( self.reservationFixed ) )
+            if not isPositiveInt( value ):
+                parseError( "A reservation ID is a non-negative integer")
+            self.reservationFixed = value
         else:
             host.parseSetting(self, key, value)
 
@@ -1491,13 +1505,22 @@ empty
             # Reserve nodes
             totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, das4)])
             maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, das4)])
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
+                if h.reservationFixed is not None:
+                    if self.reservationFixed is None:
+                        self.reservationFixed = h.reservationFixed
+                    elif self.reservationFixed != h.reservationFixed:
+                        raise Exception( "Found two different preset reservation IDs: {0} and {1}. This is not supported.".format( self.reservationFixed, h.reservationFixed ) )
             if self.isInCleanup():
                 Campaign.debuglogger.closeChannel( 'das4_master' )
                 self.masterConnection.close()
                 del self.masterConnection
                 self.masterConnection = None
                 return
-            self.reservationID = self.sendMasterCommand('preserve -1 -# {0} {1} | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):$/\\1/" | grep -E "^[[:digit:]]*$"'.format( totalNodes, maxReserveTime ) )
+            if self.reservationFixed is None:
+                self.reservationID = self.sendMasterCommand('preserve -1 -# {0} {1} | grep "Reservation number" | sed -e "s/^Reservation number \\([[:digit:]]*\\):$/\\1/" | grep -E "^[[:digit:]]*$"'.format( totalNodes, maxReserveTime ) )
+            else:
+                self.reservationID = self.reservationFixed
             if self.reservationID == '' or not isPositiveInt( self.reservationID ):
                 Campaign.debuglogger.closeChannel( 'das4_master' )
                 self.masterConnection.close()
@@ -1506,7 +1529,8 @@ empty
                 res = self.reservationID
                 self.reservationID = None
                 raise Exception( 'The reservationID as found on the DAS4 ("{0}") seems not to be a reservation ID.'.format( res ) )
-            print "Reservation ID {1} on DAS4 made for {0} nodes, waiting for availability".format( totalNodes, self.reservationID )
+            if self.reservationFixed is not None:
+                print "Reservation ID {1} on DAS4 made for {0} nodes, waiting for availability".format( totalNodes, self.reservationID )
             # Wait for nodes
             # Please note how the following command is built: one string per line, but all these strings will be concatenated.
             # The whitespace is *purely* readability and *not* present in the resulting command. Hence the "; " at the end of each of these strings.
@@ -1546,7 +1570,10 @@ empty
                     return
                 break
             if res != "OK":
-                raise Exception( "Nodes for host {0} never became available and the reservation seems to be gone as well.".format( self.name ) )
+                if self.reservationFixed is None:
+                    raise Exception( "Nodes for host {0} never became available and the reservation seems to be gone as well.".format( self.name ) )
+                else:
+                    raise Exception( "Preset reservation ID {0} seems not to be available anymore".format( self.reservationFixed ) )
             if self.isInCleanup():
                 return
             # Get the nodes
@@ -1561,6 +1588,12 @@ empty
             if nodes[:len(wrongStart)] == wrongStart:
                 raise Exception( "Nodes for host {0} could not be extracted from the reservation. Nodes found (and presumed to be incorrect): {1}.".format( self.name, nodes ) )
             nodeList = nodes.split()
+            # Check the number of nodes
+            if len(nodeList) < totalNodes:
+                if self.reservationFixed is None:
+                    raise Exception( "Reservation for host {0} was made for {1} nodes, but only {2} were available? Insanity O_o".format( self.name, totalNodes, len(nodeList) ) )
+                else:
+                    raise Exception( "Preset reservation {0} only includes {2} nodes, but {1] are required".format( self.reservationFixed, len(nodeList), totalNodes ) )
             # See if we can reach all nodes
             for node in nodeList:
                 if self.isInCleanup():
@@ -1729,7 +1762,8 @@ empty
                 for h in self.slaves:
                     if not h.isInCleanup():
                         h.cleanup()
-            self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
+            if self.reservationFixed is None:
+                self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
             for t in self.keepAliveTimers:
                 try:
                     t.cancel()
