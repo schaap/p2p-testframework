@@ -87,6 +87,12 @@ Special handler for those with access to the DAS4 system.
 - headnodeOverride      Set to anything but "" to override the validity checks on the headNode parameter.
                         Use this for custom headNodes or to bypass DNS lookups by providing the IP of the
                         headnode. Optional.
+- reservation           If set this integer is the reservation number to be used for the nodes on the DAS4.
+                        The reservation must already be available when the run starts, will be assumed to be
+                        long enough (reserveTime will be ignored) and should include enough nodes for all
+                        host:das4 instances. The reservation will never be cancelled; this is left to the user.
+                        If any host:das4 instance has a reservation set this will be used. If multiple
+                        host:das4 instances have a reservation set it must be the same.
 
 = file =
 - name              The name of the file object. This name is used to refer to the file object in throughout the scenario.

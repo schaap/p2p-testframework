@@ -1529,7 +1529,7 @@ empty
                 res = self.reservationID
                 self.reservationID = None
                 raise Exception( 'The reservationID as found on the DAS4 ("{0}") seems not to be a reservation ID.'.format( res ) )
-            if self.reservationFixed is not None:
+            if self.reservationFixed is None:
                 print "Reservation ID {1} on DAS4 made for {0} nodes, waiting for availability".format( totalNodes, self.reservationID )
             # Wait for nodes
             # Please note how the following command is built: one string per line, but all these strings will be concatenated.
