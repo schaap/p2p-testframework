@@ -300,15 +300,31 @@ class ClientKiller(BusyExecutionThread):
 class LogProcessor(BusyExecutionThread):
     """Simple runner for client.retrieveLogs() and execution.runParsers()."""
     execdir = ''
-    def __init__(self, execution, execdir):
+    salvage = False
+    def __init__(self, execution, execdir, salvage = False):
         self.execdir = execdir
         BusyExecutionThread.__init__(self, execution)
+        self.salvage = salvage
 
     def doTask(self):
-        self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
+        if self.salvage:
+            try:
+                self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
+            except Exception as e:
+                Campaign.logger.log( "Ignoring exception while salvaging logs: {0}".format( e.__str__() ) )
+                Campaign.logger.exceptionTraceback()
+        else:
+            self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
         yield
         if not self.inCleanup:
-            self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
+            if self.salvage:
+                try:
+                    self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
+                except Exception as e:
+                    Campaign.logger.log( "Ignoring exception while parsing salvaged logs: {0}".format( e.__str__() ) )
+                    Campaign.logger.exceptionTraceback()
+            else:
+                self.execution.runParsers( os.path.join( self.execdir, 'logs' ), os.path.join( self.execdir, 'parsedLogs' ) )
         yield
 
 class ScenarioRunner:
@@ -702,8 +718,10 @@ class ScenarioRunner:
         logThreads = []
         for execution in self.getObjects('execution'):
             execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.getNumber() ) )
-            os.makedirs( os.path.join( execdir, 'logs' ) )
-            os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
+            if not os.path.exists( os.path.join( execdir, 'logs' ) ):
+                os.makedirs( os.path.join( execdir, 'logs' ) )
+            if not os.path.exists( os.path.join( execdir, 'parsedLogs' ) ):
+                os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
             logThreads.append( LogProcessor( execution, execdir ) )
         self.threads += logThreads
         print "Salvaging logs and parsing them"
