@@ -905,7 +905,7 @@ class das4(host):
     
     tempPersistentDirectory = None          # String with the temporary persistent directory on the headnode
     reservationID = None                    # Reservation identifier
-    reservationFixed = False                # Flag to indicate a fixed reservation was used and hence should not be cancelled
+    reservationFixed = None                 # Flag to indicate a fixed reservation was used and hence should not be cancelled
     nodeSet = []                            # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
     slaves = []                             # list of slaves of this master node, None for non-master nodes
     bogusRemoteDir = False                  # Flag to signal whether to ignore the value in self.remoteDirectory
@@ -953,7 +953,7 @@ class das4(host):
         self.keepAliveTimers = []
         self.secondaryMuxIO = {}
         self.secondaryMuxIO__lock = {}
-        self.reservationFixed = False
+        self.reservationFixed = None
 
     def parseSetting(self, key, value):
         """
