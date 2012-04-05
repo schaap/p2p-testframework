@@ -124,7 +124,7 @@ cd $2
 cp $utpath/utorrent.exe .
 HOMEDIR=`cd ~; pwd`
 PATH="$PATH:$HOMEDIR/bin"
-WINEPREFIX="$2/.wine" xvfb-run -a wine utorrent.exe /noinstall /logfile "$log_dir\\ut_log.log" &
+WINEPREFIX="$2/.wine" xvfb-run -n 200 -a wine utorrent.exe /noinstall /logfile "$log_dir\\ut_log.log" &
 pid=$!
 echo $pid > "$2/utserver.pid"
 ( echo $pid >&2 ) > /dev/null

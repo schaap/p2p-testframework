@@ -922,7 +922,7 @@ class CampaignRunner:
         for line in fileObj:
             line = line.strip()
             print "Parsing {0}".format(line)
-            if line == '':
+            if line == '' or re.match( "^ *#", line ):
                 Campaign.currentLineNumber += 1
                 continue
             elif isSectionHeader( line ):

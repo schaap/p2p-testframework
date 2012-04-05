@@ -198,6 +198,8 @@ def getHostnameByIP(ip):
     return socket.gethostbyaddr(ip)[0]
 # ==== /getHostnameByIP(ip)
 
+# ==== stringbuffer    A simple stringbuffer class that works like a pipe, but is not a pipe but just a string
+# Not completely compatible with file(), but the most important operations are there
 class stringbuffer():
     buf = ''
     
@@ -225,8 +227,26 @@ class stringbuffer():
             return self.read()
         else:
             return self.read(pos+1)
+# ==== /stringbuffer
 
+# ==== keepAlive(...) timed function for sending a NOP over a mux channel
 def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex, mux_connection_number):
+    """
+    Sends a NOP on the mux channel and restarts the keepAlive timer.
+    
+    If host_ is in cleanup, this function will return.
+    
+    A NOP will be sent on muxIO.
+    
+    timerlist[timerindex] will be replaced with a new timer that will again call this function with the same arguments.
+    
+    @param    muxIO                  The (write_stream, read_stream) of the mux channel to keep open.
+    @param    muxIO__lock            (write_lock, read_lock) for the above streams.
+    @param    host_                  The host object that created this timer.
+    @param    timerlist              The list of timers this timer is in.
+    @param    timerindex             The index of this timer in the list of timers.
+    @oaram    mux_connection_number  The connection number of the mux channel as to be reported to Campaign.debuglogger.log(...)
+    """
     if host_.isInCleanup():
         return
     try:
