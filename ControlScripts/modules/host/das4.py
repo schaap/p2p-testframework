@@ -338,11 +338,15 @@ class das4MuxConnectionObject(countedConnectionObject):
         try:
             self.sftp__lock.acquire()
             if self.sftpChannel:
-                self.sftpChannel.close()
-                Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED DURING CLOSE' )
-                del self.sftpChannel
-                self.sftpChannel = None
-                self.sftpConnectionList[1] = None
+                try:
+                    self.sftpConnectionList[2].acquire()
+                    self.sftpChannel.close()
+                    Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED DURING CLOSE' )
+                finally:
+                    self.sftpConnectionList[2].release()
+                    del self.sftpChannel
+                    self.sftpChannel = None
+                    self.sftpConnectionList[1] = None
         except socket.error as e:
             if e.args != 'Socket is closed':
                 raise
@@ -684,6 +688,7 @@ class das4MuxConnectionObject(countedConnectionObject):
             chan.exec_command(self.sftpScriptname)
             self.sftpChannel = paramiko.SFTPClient(chan)
             self.sftpConnectionList.append( self.sftpChannel )
+            self.sftpConnectionList.append( threading.Lock() )
             Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL CREATED' )
         finally:
             self.sftp__lock.release()
@@ -696,13 +701,23 @@ class das4MuxConnectionObject(countedConnectionObject):
             self.sftp__lock.acquire()
             if not self.sftpChannel or not self.sftpChannelCreated:
                 return
-            self.sftpChannel.close()
-            del self.sftpChannel
-            self.sftpChannel = None
-            self.sftpConnectionList[1] = None
+            try:
+                self.sftpConnectionList[2].acquire()
+                self.sftpChannel.close()
+            finally:
+                self.sftpConnectionList[2].release()
+                del self.sftpChannel
+                self.sftpChannel = None
+                self.sftpConnectionList[1] = None
             Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED' )
         finally:
             self.sftp__lock.release()
+    
+    def lockSFTP(self):
+        self.sftpConnectionList[2].acquire()
+    
+    def unlockSFTP(self):
+        self.sftpConnectionList[2].release()
     
     @staticmethod
     def existsRemote(sftp, remotePath):
@@ -795,6 +810,12 @@ class das4ConnectionObject(countedConnectionObject):
             Campaign.debuglogger.log( self.getIdentification(), 'SFTP CHANNEL REMOVED' )
         finally:
             self.sftp__lock.release()
+    
+    def lockSFTP(self):
+        pass
+    
+    def unlockSFTP(self):
+        pass
     
     @staticmethod
     def existsRemote(sftp, remotePath):
@@ -895,8 +916,8 @@ class das4(host):
     muxConnCount = 0                        # Number of created mux connections
     # @static
     muxConnCount__lock = threading.Lock()   # Lock for number of mux connections
-    sftpConnections = {}                    # Map from node name to [client, channel] for SFTP (or [client] is the channel has not
-                                            # been made yet)
+    sftpConnections = {}                    # Map from node name to [client, channel, lock] for SFTP (or [client] if the channel
+                                            # has not been made yet)
     keepAliveTimers = []                    # List of timers that run the keepalive function
     secondaryMuxIO = {}                     # Map of secondary mux channel streams and channels, which are basically mux channels
                                             # over the primary muxIO mux channel [(write_stream, read_stream, channelmap),...].
@@ -1327,6 +1348,7 @@ empty
             connection = self.getConnection(reuseConnection)
             newConnection = connection.createSFTPChannel()
             try:
+                connection.lockSFTP()
                 sftp = connection.sftpChannel
                 if das4ConnectionObject.existsRemote(sftp, remoteDestinationPath):
                     if not overwrite: 
@@ -1339,6 +1361,7 @@ empty
                 sftp.put( localSourcePath, remoteDestinationPath )
                 sftp.chmod( remoteDestinationPath, os.stat(localSourcePath).st_mode )
             finally:
+                connection.unlockSFTP()
                 if newConnection:
                     connection.removeSFTPChannel()
         finally:
@@ -1372,6 +1395,7 @@ empty
             connection = self.getConnection(reuseConnection)
             newConnection = connection.createSFTPChannel()
             try:
+                connection.lockSFTP()
                 sftp = connection.sftpChannel
                 paths = [(localSourcePath, remoteDestinationPath)]
                 while len(paths) > 0:
@@ -1391,6 +1415,7 @@ empty
                         sftp.put( localPath, remotePath )
                         sftp.chmod( remotePath, os.stat(localPath).st_mode )
             finally:
+                connection.unlockSFTP()
                 if newConnection:
                     connection.removeSFTPChannel()
         finally:
@@ -1421,12 +1446,14 @@ empty
             connection = self.getConnection(reuseConnection)
             newConnection = connection.createSFTPChannel()
             try:
+                connection.lockSFTP()
                 sftp = connection.sftpChannel
                 if self.isInCleanup():
                     return
                 Campaign.debuglogger.log( connection.getIdentification(), 'SFTP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
                 sftp.get( remoteSourcePath, localDestinationPath )
             finally:
+                connection.unlockSFTP()
                 if newConnection:
                     connection.removeSFTPChannel()
         finally:
