@@ -124,18 +124,57 @@ cd $2
 cp $utpath/utorrent.exe .
 HOMEDIR=`cd ~; pwd`
 PATH="$PATH:$HOMEDIR/bin"
-WINEPREFIX="$2/.wine" xvfb-run -n 200 -a wine utorrent.exe /noinstall /logfile "$log_dir\\ut_log.log" &
+
+if ! which xauth; then
+    ( echo "Could not find xauth, which required for running Xvfb, which in turn is required for the windows version of uTorrent under wine." >&2 ) > /dev/null
+    return -1
+fi
+
+xvfb_tmpdir="$(mktemp --directory --tmpdir utorrent-xvfb.XXXXXX)"
+authfile=$(mktemp -p "$xvfb_tmpdir" Xauthority.XXXXXX)
+errorfile=$(mktemp -p "$xvfb_tmpdir" Xerr.log.XXXXXX)
+
+sn=100
+xvfb_pid=""
+while [ "$xvfb_pid" = "" ]; do
+    while [ -f /tmp/.X${sn}-lock ]; do
+        sn=$(($sn + 1))
+        if [ $sn -gt 1000 ]; then
+            ( echo "Tried every server number between 100 and 1000: no free server numbers for Xvfb." >& 2 ) > /dev/null
+            exit -1
+        fi
+    done
+    xvfb_mcookie=$(mcookie)
+    XAUTHORITY=$authfile xauth source - << EOF >>"$errorfile" 2>&1
+add :$sn . $xvfb_mcookie
+EOF
+    XAUTHORITY=$authfile Xvfb ":$sn" -screen 0 640x480x8 -nolisten tcp >>"$errorfile" 2>&1 &
+    xvfb_pid=$!
+    sleep 3
+    if grep "_XSERVTransMakeAllCOTSServerListeners: server already running" $errorfile; then
+        kill -9 $xvfb_pid > /dev/null 2>/dev/null
+        XAUTHORITY=$authfile xauth remove ":$sn" >>$errorfile 2>&1
+        echo>$errorfile
+        sn=$(($sn + 1))
+        xvfb_pid=""
+    fi
+done
+
+#WINEPREFIX="$2/.wine" xvfb-run -n 200 -a wine utorrent.exe /noinstall /logfile "$log_dir\\ut_log.log" &
+WINEPREFIX="$2/.wine" DISPLAY=:$sn XAUTHORITY=$authfile wine utorrent /noinstall /logfile "$log_dir\\ut_log.log" &
 pid=$!
 echo $pid > "$2/utserver.pid"
 ( echo $pid >&2 ) > /dev/null
 ( kill -0 $pid >&2 ) > /dev/null
 ( echo "$PORT $WEBPORT" >&2 ) > /dev/null
+( date +"%s.%09N" >&2 ) > /dev/null
 
 date +"%s.%09N"
 
 sleep 1
 pid=`cat "$2/utserver.pid"`
 torrentloaded=0
+seedStopping=0
 # Get the loaded torrents
 while [ $going -eq 1 ]; do
     ( wget -O "$2/wget.out" --load-cookies "$2/wget.cookies" --save-cookies "$2/wget.cookies" --keep-session-cookies http://admin:@localhost:$WEBPORT/gui/?list=1 2>/dev/null ) >&2 >/dev/null
@@ -183,24 +222,44 @@ while [ $going -eq 1 ]; do
     #       ],
     #       "torrentc": CACHE ID** (string integer)
     # }
+    if ! kill -0 $pid >/dev/null 2>/dev/null; then
+        ( date +"%s.%09N" >&2 ) >/dev/null
+        ( echo "Client disappeared. Crashed? This is normal if the client was stopped when seeding." >&2 ) >/dev/null
+        going=0
+        break
+    fi
     if [ ! -z "`cat \"$2/wget.out\"`" ]; then
         date +"%s.%09N"
         cat "$2/wget.out"
         if [ $stopWhenSeeding -eq 1 ]; then
-            if grep ",\"Seeding\"," "$2/wget.out" > /dev/null 2> /dev/null; then
-                echo "Stopped when seeding:" >&2
-                grep ",\"Seeding\"," "$2/wget.out" >&2
-                going=0
+            if [ $seedStopping -eq 0 ] && grep ",\"Seeding\"," "$2/wget.out" > /dev/null 2> /dev/null; then
+                ( date +"%s.%09N" >&2 ) > /dev/null
+                ( echo "Stopped when seeding:" >&2 ) > /dev/null
+                ( grep ",\"Seeding\"," "$2/wget.out" >&2 ) > /dev/null
+                seedStopping=1
+                # Stop the client
+                kill $pid
+            elif [ $seedStopping -eq 1 ]; then
+                # I stopped you one second ago, stop already
+                kill -1 $pid
+                seedStopping=2
+            elif [ $seedStopping -ge 6 ]; then
+                # Not listening? Then die
+                kill -9 $pid
+                seedStopping=7
+            elif [ $seedStopping -ge 1 ]; then
+                seedStopping=$(($seedStopping + 1))
             fi
         fi
+        echo>"$2/wget.out"
         # Lazy loading of the torrent using the dir_autoload functionality:
         # utorrent is unreliable in loading torrents that already exist when the client is started
         # so we only copy the torrent file in once the first response has been seen
         if [ $torrentloaded = 0 ]; then
-            date >&2
-            date +"%s.%09N" >&2
-            echo "Adding torrent file" >&2
-            cp "$3" "$2/torrents/" >&2
+            ( date >&2 ) > /dev/null
+            ( date +"%s.%09N" >&2 ) > /dev/null
+            ( echo "Adding torrent file" >&2 ) > /dev/null
+            ( cp "$3" "$2/torrents/" >&2 ) > /dev/null
             torrentloaded=1
         fi
     fi
@@ -209,4 +268,20 @@ done
 
 ( cat "$2/ut_log.log" >&2 ) > /dev/null
 
-kill $pid
+kill $pid >/dev/null 2>/dev/null
+if kill -0 $pid > /dev/null 2>/dev/null; then
+    sleep 1
+    if kill -0 $pid > /dev/null 2>/dev/null; then
+        kill -1 $pid >/dev/null 2>/dev/null
+        if kill -0 $pid >/dev/null 2>/dev/null; then
+            sleep 5
+            if kill -0 $pid>/dev/null 2>/dev/null; then
+                kill -9 $pid >/dev/null 2>/dev/null
+            fi
+        fi
+    fi
+fi
+
+kill $xvfb_pid >/dev/null 2>/dev/null
+XAUTHORITY=$authfile xauth remove ":$sn" >>$errorfile 2>&1
+rm -rf $xvfb_tmpdir

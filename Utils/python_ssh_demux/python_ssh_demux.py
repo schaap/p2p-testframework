@@ -5,14 +5,22 @@ import paramiko
 import traceback
 import socket
 
+# DEBUG
+# SET THE FOLLOWING TO TRUE TO HAVE DEBUG WRITTEN TO YOUR HOMEDIR ON THE MACHINE THE DEMUX IS RUNNING ON:
+
+DODEBUG = False
+
+# /DEBUG
+
 import os
 import time
 
 if __name__ != "__main__":
     raise Exception( "Do not import python_ssh_demux. It is a program meant to run on its own." )
 
-logfile = open( 'demux_log_{0}'.format( os.getpid() ), 'a' )
-zerotime = time.time()
+if DODEBUG:
+    logfile = open( 'demux_log_{0}'.format( os.getpid() ), 'a' )
+    zerotime = time.time()
 
 readlist = [sys.stdin]
 
@@ -42,8 +50,9 @@ def buildReadList():
     # pylint: enable-msg=W0603
     readlist = [connections[c].channel for c in connections if not connections[c].isClosed] + [sys.stdin]
 
-def log( msg ):
-    logfile.write( "{0}: {1}\n".format( (time.time() - zerotime), msg ) )
+def log( msg_ ):
+    if DODEBUG:
+        logfile.write( "{0}: {1}\n".format( (time.time() - zerotime), msg_ ) )
 
 try:
     while True:
@@ -62,7 +71,6 @@ try:
             elif opcode == '\n':
                 # NOP for manual testing purposes
                 log( "STDIN: NOP" )
-                pass
             elif opcode == '+':
                 buf = sys.stdin.read(12)
                 if len(buf) != 12:
@@ -208,7 +216,8 @@ except Exception as e:
     sys.stdout.write( 'X{0}{1}'.format( struct.pack( '!I', len(msg) ), msg ) )
     sys.stdout.flush()
 
-logfile.close()
+if DODEBUG:
+    logfile.close()
 
 dellist = [connNumber for connNumber in connections]
 for connNumber in dellist:
