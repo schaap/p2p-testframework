@@ -90,15 +90,12 @@ class libtorrent(client):
         if not execution.file.getMetaFile(execution.host):
             raise Exception( "In order to use libtorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
         
-        datadir = execution.file.getDataDir(execution.host)
-        if datadir is None:
-            raise Exception( "File {0} did not give a data directory on the remote host, which is required to use libtorrent.".format( execution.file.name ) )
-        
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -s -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), datadir, self.getExecutionLogDir(execution) ) )
-        
+            if execution.file.getDataDir(execution.host) is None:
+                raise Exception( "File {0} did not give a data directory on the remote host, which is required to use libtorrent.".format( execution.file.name ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -s -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), execution.file.getDataDir(execution.host), self.getExecutionLogDir(execution) ) )
         else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), datadir, self.getExecutionLogDir(execution) ) ) 
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), self.getExecutionClientDir(execution), self.getExecutionLogDir(execution) ) ) 
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):

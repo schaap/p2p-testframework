@@ -39,6 +39,7 @@ class connectionObject():
     
     badFlag = False         # Internal flag to DEBUG locking. DO NOT USE!
     badFlag__lock = None    # Internal flag to DEBUG locking. DO NOT USE!
+    badSince = -1           # Time since when the badFlag has been set. For DEBUG locking. DO NOT USE!
     
     async = False           # Flag for asynchronous processing. DO NOT USE! Use setInAsync(), clearInAsync() and isInAsync() instead.
     async__lock = None      # Lock to protect async
@@ -132,8 +133,11 @@ class connectionObject():
         badFlag = self.badFlag
         self.badFlag = True
         res = self.use__lock.acquire(False)
-        if res and not badFlag:
-            self.badFlag = False
+        if not badFlag:
+            if res:
+                self.badFlag = False
+            else:
+                self.badSince = time.time()
         self.badFlag__lock.release()
         return res
     
@@ -145,8 +149,9 @@ class connectionObject():
         """
         self.badFlag__lock.acquire()
         if self.badFlag:
-            Campaign.logger.log( "Previous use preventing connection {0} from locking was unlocked, traceback follows.".format( self.getIdentification( ) ) )
-            Campaign.logger.localTraceback()
+            Campaign.logger.log( "DEBUG: Previous use preventing connection {0} from locking was unlocked.".format( self.getIdentification( ) ) )
+            #Campaign.logger.log( "Previous use preventing connection {0} from locking was unlocked, traceback follows.".format( self.getIdentification( ) ) )
+            #Campaign.logger.localTraceback()
             self.badFlag = False
         self.badFlag__lock.release()
         self.use__lock.release()
@@ -610,8 +615,9 @@ class host(coreObject):
             if connection.isClosed():
                 raise Exception( "Trying to reuse already closed connection {0}".format( connection.getIdentification() ) )
         while not connection.lockForUse():
-            Campaign.logger.log( "Trying to lock connection {0}, but it seems to be locked already. Traceback follows. Sleeping.".format( connection.getIdentification() ) )
-            Campaign.logger.localTraceback()
+            Campaign.logger.log( "DEBUG: Trying to lock connection {0}, but it seems to be locked already. Been locked for {1} seconds. Sleeping.".format( connection.getIdentification(), time.time() - connection.badSince ) )
+            #Campaign.logger.log( "Trying to lock connection {0}, but it seems to be locked already. Traceback follows. Been locked for {1} seconds. Sleeping.".format( connection.getIdentification(), time.time() - connection.badSince ) )
+            #Campaign.logger.localTraceback()
             if connection.isClosed():
                 raise Exception( "Could not lock connection {0}, which now turns out to be closed.".format( connection.getIdentification() ) )
             time.sleep( 1 )
@@ -820,30 +826,32 @@ class host(coreObject):
         coreObject.cleanup(self)
         self.connections__lock.acquire()
         try:
-            if self.tempDirectory:
-                conn = reuseConnection
-                if not conn:
-                    if len(self.connections) < 1:
-                        Campaign.logger.log( "Warning: no connections open for host {0}, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
-                        return
-                    conn = self.connections[0]
+            try:
+                if self.tempDirectory:
+                    conn = reuseConnection
                     if not conn:
-                        Campaign.logger.log( "Warning: default connection for host {0} seems unavailable, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
-                        return
-                self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ), conn )
-                res = self.sendCommand( '[ -d {0} ] && echo "N" || echo "E"'.format( self.tempDirectory ), conn )
-                if res[0] != 'E':
-                    Campaign.logger.log( "Warning: Could not remove temporary directory {0} from host {1} during cleanup.".format( self.tempDirectory, self.name ) )
-                self.tempDirectory = None
-            closeConns = []     # Copy self.connections first: it will be modified while iterating over all connections to close them
-            for conn in self.connections:
-                closeConns.append( conn )
-            for conn in closeConns:
-                try:
-                    self.closeConnection( conn )
-                except Exception as exc:
-                    Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring: ".format( self.name, exc.__str__() ) )
-                    Campaign.logger.exceptionTraceback()
+                        if len(self.connections) < 1:
+                            Campaign.logger.log( "Warning: no connections open for host {0}, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
+                            return
+                        conn = self.connections[0]
+                        if not conn:
+                            Campaign.logger.log( "Warning: default connection for host {0} seems unavailable, but tempDirectory is set. Temporary directory {1} is most likely not removed from the host.".format( self.name, self.tempDirectory ) )
+                            return
+                    self.sendCommand( 'rm -rf {0}'.format( self.tempDirectory ), conn )
+                    res = self.sendCommand( '[ -d {0} ] && echo "N" || echo "E"'.format( self.tempDirectory ), conn )
+                    if res[0] != 'E':
+                        Campaign.logger.log( "Warning: Could not remove temporary directory {0} from host {1} during cleanup.".format( self.tempDirectory, self.name ) )
+                    self.tempDirectory = None
+            finally:
+                closeConns = []     # Copy self.connections first: it will be modified while iterating over all connections to close them
+                for conn in self.connections:
+                    closeConns.append( conn )
+                for conn in closeConns:
+                    try:
+                        self.closeConnection( conn )
+                    except Exception as exc:
+                        Campaign.logger.log( "An exception occurred while closing a connection of host {0} during cleanup; ignoring: ".format( self.name, exc.__str__() ) )
+                        Campaign.logger.exceptionTraceback()
         finally:
             self.connections__lock.release()
     # pylint: enable-msg=W0221

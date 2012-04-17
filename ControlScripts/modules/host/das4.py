@@ -13,6 +13,8 @@ import os
 import struct
 import time
 import socket
+import types
+import traceback
 
 #==========================
 # Multiplexing connections
@@ -250,18 +252,22 @@ def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex, mux_connection_n
     if host_.isInCleanup():
         return
     alreadyClosed = False
+    muxLockStart = time.time()
     try:
         muxIO__lock[0].acquire()
-        muxIO[0].write('\n')
+        muxIO[0].write('N\r\n') # Multi-NOP
+        muxIO[0].flush()
     except socket.error as e:
-        if e.args != 'Socket is closed':
+        if (not type(e.args) == types.TupleType) or e.args[0] != 'Socket is closed':
             raise
+        Campaign.logger.log( "DEBUG: keepAlive on mux connection {0}: already closed".format( mux_connection_number ) )
         alreadyClosed = True
     finally:
+        Campaign.logger.log( "DEBUG: {2} keepAlive on mux connection {1}: released lock {0} seconds after acquiring".format( time.time() - muxLockStart, mux_connection_number, time.time() ) )
         muxIO__lock[0].release()
     if alreadyClosed:
         return
-    Campaign.debuglogger.log( mux_connection_number, 'SEND \\n' )
+    Campaign.debuglogger.log( mux_connection_number, 'SEND N\\n' )
     if host_.isInCleanup():
         return
     oldtimer = timerlist[timerindex]
@@ -317,7 +323,7 @@ class das4MuxConnectionObject(countedConnectionObject):
             self.muxIO[0].flush()
             Campaign.debuglogger.log( self.muxConnectionNumber, 'SEND - {0}'.format( self.connNumber ) )
         except socket.error as e:
-            if e.args != 'Socket is closed':
+            if (not type(e.args) == types.TupleType) or e.args[0] != 'Socket is closed':
                 raise
             alreadyClosed = True
         finally:
@@ -348,7 +354,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                     self.sftpChannel = None
                     self.sftpConnectionList[1] = None
         except socket.error as e:
-            if e.args != 'Socket is closed':
+            if (not type(e.args) == types.TupleType) or e.args[0] != 'Socket is closed':
                 raise
             del self.sftpChannel
             self.sftpChannel = None
@@ -427,24 +433,24 @@ class das4MuxConnectionObject(countedConnectionObject):
                 Campaign.debuglogger.log( mux_connection_number, 'RECV OPCODE {0}'.format( opcode ) )
                 if opcode == '':
                     if isinstance(muxIO[1], das4MuxConnectionObject):
-                        Campaign.logger.log( "Unexpected EOF on secondary mux" )
+                        Campaign.logger.log( "Unexpected EOF on secondary mux number {0}".format( mux_connection_number ) )
                     else:
-                        Campaign.logger.log( "Unexpected EOF on primary mux" )
+                        Campaign.logger.log( "Unexpected EOF on primary mux number {0}".format( mux_connection_number ) )
                     raise Exception( "Unexpected EOF on mux channel; expected 1 byte opcode, got ''" )
                 elif opcode == 'X':
                     # Muxer quit, failure
                     buf = muxIO[1].read(4)
                     if len(buf) < 4:
                         Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LEN {0}'.format( buf ) )
-                        raise Exception( "Remote demuxer suddenly quit, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf ) ) )
+                        raise Exception( "Remote demuxer {1} suddenly quit, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf, mux_connection_number ) ) )
                     errlen = struct.unpack( '!I', buf )[0]
                     Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED LEN {0}'.format( errlen ) )
                     problem = muxIO[1].read(errlen)
                     if len(problem) < errlen:
                         Campaign.debuglogger.log( mux_connection_number, 'RECV TOO SHORT PROBLEM {0}'.format( problem ) )
-                        raise Exception( "Remote demuxer suddenly quit, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem ) )
+                        raise Exception( "Remote demuxer {3} suddenly quit, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem, mux_connection_number ) )
                     Campaign.debuglogger.log( mux_connection_number, 'RECV PROBLEM {0}'.format( problem ) )
-                    raise Exception( "Remote demuxer suddenly quit. Reported problem: {0}".format( problem ) )
+                    raise Exception( "Remote demuxer {1} suddenly quit. Reported problem: {0}".format( problem, mux_connection_number ) )
                 elif opcode == '+':
                     # Response to a '+' message: new connection. Fail if unexpected
                     if expect != '+':
@@ -460,17 +466,17 @@ class das4MuxConnectionObject(countedConnectionObject):
                         buf = muxIO[1].read(4)
                         if len(buf) < 4:
                             Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LEN {0}'.format( buf ) )
-                            raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel; expected 4 bytes error message length, got {0} bytes".format( len( buf ) ) )
+                            raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel {1}; expected 4 bytes error message length, got {0} bytes".format( len( buf ), mux_connection_number ) )
                         errlen = struct.unpack( '!I', buf )[0]
                         Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED LEN {0}'.format( errlen ) )
                         problem = muxIO[1].read(errlen)
                         if len(problem) < errlen:
                             Campaign.debuglogger.log( mux_connection_number, 'RECV TOO SHORT PROBLEM {0}'.format( problem ) )
-                            raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem ) )
+                            raise Exception( "The connection could not be set up over the mux channel, followed by unexpected EOF on mux channel {3}; expected {0} bytes of error message, got {1} bytes: '{2}'".format( errlen, len(problem), problem, mux_connection_number ) )
                         Campaign.debuglogger.log( mux_connection_number, 'RECV PROBLEM {0}'.format( problem ) )
                         raise Exception( "The connection could not be set up over the mux channel. Reported problem: {0}".format( problem ) )
                     elif result == '':
-                        raise Exception( "Unexpected EOF on mux channel; expected 1 byte new connection result, got ''" )
+                        raise Exception( "Unexpected EOF on mux channel {0}; expected 1 byte new connection result, got ''".format( mux_connection_number ) )
                     else:
                         raise Exception( "Connection setup over mux channel went awry: incorrect result {0}".format( result ) )
                 elif opcode == '-':
@@ -478,7 +484,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                     connbuf = muxIO[1].read(4)
                     if len(connbuf) < 4:
                         Campaign.debuglogger.log( mux_connection_number, 'RECV BAD CONNNUMBER {0}'.format( connbuf ) )
-                        raise Exception( "Unexpected EOF on mux channel; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ) ) )
+                        raise Exception( "Unexpected EOF on mux channel {1}; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ), mux_connection_number ) )
                     connNumber = struct.unpack( '!I', connbuf )[0]
                     Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED CONNNUMBER {0}'.format( connNumber ) )
                     if connNumber in muxIO[2]:
@@ -494,7 +500,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                     connbuf = muxIO[1].read(4)
                     if len(connbuf) < 4:
                         Campaign.debuglogger.log( mux_connection_number, 'RECV BAD CONNNUMBER {0}'.format( connbuf ) )
-                        raise Exception( "Unexpected EOF on mux channel; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ) ) )
+                        raise Exception( "Unexpected EOF on mux channel {1}; expected 4 bytes connection number, got {0} bytes".format( len( connbuf ), mux_connection_number ) )
                     incomingConnNumber = struct.unpack( '!I', connbuf )[0]
                     Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED CONNNUMBER {0}'.format( struct.unpack( '!I', connbuf )[0] ) )
                     if opcode == '0':
@@ -502,7 +508,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                         data = muxIO[1].readline()
                         if data == '' or data[-1] != '\n':
                             Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LINE {0}'.format( data ) )
-                            raise Exception( "Unexpected EOF on mux channel; expected a single line, got '{0}'".format( data ) )
+                            raise Exception( "Unexpected EOF on mux channel {1}; expected a single line, got '{0}'".format( data, mux_connection_number ) )
                         Campaign.debuglogger.log( mux_connection_number, 'RECV LINE {0}'.format( data ) )
                         datalen = len(data)
                     else:
@@ -510,13 +516,13 @@ class das4MuxConnectionObject(countedConnectionObject):
                         buf = muxIO[1].read(4)
                         if len(buf) != 4:
                             Campaign.debuglogger.log( mux_connection_number, 'RECV BAD LEN {0}'.format( buf ) )
-                            raise Exception( "Unexpected EOF on mux channel; expected 4 bytes length, got {0} bytes".format( len( buf ) ) )
+                            raise Exception( "Unexpected EOF on mux channel {1}; expected 4 bytes length, got {0} bytes".format( len( buf ), mux_connection_number ) )
                         datalen = struct.unpack( '!I', buf )[0]
                         Campaign.debuglogger.log( mux_connection_number, 'RECV DECODED LEN {0}'.format( datalen ) )
                         data = muxIO[1].read(datalen)
                         if len(data) != datalen:
                             Campaign.debuglogger.log( mux_connection_number, 'RECV TOO SHORT DATA {0}'.format( data ) )
-                            raise Exception( "Unexpected EOF on mux channel; expected {0} bytes of data, got {1} bytes: '{2}'".format( datalen, len(data), data ) )
+                            raise Exception( "Unexpected EOF on mux channel {3}; expected {0} bytes of data, got {1} bytes: '{2}'".format( datalen, len(data), data, mux_connection_number ) )
                         Campaign.debuglogger.log( mux_connection_number, 'RECV DATA {0}'.format( data ) )
                     # A connection's data. Write into that connection's buffer.
                     if incomingConnNumber not in muxIO[2]:
@@ -533,7 +539,7 @@ class das4MuxConnectionObject(countedConnectionObject):
                     if expect[0] == '1' and connbuf == expect[1:5] and dataLen >= expectLen:
                         return
                 else:
-                    raise Exception( "Unexpected opcode over mux channel: {0}".format( opcode ) )
+                    raise Exception( "Unexpected opcode over mux channel {1}: {0}".format( opcode, mux_connection_number ) )
         finally:
             muxIO__lock[1].release()
     
@@ -1776,7 +1782,15 @@ empty
         
         @param  reuseConnection If not None, force the use of this connection object for commands to the host.
         """
-        host.cleanup(self, reuseConnection)
+        try:
+            host.cleanup(self, reuseConnection)
+        except socket.error as e:
+            if (not type(e.args) == types.TupleType) or e.args[0] != "Socket is closed":
+                Campaign.logger.log( "Ignoring exception while trying to run base cleanup on this DAS4 host: {0}".format( e.__str__() ) )
+                Campaign.logger.exceptionTraceback()
+                Campaign.logger.log( "Warning: temporary directories may not have been removed" )
+            else:
+                Campaign.logger.log( "Warning: socket closed error while trying to run base cleanup, temporary directories may not have been removed" )
         if self.reservationID:
             # Supervisor host
             if len([h_ for h_ in self.scenario.getObjects('host') if isinstance(h_, das4) and not h_.isInCleanup()]) > 0:
@@ -1813,8 +1827,13 @@ empty
                     else:
                         gotLock = True
                     if gotLock:
-                        self.secondaryMuxIO[hostname][0].write('X\n')
-                        self.secondaryMuxIO[hostname][0].flush()
+                        try:
+                            self.secondaryMuxIO[hostname][0].write('X\n')
+                            self.secondaryMuxIO[hostname][0].flush()
+                        except socket.error as e:
+                            if (not type(e.args) == types.TupleType) or e.args[0] != "Socket is closed":
+                                Campaign.logger.log("Ignoring exception while trying to shut down communications with secondary mux: {0}".format( e.__str__()))
+                                Campaign.logger.exceptionTraceback()
                 finally:
                     if gotLock:
                         self.secondaryMuxIO__lock[hostname][0].release()
@@ -1831,9 +1850,14 @@ empty
                 else:
                     gotLock = True
                 if gotLock:
-                    self.muxIO[0].write('X\n')
-                    self.muxIO[0].flush()
-                    Campaign.debuglogger.log( 'das4_master_mux', 'SEND X\\n' )
+                    try:
+                        self.muxIO[0].write('X\n')
+                        self.muxIO[0].flush()
+                        Campaign.debuglogger.log( 'das4_master_mux', 'SEND X\\n' )
+                    except socket.error as e:
+                        if (not type(e.args) == types.TupleType) or e.args[0] != "Socket is closed":
+                            Campaign.logger.log("Ignoring exception while trying to shut down communications with primary mux: {0}".format( e.__str__()))
+                            Campaign.logger.exceptionTraceback()
             finally:
                 if gotLock:
                     self.muxIO__lock[0].release()
@@ -1843,9 +1867,16 @@ empty
             Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL REMOVED' )
             showError = False
             if self.tempPersistentDirectory:
-                res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
-                if res.splitlines()[-1] != "OK":
+                try:
+                    res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
+                    if res.splitlines()[-1] != "OK":
+                        showError = True
+                except socket.error as e:
                     showError = True
+                    if (not type(e.args) == types.TupleType) or e.args[0] != "Socket is closed":
+                        res = "Socket is closed"
+                    else:
+                        res = e.__str__() + '\n' + traceback.format_exc() 
                 self.tempPersistentDirectory = None
             del self.masterIO
             self.masterIO = None
@@ -1863,7 +1894,7 @@ empty
                     del self.sftpConnections[node][1]
                 del self.sftpConnections[node]
             if showError:
-                raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
+                raise Exception( "Could not remove the persistent temporary directory {2} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
             # / Supervisor host
         else:
             # Non-supervisor host (both master and slave)
@@ -1873,11 +1904,22 @@ empty
                 if self.slaves and len(self.slaves) > 0:
                     for h in self.slaves:
                         if not h.isInCleanup():
-                            h.cleanup()
+                            try:
+                                h.cleanup()
+                            except Exception as e:
+                                Campaign.logger.log("Ignoring exception while trying to run cleanup on other DAS4 host: {0}".format( e.__str__()))
+                                Campaign.logger.exceptionTraceback()
                 if self.tempPersistentDirectory:
-                    res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
-                    if res.splitlines()[-1] != "OK":
+                    try:
+                        res = self.sendMasterCommand('rm -rf "{0}" && echo "OK"'.format( self.tempPersistentDirectory ) )
+                        if res.splitlines()[-1] != "OK":
+                            showError = True
+                    except socket.error as e:
                         showError = True
+                        if (not type(e.args) == types.TupleType) or e.args[0] != "Socket is closed":
+                            res = "Socket is closed"
+                        else:
+                            res = e.__str__() + '\n' + traceback.format_exc() 
                     self.tempPersistentDirectory = None
                 # / Master host
             del self.muxIO
@@ -1887,7 +1929,7 @@ empty
             del self.masterConnection
             self.masterConnection = None
             if showError:
-                raise Exception( "Could not remove the persistent temporary directory {3} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
+                raise Exception( "Could not remove the persistent temporary directory {2} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
             # / Non-supervisor host
 
     def getTestDir(self):
