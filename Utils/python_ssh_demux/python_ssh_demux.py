@@ -72,6 +72,10 @@ try:
         (ready, _, _) = select.select( readlist, [], [], 600 )
         while ready == []:
             # No input found on any channel for 60 seconds; we're dead?
+            if time.time() - s__ < 600:
+                log( "timeout without timeout? Only {0} seconds passed".format( time.time() - s__ ) )
+                (ready, _, _) = select.select( readlist, [], [], 600 )
+                continue
             preknownopcode = ''
             fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl_nonblock)
             try:
@@ -263,8 +267,6 @@ try:
                         buf += buf2
                         if len(buf2) < 1024:
                             break
-                    if buf != '':
-                        hasHadData = True
                     if buf.find('\n') == len(buf) - 1:
                         log( "STDOUT: SEND {1}".format( connN, '0{0}{1}'.format( conn.packedNumber, buf ) ) )
                         sys.stdout.write( '0{0}{1}'.format( conn.packedNumber, buf ) )
