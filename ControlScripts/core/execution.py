@@ -9,21 +9,21 @@ class execution(coreObject):
     """
     An execution object.
 
-    Executions are the combination of host, client and file. Their meaning is that the client is executed once on
-    the host to transfer the file.
+    Executions are the combination of host, client and files. Their meaning is that the client is executed once on
+    the host to transfer the files.
 
     Subclasses of execution do not exist.
     """
 
     hostName = None             # The name of the host object
     clientName = None           # The name of the client object
-    fileName = None             # The name of the file object
+    fileNames = None            # The names of the file objects
     parserNames = None          # The list of names of the parser objects
 
     host = None                 # The host object
     client = None               # The client object
     # Yes, that's a warning below. That's OK, though.
-    file = None                 # The file object
+    files = None                # The files array, consist of multiple file objects
     parsers = None              # The list of parser objects
 
     seeder = False              # True iff this execution is a seeder
@@ -80,11 +80,14 @@ class execution(coreObject):
                 parseError( "{0} is not a valid client object name".format( value ) )
             self.clientName = value
         elif key == 'file':
-            if self.fileName:
-                parseError( "A file was already given: {0}".format( self.fileName ) )
             if not isValidName( value ):
                 parseError( "{0} is not a valid file object name".format( value ) )
-            self.fileName = value
+            if not self.fileNames:
+                self.fileNames = [value]
+            elif value not in self.fileNames:
+                self.fileNames.append(value)
+            else:
+                Campaign.logger.log( "Warning for execution object on line {0}: file object {1} already added".format( Campaign.currentLineNumber, value ) )
         elif key == 'parser':
             if not isValidName( value ):
                 parseError( "{0} is not a valif parser object name".format( value ) )
@@ -119,8 +122,6 @@ class execution(coreObject):
             raise Exception( "Execution defined at line {0} must have a host.".format( self.declarationLine ) )
         if not self.clientName:
             raise Exception( "Execution defined at line {0} must have a client.".format( self.declarationLine ) )
-        if not self.fileName:
-            raise Exception( "Execution defined at line {0} must have a file.".format( self.declarationLine ) )
         if self.timeout == None:
             self.timeout = 0
         if not self.isSeeder() and self.keepSeeding:
@@ -132,25 +133,33 @@ class execution(coreObject):
         
         This methods is called after all objects have been initialized.
         """
-        if self.hostName not in self.scenario.getObjectsDict('host'):
+        fdict = self.scenario.getObjectsDict('file')
+        pdict = self.scenario.getObjectsDict('parser')
+        hdict = self.scenario.getObjectsDict('host')
+        cdict = self.scenario.getObjectsDict('client') 
+        if self.hostName not in hdict:
             raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )
-        if self.clientName not in self.scenario.getObjectsDict('client'):
+        if self.clientName not in cdict:
             raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
-        if self.fileName not in self.scenario.getObjectsDict('file'):
-            raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, self.fileName ) )
+        if self.fileNames:
+            for fileName in self.fileNames:
+                if fileName not in fdict:
+                    raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, fileName ) )
         if self.parserNames:
             for parser in self.parserNames:
-                if parser not in self.scenario.getObjectsDict('parser'):
+                if parser not in pdict:
                     try:
                         Campaign.loadModule( 'parser', parser )
                     except ImportError:
                         raise Exception( "Execution defined at line {0} refers to parser {1} which is never declared".format( self.declarationLine, parser ) )
-        self.host = self.scenario.getObjectsDict('host')[self.hostName]
-        self.client = self.scenario.getObjectsDict('client')[self.clientName]
-        self.file = self.scenario.getObjectsDict('file')[self.fileName]
+        self.host = hdict[self.hostName]
+        self.client = cdict[self.clientName]
+        self.files = []
+        if self.fileNames:
+            for fileName in self.fileNames:
+                self.files.append( fdict[fileName] )
         if self.parserNames:
             self.parsers = []
-            pdict = self.scenario.getObjectsDict( 'parser' )
             for parser in self.parserNames:
                 if parser in pdict:
                     self.parsers.append( pdict[parser] )
@@ -252,6 +261,21 @@ class execution(coreObject):
         if not self.executionConnection:
             self.createRunnerConnections()
         return self.executionConnection
+    
+    def getDataDirList(self):
+        """
+        Returns the list of data directories of seeding files for this execution.
+        
+        This is basically just a loop over all seeding file objects in the host which request their data dir and appends it to the list.
+        Each element is guaranteed to be unique.
+        """
+        l = []
+        for f in self.host.seedingFiles:
+            d = f.getDataDir(self.host)
+            if d is not None:
+                if d not in l:
+                    l.append(d)
+        return l
 
     @staticmethod
     def APIVersion():

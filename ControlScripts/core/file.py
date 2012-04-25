@@ -66,6 +66,18 @@ class file(coreObject):
             self.metaFile = value
         else:
             parseError( 'Unknown parameter name: {0}'.format( key ) )
+    
+    def copyFile(self, other):
+        """
+        Helper method to copy the settings of another file object to this file object.
+        
+        This base implementation will only copy the base parameters, excluding name.
+        
+        @param    other    The other file object of which the settings are to be copied into self.
+        """
+        self.scenario = other.scenario
+        self.rootHash = other.rootHash
+        self.metaFile = other.metaFile
 
     def checkSettings(self):
         """
@@ -84,6 +96,16 @@ class file(coreObject):
         Resolve any names given in the parameters.
         
         This methods is called after all objects have been initialized.
+        """
+        pass
+    
+    def doPreprocessing(self):
+        """
+        Run directly after all objects in the scenario have run resolveNames and before cross referenced data is filled in (e.g. the files and seedingFiles arrays in all hosts are still empty).
+        
+        This method may alter executions as it sees fit, mainly to allow the file object to add more file objects to executions as needed.
+        
+        When creating extra file objects, don't forget to also register them with the scenario via self.scenario.addObject(theNewFileObject)!
         """
         pass
 
@@ -167,7 +189,7 @@ class file(coreObject):
     
     def getDataDir(self, host):
         """
-        Returns the path to the dircetory containing the files on the remote seeding host.
+        Returns the path to the directory containing the files on the remote seeding host.
         
         The path is always a directory and should point to the parent of self.getFile(...).
         

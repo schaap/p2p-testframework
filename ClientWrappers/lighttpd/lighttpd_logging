@@ -1,88 +1,94 @@
 #!/bin/bash
 
 # USAGE:
-# $0 clientDir workingDir dataFile [useSSL]
+# $0 workingDir port useSSL dataDir [dataDir ...]
 #
-# clientDir will contain the lock files for sockets, this should be a shared directory for all clients on the same machine
 # workingDir will be cleaned out (rm -rf *), the file to served will be copied in
-# dataFile will be copied to workingDir
-# useSSL enables HTTPS instead of HTTP, unless it's explicitly "no"
+# port is the integer port number to listen on, must be smaller 65536
+# useSSL enables HTTPS instead of HTTP, it must be either SSL or NOSSL for, respectively, using SSL or not using SSL
+# dataDir entries refer to directories containing data files. Their contents are copied to the working directory.
 
 going=1
 trap "going=0" SIGINT SIGTERM
 
-if [ -z "$1" ]; then
-    echo "No \$1"
+if [ $# -lt 4 ]; then
+    echo "Not enough arguments to $0"
     exit -1
 fi
 
-if [ -z "$2" ]; then
-    echo "No \$2"
-    exit -1
-fi
-
-if [ -z "$3" ]; then
-    echo "No \$3"
-    exit -1
-fi
-
-if [ ! -d "$1" ]; then  
-    echo "Not a dir: $1"
-    exit -1
-fi
-
-if [ ! -d "$2" ]; then  
-    echo "Not a dir: $2"
-    exit -1
-fi
-
-if [ ! -f "$3" ]; then
-    echo "Not a file: $3"
-    exit -1
-fi
-
-if [ -z "$4" ]; then
-    echo "No port: \$4"
-    exit -1
-fi
-
-if ! echo "$4" | grep -E "^[0-9][0-9]*$" > /dev/null; then
-    echo "Not a valid port: $4"
-    exit -1
-fi
-
-if [ "$4" -gt 65535 ]; then
-    echo "Not a valid port: $4"
-    exit -1
-fi
-
+workingDir="$1"
+PORT="$2"
 useSSL=0
-if [ ! -z "$5" ]; then
-    if [ "$5" != "no" ]; then
+if [ ! -z "$3" ]; then
+    if [ "$3" != "NOSSL" ]; then
         useSSL=1
+    elif [ "$3" != "SSL" ]; then
+        echo "Incorrect SSL specifier, expected SSL or NOSSL"
+        exit -1
     fi
 fi
+shift 3
 
-rm -f "$2"/*
-
-cp "$3" "$2/"
-
-PORT=$4
-
-echo "server.document-root = \"$2\"" >> "$2/lighttpd.conf"
-echo "server.port = $PORT" >> "$2/lighttpd.conf"
-echo "server.modules = ( \"mod_status\" )" >> "$2/lighttpd.conf"
-echo "status.status-url = \"/server-status\"" >> "$2/lighttpd.conf"
-echo "server.pid-file = \"$2/lighttpd.pid\"" >> "$2/lighttpd.conf"
-
-if [ $useSSL -eq 1 ]; then
-    openssl req -new -x509 -keyout "$2/server.pem" -out "$2/server.pem" -days 2 -nodes -batch
-
-    echo "ssl.engine = \"enable\"" >> "$2/lighttpd.conf"
-    echo "ssl.pemfile = \"$2/server.pem\"" >> "$2/lighttpd.conf"
+if [ -z "$workingDir" ]; then
+    echo "No working dir"
+    exit -1
 fi
 
-./lighttpd -m . -f "$2/lighttpd.conf"
+if [ ! -d "$workingDir" ]; then  
+    echo "Not a working dir: $workingDir"
+    exit -1
+fi
+
+if [ -z "$PORT" ]; then
+    echo "No port: $PORT"
+    exit -1
+fi
+
+if ! echo "$PORT" | grep -E "^[0-9][0-9]*$" > /dev/null; then
+    echo "Not a valid port: $PORT"
+    exit -1
+fi
+
+if [ "$PORT" -gt 65535 ]; then
+    echo "Not a valid port: $PORT"
+    exit -1
+fi
+
+rm -f "$workingDir"/*
+
+hadOne=0
+while (( $# )); do
+    if [ -z "$1" ]; then
+        shift
+        continue
+    fi
+    if [ ! -d "$1" ]; then
+        echo "Not a data directory: $1"
+        exit -1
+    fi
+    cp -r "$1"/* "$workingDir/"
+    hadOne=1
+    shift
+done
+if [ $hadOne -eq 0 ]; then
+    echo "At least one valid data directory required."
+    exit -1
+fi
+
+echo "server.document-root = \"$workingDir\"" >> "$workingDir/lighttpd.conf"
+echo "server.port = $PORT" >> "$workingDir/lighttpd.conf"
+echo "server.modules = ( \"mod_status\" )" >> "$workingDir/lighttpd.conf"
+echo "status.status-url = \"/server-status\"" >> "$workingDir/lighttpd.conf"
+echo "server.pid-file = \"$workingDir/lighttpd.pid\"" >> "$workingDir/lighttpd.conf"
+
+if [ $useSSL -eq 1 ]; then
+    openssl req -new -x509 -keyout "$workingDir/server.pem" -out "$workingDir/server.pem" -days 2 -nodes -batch
+
+    echo "ssl.engine = \"enable\"" >> "$workingDir/lighttpd.conf"
+    echo "ssl.pemfile = \"$workingDir/server.pem\"" >> "$workingDir/lighttpd.conf"
+fi
+
+./lighttpd -m . -f "$workingDir/lighttpd.conf"
 
 date +"%s.%09N"
 
@@ -92,12 +98,12 @@ if [ $useSSL -eq 1 ]; then
 fi
 
 sleep 1
-pid=`cat "$2/lighttpd.pid"`
+pid=`cat "$workingDir/lighttpd.pid"`
 while [ $going -eq 1 ]; do
-    ( wget -O "$2/wget.out" --no-check-certificate $protocol://localhost:$PORT/server-status\?auto 2>/dev/null ) >&2 >/dev/null
-    if [ ! -z "`cat \"$2/wget.out\"`" ]; then
+    ( wget -O "$workingDir/wget.out" --no-check-certificate $protocol://localhost:$PORT/server-status\?auto 2>/dev/null ) >&2 >/dev/null
+    if [ ! -z "`cat \"$workingDir/wget.out\"`" ]; then
         date +"%s.%09N"
-        cat "$2/wget.out"
+        cat "$workingDir/wget.out"
     fi
     sleep 1
 done

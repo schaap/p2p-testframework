@@ -105,6 +105,7 @@ class BusyExecutionThread(threading.Thread):
         raise Exception( "Not implemented!" )
     
     def run(self):
+        # Just go over the steps in the task to be executed
         self.busy = True
         try:
             for _ in self.doTask():
@@ -149,6 +150,12 @@ class BusyExecutionThread(threading.Thread):
         return "Task thread type {2} for execution with client {0} on host {1}".format( self.execution.client.name, self.execution.host.name, self.__class__.__name__ )
 
 class ClientRunnerHelperThread(threading.Thread):
+    """
+    A single Thread that will continue to run the processes in the iter_list.
+    All the processes in that list are generators that need to yield one more step.
+    The iter_list is used as a queue, protected by the iter_list__lock: append to the end to enqueue.
+    A condition cond should be notified whenever a new item is put in the queue.
+    """
     running = False
     iter_list = None
     iter_list__lock = None
@@ -162,7 +169,9 @@ class ClientRunnerHelperThread(threading.Thread):
     def run(self):
         self.running = True
         while self.running:
+            # Don't stop until we're not running anymore
             while self.running:
+                # As long as we're running, try to pick up an item from the list 
                 it = None
                 try:
                     self.iter_list__lock.acquire()
@@ -172,12 +181,14 @@ class ClientRunnerHelperThread(threading.Thread):
                 finally:
                     self.iter_list__lock.release()
                 if it is None:
+                    # If there were no more items in the list: wait
                     break
                 try:
                     it.next()
                 except Exception:
                     pass
             if self.running:
+                # We broke in the previous while loop, so no items in the list; wait for the condition.
                 self.cond.acquire()
                 self.cond.wait()
                 self.cond.release()
@@ -189,23 +200,36 @@ class ClientRunner(BusyExecutionThread):
     endTime = -1
     
     def doTask(self):
+        """
+        Be sure to override this to implement the actual task.
+        
+        The task may have multiple steps that should be ended with a yield each.
+        
+        Also be sure to place yield at the end!
+        """
+        # First initialize starting time: clients can be delayed in their start
         self.startTime = time.time() + self.execution.timeout
         self.doneStart = False
         yield
+        # Calculate time until we need to start
         diffTime = self.startTime - time.time()
         while diffTime > 0:
+            # While time is left until start, sleep min( diffTime, 5s )
             if diffTime > 5:
                 time.sleep(5)
             else:
                 time.sleep(diffTime)
+            # Be nice: don't keep going when we should stop
             if self.inCleanup:
                 yield
                 return
             if self.endTime >= 0 and time.time() > self.endTime:
                 yield
                 return
+            # Recalculate time until start
             diffTime = self.startTime - time.time()
         if not self.inCleanup:
+            # Start the client
             it = self.execution.client.start( self.execution )
             it.next()
             self.doneStart = True 
@@ -215,6 +239,9 @@ class ClientRunner(BusyExecutionThread):
         yield
         
     def runSequentially(self, listOfThreads):
+        """
+        Runs the list of threads sequentially.
+        """
         # Get all the iterators ready
         iters = [(t.doTask(), t) for t in listOfThreads]
         times = []
@@ -230,11 +257,10 @@ class ClientRunner(BusyExecutionThread):
         try:
             helper.start()
             timeCounter = 0
+            # Do second step (sleep until start and start) for each thread in order of starting time
+            # Then add them to the helper thread for step three
             while timeCounter < len(sortTimes):
                 sortTimes[timeCounter][0][0].next()
-                timeCounter += 1
-            timeCounter = 0
-            while timeCounter < len(sortTimes):
                 helper.iter_list__lock.acquire()
                 helper.iter_list.append(sortTimes[timeCounter][0][0])
                 helper.iter_list__lock.release()
@@ -247,6 +273,7 @@ class ClientRunner(BusyExecutionThread):
             helper.cond.acquire()
             helper.cond.notify()
             helper.cond.release()
+            # After stopping the list, be sure to empty the list to put the system back in stable state
             helper.iter_list__lock.acquire()
             l = list(helper.iter_list)
             helper.iter_list = []
@@ -265,6 +292,7 @@ class ClientRunner(BusyExecutionThread):
             running = True
             timeCounter = 0
             while running:
+                # Assume this will be the last run; this will be reset as soon as we find an iterator that isn't done yet
                 running = False
                 for timeCounter in range(0, len(sortTimes)):
                     iter_i = sortTimes[timeCounter][0][0]
@@ -275,6 +303,7 @@ class ClientRunner(BusyExecutionThread):
                         except StopIteration:
                             sortTimes[timeCounter] = ((None, sortTimes[timeCounter][0][1]), sortTimes[timeCounter][1])
         finally:
+            # On errors, at least get the system to a stable state again
             for timeCounter in range(0, len(sortTimes)):
                 c = sortTimes[timeCounter][0]
                 if c[0] is not None and c[1].doneStart:
@@ -284,15 +313,27 @@ class ClientRunner(BusyExecutionThread):
                         pass
             
     def prepareConnection(self):
+        """
+        Prepares the connections for the runners.
+        """
         self.execution.createRunnerConnections( )
 
     def cleanup(self):
+        """Cleans up the thread's execution, which is just setting self.cleanup by default."""
+        # Also kill clients that are already/still running
         if self.execution.client.isRunning( self.execution ):
             self.execution.client.kill( self.execution )
 
 class ClientKiller(BusyExecutionThread):
     """Simple runner for client.kill()"""
     def doTask(self):
+        """
+        Be sure to override this to implement the actual task.
+        
+        The task may have multiple steps that should be ended with a yield each.
+        
+        Also be sure to place yield at the end!
+        """
         if self.execution.client.isRunning( self.execution ):
             self.execution.client.kill( self.execution )
         yield
@@ -302,11 +343,26 @@ class LogProcessor(BusyExecutionThread):
     execdir = ''
     salvage = False
     def __init__(self, execution, execdir, salvage = False):
+        """
+        Initializes a LogProcessor thread.
+        
+        @param    execution    The execution object to run this thread for, passed to BusyExecutionThread.
+        @param    execdir      Path to the base directory of the execution on the local machine.
+        @param    salvage      Set to True to run in salvage mode, which will safeguard everything in a desperate attempt to get as much data as possible, without errors breaking it.
+        """
         self.execdir = execdir
         BusyExecutionThread.__init__(self, execution)
         self.salvage = salvage
 
     def doTask(self):
+        """
+        Be sure to override this to implement the actual task.
+        
+        The task may have multiple steps that should be ended with a yield each.
+        
+        Also be sure to place yield at the end!
+        """
+        # First retrieve the logs; safeguard if salvaging
         if self.salvage:
             try:
                 self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
@@ -316,6 +372,7 @@ class LogProcessor(BusyExecutionThread):
         else:
             self.execution.client.retrieveLogs( self.execution, os.path.join( self.execdir, 'logs' ) )
         yield
+        # Then run the parsers on those logs; safeguard if salvaging
         if not self.inCleanup:
             if self.salvage:
                 try:
@@ -389,6 +446,23 @@ class ScenarioRunner:
         if moduleType in self.objects and len(self.objects[moduleType]):
             return self.objects[moduleType]
         return {}
+    
+    def addObject(self, obj):
+        """
+        Adds the object obj to the dictionary of object of type obj.getModuleType().
+        The object will be placed in self.objects.
+        
+        If obj.getModuleType() is not a known moduleType yet, it will be added.
+        
+        An exception is raised if obj.getName() is already in that dictionary.
+        
+        @param  obj            The object to be added.
+        """
+        if obj.getModuleType() not in self.objects:
+            self.objects[obj.getModuleType()] = {}
+        if obj.getName() in self.objects[obj.getModuleType()]:
+            raise Exception( "Object {0} already in dictionary for module type {1}. If this occurred while reading the scenario files you might have used the same name twice.".format( obj.getName(), obj.getModuleType() ) )
+        self.objects[obj.getModuleType()][obj.getName()] = obj
 
     def read(self):
         """
@@ -423,11 +497,7 @@ class ScenarioRunner:
                 # Create the object and have it parse the settings
                 if obj is not None:
                     obj.checkSettings()
-                    if not obj.getModuleType() in self.objects:
-                        self.objects[obj.getModuleType()] = {}
-                    elif obj.getName() in self.objects[obj.getModuleType()]:
-                        raise Exception( "Element {0} in objects list of type {1} already present. Maybe you used the same name twice?".format( obj.getName(), obj.getModuleType() ) ) 
-                    self.objects[obj.getModuleType()][obj.getName()] = obj
+                    self.addObject(obj)
                 print "Parsing " + line
                 objectClass = loadModule( getModuleType( getSectionName( line ) ), getModuleSubType( getSectionName( line ) ) )
                 obj = objectClass( self )
@@ -441,11 +511,7 @@ class ScenarioRunner:
         if obj is None:
             raise Exception( "No objects found in scenario {0}".format( self.name ) )
         obj.checkSettings()
-        if not obj.getModuleType() in self.objects:
-            self.objects[obj.getModuleType()] = {}
-        elif obj.getName() in self.objects[obj.getModuleType()]:
-            raise Exception( "Element {0} in objects list of type {1} already present. Maybe you used the same name twice?".format( obj.getName(), obj.getModuleType() ) ) 
-        self.objects[obj.getModuleType()][obj.getName()] = obj
+        self.addObject(obj)
 
         # Check sanity
         if len( self.getObjects('execution') ) == 0:
@@ -454,14 +520,22 @@ class ScenarioRunner:
             for obj in self.getObjects(resolveObjects):
                 obj.resolveNames()
         
+        # Allow file objects to do some preprocessing after everything has been resolved
+        for obj in self.getObjects('file'):
+            obj.doPreprocessing()
+        
         # Fill in extra cross-object data
         for execution in self.getObjects('execution'):
             if execution.client not in execution.host.clients:
                 execution.host.clients.append( execution.client )
-            if execution.file not in execution.host.files:
-                execution.host.files.append( execution.file )
-            if execution.isSeeder() and execution.file not in execution.host.seedingFiles:
-                execution.host.seedingFiles.append( execution.file )
+            fdict = self.getObjectsDict('file')
+            for file_ in execution.files:
+                if file_ not in fdict:
+                    raise Exception( "Insanity! Found a file object named {0} in an exection object that is not registered with the scenario. This is most likely caused by an erroneously initialized multi-file object.".format( file_.getName() ) )
+                if file_ not in execution.host.files:
+                    execution.host.files.append( file_ )
+                if execution.isSeeder() and file_ not in execution.host.seedingFiles:
+                    execution.host.seedingFiles.append( file_ )
 
     def fallbackWarning(self, host, direction):
         """Log a warning that the host has to fall back to full traffic control in the given direction."""
@@ -722,7 +796,7 @@ class ScenarioRunner:
                 os.makedirs( os.path.join( execdir, 'logs' ) )
             if not os.path.exists( os.path.join( execdir, 'parsedLogs' ) ):
                 os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
-            logThreads.append( LogProcessor( execution, execdir ) )
+            logThreads.append( LogProcessor( execution, execdir, True ) )
         self.threads += logThreads
         print "Salvaging logs and parsing them"
         for thread in logThreads:

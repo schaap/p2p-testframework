@@ -63,15 +63,10 @@ preknownopcode = ''
 
 try:
     while True:
-        s__ = time.time()
         ready = []
         (ready, _, _) = select.select( readlist, [], [], 600 )
         while ready == []:
             # No input found on any channel for 60 seconds; we're dead?
-            if time.time() - s__ < 600:
-                log( "timeout without timeout? Only {0} seconds passed".format( time.time() - s__ ) )
-                (ready, _, _) = select.select( readlist, [], [], 600 )
-                continue
             preknownopcode = ''
             fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl_nonblock)
             try:
@@ -87,6 +82,7 @@ try:
             log( "EXCEPTION: No input, closing" )
             raise Exception( 'No input for 600 seconds, assuming something crashed.' )
         firstGo = True
+        hasHadData = False
         while True:
             # try and read data from the mux channel
             opcode = ''
@@ -103,6 +99,7 @@ try:
                     opcode = ''
                 fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl_block)
             if opcode != '':
+                hasHadData = True
                 log( "STDIN: RECV opcode {0}".format( opcode ) )
                 if opcode == '':
                     log( "EXCEPTION: EOF?" )
@@ -260,6 +257,8 @@ try:
                         buf += buf2
                         if len(buf2) < 1024:
                             break
+                    if buf != '':
+                        hasHadData = True
                     if buf.find('\n') == len(buf) - 1:
                         log( "STDOUT: SEND {1}".format( connN, '0{0}{1}'.format( conn.packedNumber, buf ) ) )
                         sys.stdout.write( '0{0}{1}'.format( conn.packedNumber, buf ) )
@@ -273,6 +272,10 @@ try:
                         buildReadList()
                     sys.stdout.flush()
             firstGo = False
+        if not hasHadData:
+            # We fell through the select call without a single byte of data being read after that: no more data is expected to become available
+            log( "EXCEPT no data received" )
+            raise Exception( "Not seen a single byte of data after select finished with non-empty listen list. Assuming all connections (to be) closed.")
             
 except Exception as e:
     msg = e.__str__() + '\n' + traceback.format_exc()

@@ -1,4 +1,5 @@
 import core.file
+from core.campaign import Campaign
 
 class none(core.file.file):
     """
@@ -50,6 +51,7 @@ class none(core.file.file):
 
         An Exception is raised in the case of insanity.
         """
+        Campaign.logger.log( "DEPRECATED! The use of file:none is no longer necessary, since execution objects now allow simply not specifying any file objects.")
         core.file.file.checkSettings(self)
 
     def resolveNames(self):

@@ -108,6 +108,17 @@ class _skeleton_(core.file.file):
         core.file.file.resolveNames(self)
         # TODO: Do any name resolutions here.
         # The names of other objects this object refers to, either intrinsically or in its parameters, should be checked here.
+    
+    def doPreprocessing(self):
+        """
+        Run directly after all objects in the scenario have run resolveNames and before cross referenced data is filled in (e.g. the files and seedingFiles arrays in all hosts are still empty).
+        
+        This method may alter executions as it sees fit, mainly to allow the file object to add more file objects to executions as needed.
+        
+        When creating extra file objects, don't forget to also register them with the scenario via self.scenario.addObject(theNewFileObject)!
+        """
+        core.file.file.doPreprocessing(self)
+        # TODO: If this is multi-file object, you want to duplicate the object to refer to just one file per object in this method.
 
     def sendToHost(self, host):
         """

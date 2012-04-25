@@ -1700,14 +1700,14 @@ empty
                 newObj.name = newName
                 if self.isInCleanup():
                     return
-                self.scenario.objects['host'][newObj.getName()] = newObj
+                self.scenario.addObject(newObj)
                 self.slaves.append(newObj)
                 # Duplicate each execution with this host for the slave host
                 for e in executions:
                     ne = core.execution.execution(self.scenario)
                     ne.hostName = newName
                     ne.clientName = e.clientName
-                    ne.fileName = e.fileName
+                    ne.fileNames = list(e.fileNames)
                     if e.parserNames:
                         ne.parserNames = list(e.parserNames)
                     else:
@@ -1717,13 +1717,14 @@ empty
                     ne.resolveNames()
                     if self.isInCleanup():
                         return
-                    self.scenario.objects['execution'][ne.getName()] = ne
+                    self.scenario.addObject(ne)
                     if ne.client not in newObj.clients:
                         newObj.clients.append( ne.client )
-                    if ne.file not in newObj.files:
-                        newObj.files.append( ne.file )
-                    if ne.isSeeder() and ne.file not in newObj.seedingFiles:
-                        newObj.seedingFiles.append( ne.file )
+                    for file_ in ne.files:
+                        if file_ not in newObj.files:
+                            newObj.files.append( file_ )
+                        if ne.isSeeder() and file_ not in newObj.seedingFiles:
+                            newObj.seedingFiles.append( file_ )
             # Create sftp forwarding scripts
             if self.isInCleanup():
                 return

@@ -167,14 +167,15 @@ class swift(client):
         """
         allParams = ""
         if execution.isSeeder():
-            allParams += ' --file {0}'.format( execution.file.getFile(execution.host) )
+            allParams += "".join( [' -d {0}'.format( d ) for d in execution.getDataDirList()] )
             if not self.wait:
                 allParams += ' --wait 900s'
         else:
-            roothash = execution.file.getRootHash()
-            if not roothash:
-                raise Exception( "The swift client, when leeching, requires the root hash of the file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set.".format( execution.getNumber(), self.name, execution.host.name, execution.file.name ) )        
-            allParams += ' --hash {0} --file "{1}/outputFile"'.format( roothash, self.getExecutionClientDir(execution) )
+            for f in execution.files:
+                roothash = f.getRootHash()
+                if not roothash:
+                    raise Exception( "The swift client, when leeching, requires the root hash of each file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set.".format( execution.getNumber(), self.name, execution.host.name, f.name) )
+                allParams += ' --hash {0} --file "{1}/{0}"'.format( roothash, self.getExecutionClientDir(execution) )
         if self.wait:
             allParams += ' --wait {0}s'.format( self.wait )
         if self.listenAddress:

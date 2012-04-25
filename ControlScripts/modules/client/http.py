@@ -29,15 +29,6 @@ class http(client):
     the server will fail to start.
     """
 
-    # The parent class handles most of the interactions between source, isRemote, location and builder; where needed
-    # the comments in this skeleton implementation will guide you enough for a simple implementation. If you plan on
-    # building more complex implementations that override part of the parent functionality, please make sure to read
-    # the comments in the parent class very carefully.
-
-    # TODO: For almost all the methods in this class it goes that, whenever you're about to do something that takes
-    # significant time or that will introduce something that would need to be cleaned up, check self.isInCleanup()
-    # and bail out if that returns True.
-    
     useSSL = False          # Whether we use SSL
     port = None             # The port to use for servers
 
@@ -219,26 +210,27 @@ class http(client):
         @param  execution           The execution to prepare this client for.
         """
         if execution.isSeeder():
-            if self.useSSL:
-                command = '"{0}/lighttpd_logging" "{0}" "{1}" "{2}" {3} SSL > "{4}/log.log"'.format(
-                                                                                            self.getClientDir(execution.host),
-                                                                                            self.getExecutionClientDir(execution),
-                                                                                            execution.file.getFile(execution.host),
-                                                                                            self.port,
-                                                                                            self.getExecutionLogDir(execution)
-                                                                                            )
+            if len([f for f in execution.host.seedingFiles if f.getDataDir() is not None]) < 1:
+                Campaign.logger.log( 'WARNING! Client {0} is being prepared in seeding mode for execution {1} which has no seeding files associated. The execution will be a noop.' )
+                command = 'echo "Not running: no files" > "{0}/log.log"; sleep 5'.format( self.getExecutionLogDir(execution) )
             else:
-                command = '"{0}/lighttpd_logging" "{0}" "{1}" "{2}" {3} > "{4}/log.log"'.format(
+                ssl = "NOSSL"
+                if self.useSSL:
+                    ssl = "SSL"
+                command = '"{0}/lighttpd_logging" "{1}" {2} {3} {4} > "{5}/log.log"'.format(
                                                                                             self.getClientDir(execution.host),
                                                                                             self.getExecutionClientDir(execution),
-                                                                                            execution.file.getFile(execution.host),
                                                                                             self.port,
+                                                                                            ssl,
+                                                                                            " ".join(['"'+d+'"' for d in execution.getDataDirList()]),
                                                                                             self.getExecutionLogDir(execution)
                                                                                             )
-            
             client.prepareExecution(self, execution, simpleCommandLine=command)
         else:
-            f = os.path.basename(execution.file.getFile(execution.host))
+            if len(execution.files) < 1:
+                Campaign.logger.log( 'WARNING! Client {0} is being prepared for execution {1} which has no files associated. The execution will be a noop.' )
+                client.prepareExecution(self, execution, simpleCommandLine='echo "Not running: no files" > "{0}/log.log"; sleep 5'.format( self.getExecutionLogDir(execution)))
+                return
             # Figure out all the servers (yes, HTTP cheats by knowing all the servers ahead)
             servers = []
             for e in [e for e in self.scenario.getObjects('execution') if e.isSeeder()]:
@@ -248,22 +240,30 @@ class http(client):
                 if isinstance(e.client, http):
                     p = e.client.port
                     if e.client.useSSL:
-                        servers.append( 'https://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
+                        servers.append( 'https://{0}:{1}/'.format( e.host.getAddress(), p ) )
                     else:
-                        servers.append( 'http://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
+                        servers.append( 'http://{0}:{1}/'.format( e.host.getAddress(), p ) )
                 else:
                     if self.useSSL:
-                        servers.append( 'https://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
+                        servers.append( 'https://{0}:{1}/'.format( e.host.getAddress(), p ) )
                     else:
-                        servers.append( 'http://{0}:{1}/{2}'.format( e.host.getAddress(), p, f ) )
+                        servers.append( 'http://{0}:{1}/'.format( e.host.getAddress(), p ) )
             if len(servers) == 0:
                 raise Exception( 'Client {0} could not find a single seeding execution in the scenario. This is not supported by client:http.'.format( self.name ) )
+            # Build a URI list:
+            # Each file should have its own line, each line should have multiple URIs for that file separated by \t
+            URIlist = ''
+            for file_ in execution.files:
+                f = os.path.basename(file_.getFile(execution.host))
+                URIlist += "\t".join( ["{0}/{1}".format( s, f ) for s in servers] ) + "\n"
+            # Calculate other settings
             connperhost = len(servers) * 2
             if connperhost > 16:
                 connperhost = 16
+            # Build the huge command
             command = (
                         'sleep 30; '
-                        './aria2c '
+                        'echo | ./aria2c '
                         '-j {0} '                               # maximum concurrent downloads
                         '-s {0} '                               # split file in n parts
                         '-x {1} '                               # allow at most #seeders connection to each host (necessary for multiple servers on the same host, max 16!)
@@ -277,16 +277,19 @@ class http(client):
                         '--retry-wait=1 '                       # wait 1 sec between retries
                         '--dir={2} '                            # save here
                         '--check-certificate=false '            # don't check our on-the-fly-generated self-signed certificates [SSL]
-                        '{3} '
-                        '> {4}/log.log'
+                        '--input-file=- '                       # read URI lists from stdin
+                        '> {3}/log.log '                        # redirect log
+                        '<<__EOF__\n'                           # start input of URI lists
+                        '{4}'                                   # URI lists
+                        '__EOF__\n'                             # end input of URI lists
                         # (SSL options are given anyway, since they don't matter for non-SSL)
                         # The sleep 30 is a hack to work around slower setup of lighttpd which would cause aria2 to fail when connecting to the server
                     ).format(
                              len(servers),
                              connperhost,
                              self.getExecutionClientDir(execution),
-                             ' '.join( servers ),
-                             self.getExecutionLogDir(execution)
+                             self.getExecutionLogDir(execution),
+                             URIlist
                             )
             client.prepareExecution(self, execution, complexCommandLine=command)
     # pylint: enable-msg=W0221
