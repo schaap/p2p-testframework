@@ -55,14 +55,19 @@ def buildReadList():
 def log( msg_ ):
     if DODEBUG:
         logfile.write( "{0}: {1}\n".format( (time.time() - zerotime), msg_ ) )
+        logfile.flush()
 
 fl_block = fcntl.fcntl(sys.stdin.fileno(), fcntl.F_GETFL)
 fl_nonblock = fl_block | os.O_NONBLOCK
 
 preknownopcode = ''
 
+running = True
+
 try:
-    while True:
+    while running:
+        nodata = True
+        s__ = time.time()
         ready = []
         (ready, _, _) = select.select( readlist, [], [], 600 )
         while ready == []:
@@ -82,8 +87,7 @@ try:
             log( "EXCEPTION: No input, closing" )
             raise Exception( 'No input for 600 seconds, assuming something crashed.' )
         firstGo = True
-        hasHadData = False
-        while True:
+        while running:
             # try and read data from the mux channel
             opcode = ''
             if preknownopcode != '':
@@ -99,7 +103,7 @@ try:
                     opcode = ''
                 fcntl.fcntl(sys.stdin.fileno(), fcntl.F_SETFL, fl_block)
             if opcode != '':
-                hasHadData = True
+                nodata = False
                 log( "STDIN: RECV opcode {0}".format( opcode ) )
                 if opcode == '':
                     log( "EXCEPTION: EOF?" )
@@ -235,6 +239,7 @@ try:
                         raise Exception( "Received data for unknown connection {0}: '{1}'".format( connNumber, buf ))
                 elif opcode == 'X':
                     log( "STDIN: QUIT" )
+                    running = False
                     break
                 else:
                     log( "EXCEPTION: Unknown opcode {0}".format( opcode ) )
@@ -244,6 +249,7 @@ try:
             for connN in connections:
                 conn = connections[connN]
                 if conn.channel.recv_ready():
+                    nodata = False
                     buf = ''
                     closed = False
                     while True:
@@ -272,10 +278,9 @@ try:
                         buildReadList()
                     sys.stdout.flush()
             firstGo = False
-        if not hasHadData:
-            # We fell through the select call without a single byte of data being read after that: no more data is expected to become available
-            log( "EXCEPT no data received" )
-            raise Exception( "Not seen a single byte of data after select finished with non-empty listen list. Assuming all connections (to be) closed.")
+        if nodata:
+            log( "EXCEPTION: No data received, while ready signalled?" )
+            raise Exception( "No data was received, while ready was signalled. Assuming failure or end of life. Breaking down for safety." )
             
 except Exception as e:
     msg = e.__str__() + '\n' + traceback.format_exc()
