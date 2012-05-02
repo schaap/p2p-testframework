@@ -277,6 +277,21 @@ class execution(coreObject):
                     l.append(d)
         return l
 
+    def getMetaFileDirList(self):
+        """
+        Returns the list of metafile directories of files for this execution.
+        
+        This is basically just a loop over all file objects in the host which request their metafile dir and appends it to the list.
+        Each element is guaranteed to be unique.
+        """
+        l = []
+        for f in self.host.files:
+            d = f.getMetaFileDir(self.host)
+            if d is not None:
+                if d not in l:
+                    l.append(d)
+        return l
+
     @staticmethod
     def APIVersion():
         return "2.2.0-core"

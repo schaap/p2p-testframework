@@ -112,15 +112,36 @@ class utorrent(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        stopWhenSeeding=0
-        if self.stopWhenSeeding:
-            stopWhenSeeding=1
-        if not execution.file.getMetaFile(execution.host):
-            raise Exception( "In order to use uTorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
+        # Check sanity of files
+        for f in execution.files:
+            if not f.getMetaFile(execution.host):
+                raise Exception( "In order to use uTorrent all files must have a .torrent file associated with them. No .torrent was found for file {0}.".format( f.name ) )
+        
+        # Initialize directory lists
+        metadirs = execution.getMetaFileDirList()
+        datadirs = []
+        
+        stopWhenSeeding = 0
+        # Seeder specific settings
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {2}  0  {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
-        else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {2} {5}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
+            datadirs = execution.getDataDirList()
+        # Leecher specific settings
+        elif self.stopWhenSeeding:
+            stopWhenSeeding = 1
+        
+        # Build command and prepare
+        client.prepareExecution(self, execution, simpleCommandLine = 
+                                    'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1}  0  {2} {3} {4} {5} > {4}/log.log 2> {4}/errlog.log'.format( 
+                                        self.getClientDir(execution.host),
+                                        self.getExecutionClientDir(execution),
+                                        len(metadirs),
+                                        " ".join(metadirs),  
+                                        len(datadirs),
+                                        " ".join(datadirs), 
+                                        self.getExecutionLogDir(execution),
+                                        stopWhenSeeding
+                                    ) # simpleCommandLine
+                                )
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):

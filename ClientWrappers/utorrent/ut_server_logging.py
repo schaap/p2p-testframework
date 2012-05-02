@@ -238,7 +238,7 @@ def handler(_a,_b):
     # pylint: enable-msg=W0603
     going = False
 
-def interact(webport, torrentFile, stopWhenSeeding):
+def interact(webport, metadirs, stopWhenSeeding):
     # pylint: disable-msg=W0603,W0602
     # Yes, that's global
     # And yes, it's not being assigned to. Yet.
@@ -268,31 +268,33 @@ def interact(webport, torrentFile, stopWhenSeeding):
             break
         # Load torrents if this is the first contact
         if not torrentLoaded:
-            fObj = open(torrentFile, 'rb')
-            torrData = fObj.read()
-            fObj.close()
-            data = '\r\n'.join( (
-                            '--{{BOUNDARY}}',
-                            'Content-Disposition: form-data; name="torrent_file"; filename="t{0}.torrent"'.format(torrentCounter),
-                            'Content-Type: application/x-bittorrent',
-                            '',
-                            torrData,
-                            '--{{BOUNDARY}}--',
-                            ''
-                            ) )
-            torrentCounter += 1
-            bndlen = 20
-            bnd = ''
-            while True:
-                bnd = randomstring(bndlen)
-                if bnd not in data:
-                    break
-                bndlen += 1
-            data = data.replace('{{BOUNDARY}}', bnd)
-            headers = {}
-            headers['Content-Type'] = 'multipart/form-data; boundary=' + bnd
             conn = uTorrentConnection( webport )
-            conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
+            for d in metadirs:
+                for torrentFile in [os.path.join(d, f) for f in os.listdir(d) if f[-8:] == '.torrent' and os.path.isfile(os.path.join(d,f))]:
+                    fObj = open(torrentFile, 'rb')
+                    torrData = fObj.read()
+                    fObj.close()
+                    data = '\r\n'.join( (
+                                    '--{{BOUNDARY}}',
+                                    'Content-Disposition: form-data; name="torrent_file"; filename="t{0}.torrent"'.format(torrentCounter),
+                                    'Content-Type: application/x-bittorrent',
+                                    '',
+                                    torrData,
+                                    '--{{BOUNDARY}}--',
+                                    ''
+                                    ) )
+                    torrentCounter += 1
+                    bndlen = 20
+                    bnd = ''
+                    while True:
+                        bnd = randomstring(bndlen)
+                        if bnd not in data:
+                            break
+                        bndlen += 1
+                    data = data.replace('{{BOUNDARY}}', bnd)
+                    headers = {}
+                    headers['Content-Type'] = 'multipart/form-data; boundary=' + bnd
+                    conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
             torrentLoaded = True
         # Decode status
         try:
@@ -345,7 +347,7 @@ def patchLinuxConfig(port, webport, workingDir, _): # _ == clientDir
     print >> sys.stderr, "WARNING: The settings of the Linux client are not up to date. They are especially not equal to the Windows settings."
     f = open( os.path.join( workingDir, 'utserver.conf' ) )
     f.write( "token_auth_enable: 0\n" )
-    f.write( "dir_active: {0}/\n".format( workingDir ) )
+    f.write( "dir_active: {0}/\n".format( os.path.join(workingDir, 'download_data') ) )
     f.write( "dir_autoload: {0}/torrents/\n".format( workingDir ) )
     f.write( "auto_bandwidth_management: 0\n" )
     f.write( "bind_port: {0}\n".format( port ) )
@@ -366,7 +368,7 @@ def patchWindowsConfig(port, webport, workingDir, clientDir):
     settings['bind_port'] = port
     settings['ut_webui_port'] = webport
     settings['webui.port'] = webport
-    settings['dir_active_download'] = posixToNT( os.path.abspath(workingDir) )
+    settings['dir_active_download'] = posixToNT( os.path.abspath( os.path.join( workingDir, 'download_data' ) ) )
     settings['dir_autoload'] = posixToNT( os.path.abspath(os.path.join(workingDir, 'torrents')) )
     f = open( os.path.join( workingDir, 'settings.dat' ), 'w' )
     f.write( bencode( settings ) )
@@ -444,13 +446,24 @@ def mainFunction():
     # pylint: enable-msg=W0603,W0602
     
     # Read command line args
-    if len(sys.argv) < 5:
+    if len(sys.argv) < 6:
         raise Exception( "Not enough arguments" )
 
     clientDir = sys.argv[1]
     workingDir = sys.argv[2]
-    torrentFile = sys.argv[3]
-    stopWhenSeeding_ = sys.argv[4]
+    stopWhenSeeding_ = sys.argv[3]
+    metaDirCount = int(sys.argv[4])
+    if len(sys.argv) < 6 + metaDirCount:
+        raise Exception( "Expected {0} meta file dirs, but only {1} arguments given".format( metaDirCount, len(sys.argv) ) )
+    dataDirCount = int(sys.argv[5 + metaDirCount])
+    if len(sys.argv) < 6 + metaDirCount + dataDirCount:
+        raise Exception( "Expected {0} meta file dirs and {1} data dirs, but only {2} arguments given".format( metaDirCount, dataDirCount, len(sys.argv) ) )
+    metadirs = []
+    datadirs = []
+    for i in range(5, 5+metaDirCount):
+        metadirs.append( sys.argv[i] )
+    for i in range(6+metaDirCount, 6+metaDirCount+dataDirCount):
+        datadirs.append( sys.argv[i] )
     
     # Setup signal handling
     signal.signal( signal.SIGINT, handler )
@@ -461,8 +474,12 @@ def mainFunction():
         raise Exception( "Not a client dir: {0}".format( clientDir ) )
     if not os.path.isdir( workingDir ):
         raise Exception( "Not a working dir: {0}".format( workingDir ) )
-    if not os.path.isfile( torrentFile ):
-        raise Exception( "Not a torrent file: {0}".format( torrentFile ) )
+    for d in metadirs:
+        if not os.path.isdir( d ):
+            raise Exception( "Not a meta dir: {0}".format( d ) )
+    for d in datadirs:
+        if not os.path.isdir( d ):
+            raise Exception( "Not a data dir: {0}".format( d ) )
     if stopWhenSeeding_ != '0' and stopWhenSeeding_ != '1':
         raise Exception( "stopWhenSeeding must be 0 or 1, not {0}".format( stopWhenSeeding_ ) )
     stopWhenSeeding = 1
@@ -472,16 +489,26 @@ def mainFunction():
     # Clean and initialize working dir
     for f in [os.path.join( workingDir, n ) for n in os.listdir(workingDir) if os.path.isfile( os.path.join( workingDir, n ) )]:
         os.remove( f )
+    if not os.path.exists( os.path.join( workingDir, 'download_data' ) ):
+        os.makedirs(os.path.join( workingDir, 'download_data' ) )
+    for f in [os.path.join( workingDir, 'download_data', n ) for n in os.listdir(os.path.join(workingDir, 'download_data'))]:
+        if os.path.isfile(f):
+            os.remove( f )
+        else:
+            shutil.rmtree(f)
     if not os.path.exists( os.path.join( workingDir, 'torrents' ) ):
         os.makedirs(os.path.join( workingDir, 'torrents' ) )
     for f in [os.path.join( workingDir, 'torrents', n ) for n in os.listdir(os.path.join(workingDir, 'torrents')) if os.path.isfile( os.path.join( workingDir, 'torrents', n ) )]:
         os.remove( f )
     
-    # Copy datafile if given
-    if len(sys.argv) > 5:
-        if not os.path.isfile( sys.argv[5] ):
-            raise Exception( "Not a data file: {0}".format( sys.argv[5] ) )
-        shutil.copy( sys.argv[5], workingDir )
+    # Copy datafiles if given
+    for d in datadirs:
+        for f in [f for f in os.listdir(d)]:
+            p = os.path.join(d, f)
+            if os.path.isdir(p):
+                shutil.copytree(p, os.path.join(workingDir, f))
+            else:
+                shutil.copy(p, workingDir)
     
     # Figure out which port to use
     port=6881
@@ -539,7 +566,7 @@ def mainFunction():
         print >> sys.stderr, "Client started"
         
         # Start interaction with the client
-        interact(webport, torrentFile, stopWhenSeeding)
+        interact(webport, metadirs, stopWhenSeeding)
     except Exception as e:
         print >> sys.stderr, e.__str__()
         print >> sys.stderr, traceback.format_exc()

@@ -238,6 +238,20 @@ class file(coreObject):
         if index != -1:
             postfix = self.metaFile[index:]
         return "{0}/meta/meta_file{1}".format( self.getFileDir( host ), postfix )
+    
+    def getMetaFileDir(self, host):
+        """
+        Returns the path to the directory on the remote host where meta files reside.
+        
+        This path may not exist if getMetaFile() returns None or before sendToHost() is called.
+        
+        This returns None if self.getFileDir(host) returns None.
+        
+        @param  host        The host on which to find the meta file dir.
+        
+        @return The path to the directory on the remote host.
+        """
+        return "{0}/meta".format( self.getFileDir( host ) )
 
     def getRootHash(self):
         """
