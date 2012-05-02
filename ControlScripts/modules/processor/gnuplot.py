@@ -129,6 +129,8 @@ class gnuplot(processor):
             f.close()
             _, tmpFile = tempfile.mkstemp()
             for e in self.scenario.getObjects('execution'):
+                if e.client.isSideService():
+                    continue
                 f = open( tmpFile, 'w' )
                 f.write( "indir='{0}'\n".format( self.getParsedLogDir(e, baseDir) ) )
                 f.write( "rawdir='{0}'\n".format( self.getRawLogDir(e, baseDir) ) )

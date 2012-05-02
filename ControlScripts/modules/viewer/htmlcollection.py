@@ -99,11 +99,14 @@ class htmlcollection(viewer):
         relpath = os.path.relpath( processedDir, viewDir )
         
         # Test for availability of hostname_X files
-        executionNumbers = True
+        useExecutions = []
         for e in self.scenario.getObjects( 'execution' ):
+            if e.client.isSideService():
+                continue
             if not os.path.exists( os.path.join( processedDir, 'hostname_{0}'.format( e.getNumber() ) ) ):
-                executionNumbers = False
+                useExecutions = None
                 break
+            useExecutions.append(e)
         
         if htmlcollection.convert:
             os.makedirs(os.path.join( viewDir, 'thumbs' ))
@@ -113,20 +116,20 @@ class htmlcollection(viewer):
             fOut.write( "<html><head><title>{0} : HTML collection output</title></head>\n".format( self.scenario.name ) )
             fOut.write( "<body><h1>{0}</h1><h3>Contents</h3>\n".format( self.scenario.name ) )
             fOut.write( "<table>\n" )
-            if executionNumbers:
+            if useExecutions is not None:
                 fOut.write( "<tr><td><a href='#execs'>Executions</a></td></tr>\n" )
-                for e in self.scenario.getObjects( 'execution' ):
+                for e in useExecutions:
                     fOut.write( "<tr><td><a href='#exec_{0}'>- Execution {0} @ {1}</a></td></tr>\n".format( e.getNumber(), e.host.name ) )
             fOut.write( "<tr><td><a href='#other'>Other data</a></td></tr>\n" )
             fOut.write( "</table>\n" )
             
             otherFiles = [entry for entry in os.listdir( processedDir ) if os.path.isfile( os.path.join( processedDir, entry ) )]
             
-            if executionNumbers:
+            if useExecutions is not None:
                 fOut.write( "<h3><a name='execs'>Executions</a></h3>\n" )
                 fOut.write( "<table>\n" )
                 columns = []
-                for e in self.scenario.getObjects( 'execution' ):
+                for e in useExecutions:
                     i = 0
                     while i < len(otherFiles):
                         if otherFiles[i] == 'hostname_{0}'.format( e.getNumber() ):
@@ -149,7 +152,7 @@ class htmlcollection(viewer):
                     fOut.write( "<td>{0}_X{1}</td>\n".format( col[0], col[1] ) )
                 fOut.write( "</tr></thead>\n" )
                 fOut.write( "<tbody>\n" )
-                for e in self.scenario.getObjects( 'execution' ):
+                for e in useExecutions:
                     fOut.write( "<tr><td><a name='exec_{0}'>{0}</a></td><td>{1}</td>".format( e.getNumber(), e.host.name ) )
                     for col in columns:
                         name = '{0}_{1}{2}'.format( col[0], e.getNumber(), col[1] )
