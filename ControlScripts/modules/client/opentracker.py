@@ -306,6 +306,22 @@ class opentracker(client):
         @return    The files that are always to be uploaded.
         """
         return None
+    
+    def isSideService(self):
+        """
+        Returns whether this client is an extra service needed for scenarios,
+        rather than an actual client iself.
+        
+        Side services are clients such as torrent trackers or HTTP servers that only
+        provide files to actually running clients.
+        
+        If a client is a side service it will be ignored for several purposes, such
+        as when determining if all clients have finished yet and when retrieving and
+        processing logs.
+        
+        @return     True iff this client is a side serice.
+        """
+        return True
 
     @staticmethod
     def APIVersion():

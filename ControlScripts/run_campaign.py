@@ -722,6 +722,8 @@ class ScenarioRunner:
             while sleepTime > 0:
                 time.sleep( sleepTime )
                 for execution in self.getObjects('execution'):
+                    if execution.client.isSideService():
+                        continue
                     if execution.isSeeder() and not execution.keepSeeding:
                         continue
                     if (not execution.client.hasStarted(execution)) or execution.client.isRunning(execution):
@@ -766,7 +768,8 @@ class ScenarioRunner:
             execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.getNumber() ) )
             os.makedirs( os.path.join( execdir, 'logs' ) )
             os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
-            logThreads.append( LogProcessor( execution, execdir ) )
+            if not execution.isSideService():
+                logThreads.append( LogProcessor( execution, execdir ) )
         self.threads += logThreads
         print "Retrieving logs and parsing them"
         if self.doParallel:
@@ -796,7 +799,8 @@ class ScenarioRunner:
                 os.makedirs( os.path.join( execdir, 'logs' ) )
             if not os.path.exists( os.path.join( execdir, 'parsedLogs' ) ):
                 os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
-            logThreads.append( LogProcessor( execution, execdir, True ) )
+            if not execution.isSideService():
+                logThreads.append( LogProcessor( execution, execdir, True ) )
         self.threads += logThreads
         print "Salvaging logs and parsing them"
         for thread in logThreads:
