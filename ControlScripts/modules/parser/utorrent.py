@@ -109,9 +109,9 @@ class utorrent(parser):
                 if relTime == -1:
                     continue
                 
-                m = re.match( '^\\["[^"]*",[^,]*,[^,]*,[^,]*,([^,]*),([^,]*),([^,]*),[^,]*,.*', line )
+                m = re.match( '^([^,]*) ([^,]*) ([^,]*)', line )
                 if m:
-                    percentDone = float(m.group(1)) / 10.0
+                    percentDone = float(m.group(1))
                     down = float(m.group(2))
                     up = float(m.group(3))
                     if up < prevUp:

@@ -68,11 +68,11 @@ class utorrent(client):
             raise Exception( "client:utorrent does not support compilation from source... Where did you get those sources, anyway?" )
         
         if self.useWine:
-            if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ) ) or not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ) ):
-                raise Exception( "The uTorrent client runner, when using wine, needs the utorrent runner scripts for wine. These are expected to be present in ClientWrappers/utorrent-windows/, but they aren't." )
+            if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging.py' ) ) or not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'settings.dat' ) ):
+                raise Exception( "The uTorrent client runner, when using wine, needs the utorrent runner script (ut_server_logging.py) and the prepared windows settings file (settings.dat). These are expected to be present in ClientWrappers/utorrent/, but they aren't." )
         else:
-            if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ) ):
-                raise Exception( "The uTorrent client runner needs the utorrent runner scripts for wine. These are expected to be present in ClientWrappers/utorrent-windows/, but they aren't." )
+            if not os.path.exists( os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging.py' ) ):
+                raise Exception( "The uTorrent client runner needs the utorrent runner script (ut_server_logging.py). This is expected to be present in ClientWrappers/utorrent/, but it isn't." )
 
     def resolveNames(self):
         """
@@ -118,9 +118,9 @@ class utorrent(client):
         if not execution.file.getMetaFile(execution.host):
             raise Exception( "In order to use uTorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
         if execution.isSeeder():
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} 0 {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {2}  0  {3} > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
         else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging {0} {1} {2} {5}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
+            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {2} {5}     > {4}/log.log 2> {4}/errlog.log'.format( self.getClientDir(execution.host), self.getExecutionClientDir(execution), execution.file.getMetaFile(execution.host), execution.file.getFile(execution.host), self.getExecutionLogDir(execution), stopWhenSeeding ) )
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):
@@ -255,10 +255,10 @@ class utorrent(client):
         @return    The files that are always to be uploaded.
         """
         if self.useWine:
-            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'ut_server_logging' ), 'ut_server_logging'),
-                    (os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent-windows', 'settings.dat' ), 'settings.dat')]
+            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging.py' ), 'ut_server_logging.py'),
+                    (os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'settings.dat' ), 'settings.dat')]
         else:
-            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging' ), 'ut_server_logging')]
+            return [(os.path.join( Campaign.testEnvDir, 'ClientWrappers', 'utorrent', 'ut_server_logging.py' ), 'ut_server_logging.py')]
         return None
 
     @staticmethod
