@@ -19,13 +19,11 @@ fi
 workingDir="$1"
 PORT="$2"
 useSSL=0
-if [ ! -z "$3" ]; then
-    if [ "$3" != "NOSSL" ]; then
-        useSSL=1
-    elif [ "$3" != "SSL" ]; then
-        echo "Incorrect SSL specifier, expected SSL or NOSSL"
-        exit -1
-    fi
+if [ "$3" = "SSL" ]; then
+    useSSL=1
+elif [ "$3" != "NOSSL" ]; then
+    echo "Incorrect SSL specifier, expected SSL or NOSSL"
+    exit -1
 fi
 shift 3
 

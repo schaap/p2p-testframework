@@ -528,10 +528,10 @@ class ScenarioRunner:
         for execution in self.getObjects('execution'):
             if execution.client not in execution.host.clients:
                 execution.host.clients.append( execution.client )
-            fdict = self.getObjectsDict('file')
+            flist = self.getObjects('file')
             for file_ in execution.files:
-                if file_ not in fdict:
-                    raise Exception( "Insanity! Found a file object named {0} in an exection object that is not registered with the scenario. This is most likely caused by an erroneously initialized multi-file object.".format( file_.getName() ) )
+                if file_ not in flist:
+                    raise Exception( "Insanity! Found a file object named {0} in an execution object that is not registered with the scenario. This is most likely caused by an erroneously initialized multi-file object.".format( file_.getName() ) )
                 if file_ not in execution.host.files:
                     execution.host.files.append( file_ )
                 if execution.isSeeder() and file_ not in execution.host.seedingFiles:
@@ -768,7 +768,7 @@ class ScenarioRunner:
             execdir = os.path.join( self.resultsDir, 'executions', 'exec_{0}'.format( execution.getNumber() ) )
             os.makedirs( os.path.join( execdir, 'logs' ) )
             os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
-            if not execution.isSideService():
+            if not execution.client.isSideService():
                 logThreads.append( LogProcessor( execution, execdir ) )
         self.threads += logThreads
         print "Retrieving logs and parsing them"
@@ -799,7 +799,7 @@ class ScenarioRunner:
                 os.makedirs( os.path.join( execdir, 'logs' ) )
             if not os.path.exists( os.path.join( execdir, 'parsedLogs' ) ):
                 os.makedirs( os.path.join( execdir, 'parsedLogs' ) )
-            if not execution.isSideService():
+            if not execution.client.isSideService():
                 logThreads.append( LogProcessor( execution, execdir, True ) )
         self.threads += logThreads
         print "Salvaging logs and parsing them"

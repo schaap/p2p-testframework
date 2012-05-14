@@ -131,7 +131,7 @@ class utorrent(client):
         
         # Build command and prepare
         client.prepareExecution(self, execution, simpleCommandLine = 
-                                    'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1}  0  {2} {3} {4} {5} > {4}/log.log 2> {4}/errlog.log'.format( 
+                                    'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {7} {2} {3} {4} {5} > {6}/log.log 2> {6}/errlog.log'.format( 
                                         self.getClientDir(execution.host),
                                         self.getExecutionClientDir(execution),
                                         len(metadirs),

@@ -210,7 +210,7 @@ class http(client):
         @param  execution           The execution to prepare this client for.
         """
         if execution.isSeeder():
-            if len([f for f in execution.host.seedingFiles if f.getDataDir() is not None]) < 1:
+            if len([f for f in execution.host.seedingFiles if f.getDataDir(execution.host) is not None]) < 1:
                 Campaign.logger.log( 'WARNING! Client {0} is being prepared in seeding mode for execution {1} which has no seeding files associated. The execution will be a noop.' )
                 command = 'echo "Not running: no files" > "{0}/log.log"; sleep 5'.format( self.getExecutionLogDir(execution) )
             else:

@@ -19,13 +19,15 @@ import traceback
 
 # Client wrapper for uTorrent windows version
 # USAGE:
-# $0 clientDir workingDir torrentFile stopWhenSeeding [dataFile]
+# $0 clientDir workingDir stopWhenSeeding metaDirCount [metaDir [metaDir ...]] dataDirCount [dataDir [dataDir ...]]
 #
 # clientDir will contain the lock files for sockets, this should be a shared directory for all clients on the same machine
 # workingDir will be cleaned out (rm -rf *), webui.zip and utorrent.exe will be copied in
-# torrentFile will be loaded and downloaded
 # stopWhenSeeding is 0 or 1; if 1 the client will be killed when the torrent has reached "Seeding" state
-# if dataFile is given, it will be copied to workingDir
+# metaDirCount is the number of metaDir arguments passed
+# metaDir is a directory containing .torrent files to be seeded or downloaded (pass exactly metaDirCount of these)
+# dataDirCount is the number of dataDir arguments passed
+# dataDir is a directory containing data for the .torrent files (pass exactly dataDirCount of these)
 
 # subprocess.Popen object for utorrent client
 utorrent_process = None
@@ -295,6 +297,8 @@ def interact(webport, metadirs, stopWhenSeeding):
                     headers = {}
                     headers['Content-Type'] = 'multipart/form-data; boundary=' + bnd
                     conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
+            print >> sys.stderr, time.time()
+            print >> sys.stderr, "Loaded {0} files".format(torrentCounter)
             torrentLoaded = True
         # Decode status
         try:
@@ -506,9 +510,9 @@ def mainFunction():
         for f in [f for f in os.listdir(d)]:
             p = os.path.join(d, f)
             if os.path.isdir(p):
-                shutil.copytree(p, os.path.join(workingDir, f))
+                shutil.copytree(p, os.path.join(workingDir, 'download_data', f))
             else:
-                shutil.copy(p, workingDir)
+                shutil.copy(p, os.path.join(workingDir, 'download_data'))
     
     # Figure out which port to use
     port=6881

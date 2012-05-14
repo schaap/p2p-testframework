@@ -175,7 +175,7 @@ class swift(client):
                 roothash = f.getRootHash()
                 if not roothash:
                     raise Exception( "The swift client, when leeching, requires the root hash of each file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set.".format( execution.getNumber(), self.name, execution.host.name, f.name) )
-                allParams += ' --hash {0} --file "{1}/{0}"'.format( roothash, self.getExecutionClientDir(execution) )
+                allParams += ' --hash {0} --file "{1}"'.format( roothash, f.getFile(execution.host) )
         if self.wait:
             allParams += ' --wait {0}s'.format( self.wait )
         if self.listenAddress:
