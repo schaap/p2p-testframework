@@ -87,15 +87,29 @@ class libtorrent(client):
         if self.isInCleanup():
             return
         
-        if not execution.file.getMetaFile(execution.host):
-            raise Exception( "In order to use libtorrent a .torrent file needs to be associated with file {0}.".format( execution.file.name ) )
+        for f in execution.files:
+            if not f.getMetaFile(execution.host):
+                raise Exception( "In order to use libtorrent all files must have a .torrent file associated with them. No .torrent file was found for file {0}.".format( f.name ) )
+        
+        metadirs = execution.getMetaFileDirList()
+        datadirs = []
+        
+        seeding = ''
         
         if execution.isSeeder():
-            if execution.file.getDataDir(execution.host) is None:
-                raise Exception( "File {0} did not give a data directory on the remote host, which is required to use libtorrent.".format( execution.file.name ) )
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -s -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), execution.file.getDataDir(execution.host), self.getExecutionLogDir(execution) ) )
-        else:
-            client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent -o {1} {0} 2> "{2}/log.log"'.format( execution.file.getMetaFile(execution.host), self.getExecutionClientDir(execution), self.getExecutionLogDir(execution) ) ) 
+            seeding = '-s'
+            datadirs = execution.getDataDirList()
+            if len(datadirs) == 0:
+                raise Exception( "No data directories were found. Data directories are required to use libtorrent as a seeder." )
+        client.prepareExecution(self, execution,
+                                complexCommandLine = '{3} LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent {0} -o {1} {2} 2> "{4}/log.log"'.format(
+                                                    seeding,
+                                                    self.getExecutionClientDir(execution),
+                                                    " ".join( ['-d "{0}"'.format(d) for d in metadirs] ),
+                                                    " ".join( ['cp -r "{0}"/* "{1}";'.format(d, self.getExecutionClientDir(execution)) for d in datadirs] ),
+                                                    self.getExecutionLogDir(execution),
+                                                    )
+                                )
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):
