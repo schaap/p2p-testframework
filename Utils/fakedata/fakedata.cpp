@@ -8,7 +8,7 @@
 
 #include "fakedata.h"
 
-int generateFakeData( int f, size_t n ) {
+int generateFakeData( int f, size_t n, size_t offset ) {
     file_resize( f, n );
 
     uint32_t i, j;
@@ -18,7 +18,7 @@ int generateFakeData( int f, size_t n ) {
         if( !( i & 0x0FF ) )
             printf( "Status: %liM written\n", (long int)( i / ( 1 << 8 ) ) );
         for( j = 0; j < 1024; j++ )
-            *(((uint32_t*) buf)+j) = htobe32( j+((uint32_t)((off_t)i<<10)) );
+            *(((uint32_t*) buf)+j) = htobe32( offset+j+((uint32_t)((off_t)i<<10)) );
         done = pwrite( f, buf, 4096, (((off_t)i) << 12) );
         left = 4096 - done;
         while( left > 0 ) {

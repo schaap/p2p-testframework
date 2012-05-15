@@ -15,10 +15,11 @@
 
 int main( int argc, char** argv ) {
     if( argc < 3 ) {
-        printf( "Usage: %s outputfile size\n", argv[0] );
+        printf( "Usage: %s outputfile size [offset]\n", argv[0] );
         printf( "Prints semi-non-trivial data to a file: at each 4th byte (0, 3, 7, ...) it prints a 32-bit counter (0, 1, 2, ...) in big-endian byte order\n" );
         printf( "- outputfile : the file to write to\n" );
         printf( "- size : the desired size of the file in KBytes (will be rounded up to a multiple of 4)\n" );
+        printf( "- offset : the offset of the internal counter to be written (default: 0)\n" );
         return -1;
     }
 
@@ -36,11 +37,16 @@ int main( int argc, char** argv ) {
         return -1;
     }
 
+    size_t offset = 0;
+    if( argc > 3 ) {
+        offset = strtol( argv[3], NULL, 10 );
+    }
+
     int f = open( argv[1], OPENFLAGS, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
     if( f < 0 ) {
         perror( argv[1] );
         return -1;
     }
 
-    return generateFakeData( f, n );
+    return generateFakeData( f, n, offset );
 }

@@ -20,18 +20,24 @@ class opentracker(client):
     You can retrieve the Opentracker software from http://erdgeist.org/arts/software/opentracker/
     
     Extra parameters:
-    - port              The port on which the tracker will be listening; required, 1023 < positive int < 65536
-    - changeTracker     The name of a file object for which the metaFile parameter has been set and points
-                        to a .torrent file; the torrent file will be changed to point to the dynamically
-                        retrieved address of the first host running this client; the file object will be
-                        altered to have their metaFile point to the changed torrent file before the files
-                        will be uploaded; can be specified multiple times. Note that the .torrent files to
-                        be altered must have a single tracker set already: the change is based on replacing
-                        the existing single tracker.
+    - port                  The port on which the tracker will be listening; required, 1023 < positive int < 65536
+    - changeTracker         The name of a file object for which the metaFile parameter has been set and points
+                            to a .torrent file; the torrent file will be changed to point to the dynamically
+                            retrieved address of the first host running this client; the file object will be
+                            altered to have their metaFile point to the changed torrent file before the files
+                            will be uploaded; can be specified multiple times. Note that the .torrent files to
+                            be altered must have a single tracker set already: the change is based on replacing
+                            the existing single tracker.
+    - changeClientTracker   The name of a client object for which all associated files are to have their metaFile
+                            parameters checked and, if they point to a .torrent file, the torrent file is to be
+                            updated as if the file object was given as a changeTracker to this object. Note that
+                            the metaFile of that very object will be updated, and hence all clients using that
+                            file object will see the updated meta file.
     """
     
     port = None                     # The port openTracker will listen on
     changeTrackers = None           # List of names of file objects for which to change the torrent files
+    changeClientTrackers = None     # List of names of client objects for which all torrent files are to be changed
     hasUpdatedTrackers = False      # Flag to keep track of whether the trackers have already been updated or not
     tempUpdatedFiles__lock = None   # List of all the temporary files (which need to be erased on cleanup)
     tempUpdatedFiles = None         # List of all the temporary files (which need to be erased on cleanup)
@@ -46,6 +52,7 @@ class opentracker(client):
         self.changeTrackers = []
         self.tempUpdatedFiles = []
         self.tempUpdatedFiles__lock = threading.Lock()
+        self.changeClientTrackers = []
 
     def parseSetting(self, key, value):
         """
@@ -74,6 +81,10 @@ class opentracker(client):
             if not isValidName( value ):
                 parseError( "{0} is not a valid name for a file object.".format( value ) )
             self.changeTrackers.append( value )
+        elif key == 'changeClientTracker':
+            if not isValidName( value ):
+                parseError( "{0} is not a valid name for a client object.".format( value ) )
+            self.changeClientTrackers.append( value )
         else:
             client.parseSetting(self, key, value)
 
@@ -89,6 +100,9 @@ class opentracker(client):
                 raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the latter was never declared.".format( self.name, f ) )
             if not self.scenario.getObjectsDict( 'file' )[f].metaFile or not os.path.exists( self.scenario.getObjectsDict( 'file' )[f].metaFile ) or os.path.isdir( self.scenario.getObjectsDict( 'file' )[f].metaFile ):
                 raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter does not exist or is a directory.".format( self.name, f ) )
+        for c in self.changeClientTrackers:
+            if c not in self.scenario.getObjectsDict( 'client' ):
+                raise Exception( "Client {0} was instructed to change the torrent files in client {1}, but the latter was never declared.".format( self.name, c ) )
 
     def checkSettings(self):
         """
@@ -123,12 +137,21 @@ class opentracker(client):
         """
         client.prepareHost(self, host)
         
-        if not self.hasUpdatedTrackers and len( self.changeTrackers ) > 0:
+        if not self.hasUpdatedTrackers and ( len( self.changeTrackers ) > 0 or len( self.changeClientTrackers ) > 0 ):
+            # Figure out the new tracker
             self.hasUpdatedTrackers = True
             newTracker = host.getAddress()
             if not newTracker:
                 raise Exception( "Client {0} was instructed to change some torrent files to update their trackers, but host {1} won't give an address for that.".format( self.name, host.name ) )
             newTracker = 'http://{0}:{1}/announce'.format( newTracker, self.port )
+            # Grab all executions for clients in our changeClientTrackers list and go over their files, adding them to changeTrackers as needed
+            for e in [e for e in self.scenario.getObjects('execution') if e.client.getName() in self.changeClientTrackers]:
+                for f in e.files:
+                    if not f.metaFile or not os.path.exists( f.metaFile ) or os.path.isdir( f.metaFile ):
+                        continue
+                    if f.getName() not in self.changeTrackers:
+                        self.changeTrackers.append( f.getName() )
+            # Update all file objects mentioned in changeTrackers
             for f in self.changeTrackers:
                 _, tmpFile = tempfile.mkstemp('.torrent')
                 try:

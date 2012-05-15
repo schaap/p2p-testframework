@@ -1,8 +1,15 @@
 from core.parsing import isPositiveInt
 from core.campaign import Campaign
 import core.file
+from core.meta import meta
 
 import os
+import pickle
+import tempfile
+import shutil
+import struct
+import array
+import subprocess
 
 def parseError( msg ):
     """
@@ -20,16 +27,44 @@ class fakedata(core.file.file):
     This module uses Utils/fakedata to generate the data for the files.
     
     Extra parameters:
-    - ksize     A positive integer, divisible by 4, that denotes the size of the generated file in kbytes. Required.
-    - binary    The path of the remote binary to use. This might be needed when g++ does not work on one of the hosts
-                this file is used on. Optional, defaults to "" which will have the binary compiled on the fly.
-    - filename  The name of the file that will be created. Optional, defaults to "fakedata".
+    - ksize             A positive integer, divisible by 4, that denotes the size of the generated file in kbytes. Required.
+    - binary            The path of the remote binary to use. This might be needed when g++ does not work on one of the hosts
+                        this file is used on. Optional, defaults to "" which will have the binary compiled on the fly.
+    - filename          The name of the file that will be created. Optional, defaults to "fakedata".
+    - multiple          The number of fake data files to generate. Optional positive integer, defaults to 1. If a multiple
+                        higher than 1 is specified, the filenames will be "{0}_{1}".format( filename, filecounter ) for
+                        filecounter from 0 to (multiple-1)
+    - generateTorrent   If set to anything but "" the file:fakedata will create torrent meta files for each fake data file
+                        and associate the file:fakedata instances with those meta files. Optional, requires metaFile to not
+                        be set.
+    - generateRootHash  If set to anything but "" the file:fakedata will calculate the root hash for each fake data file and
+                        associate the file:fakedata instances with those root hashes. Optional, requires rootHash to not be
+                        set.
+    - torrentCache      Path to a local directory. If set, this directory is taken to contain a cache of torrents for fakedata
+                        files. Each torrent is named '{0}_{1}.torrent'.format( self.size, self.slaveNumber ) (no _{1} if
+                        multiple is 1). Any present torrent files will be used from cache, others will be added to the cache.
+                        Optional, must point to an existing directory.
+    - rootHashCache     Path to a local file. If set, this file is taken to be a root hash cache for fakedata files. The cache
+                        is a binary file containing a pickled python dictionary. Any present root hashes will be used from
+                        cache, others will be added. Optional, must point to a writable (possibly not existing) file.
     """
     
-    size = None         # The size of the file in kbytes
-    binary = None       # Path to the remote binary to use
-    filename = None     # The filename the resulting file should have  
-
+    size = None                 # The size of the file in kbytes
+    binary = None               # Path to the remote binary to use
+    filename = None             # The filename the resulting file should have
+    multiple = None             # The number of fake data files to generate
+    
+    slave = False               # Flag to mark slave objects
+    slaveNumber = 0             # Number of the slave object (starts at 1: non-slave is always 0)
+    master = None               # The master object
+    
+    generateRootHash = False    # Flag whether root hashes are to be generated
+    generateTorrent = False     # Flag whether torents are to be generated
+    torrentCacheDir = None      # Path to local directory containing nothing but cached torrent files for fakedata
+    rootHashCacheFile = None    # Path to local file containing cached root hashes for fakedata
+    rootHashMap = None          # Map of generated root hashes
+    tmpTorrentDir = None        # Path to a temporary torrent directory
+    
     def __init__(self, scenario):
         """
         Initialization of a generic file object.
@@ -80,6 +115,30 @@ class fakedata(core.file.file):
             if self.filename:
                 parseError( "The filename has already been set: {0}".format( self.filename ) )
             self.filename = value
+        elif key == 'multiple':
+            if self.multiple:
+                parseError( "multiple may be specified only once" )
+            if not isPositiveInt( value, True ):
+                parseError( "multiple must be a positive, non-zero integer" )
+            self.multiple = int(value)
+        elif key == 'generateRootHash':
+            self.generateRootHash = (value != '')
+        elif key == 'generateTorrent':
+            self.generateTorrent = (value != '')
+        elif key == 'torrentCache':
+            if self.torrentCacheDir:
+                parseError( "A torrent cache directory has already been set: {0}".format( self.torrentCacheDir ) )
+            if not os.path.isdir( value ):
+                parseError( "{0} is not a directory".format( value ) )
+            self.torrentCacheDir = value
+        elif key == 'rootHashCache':
+            if self.rootHashCacheFile:
+                parseError( "A root hash cache file has already been set: {0}".format( self.rootHashCacheFile ) )
+            if os.path.exists( value ) and not os.path.isfile( value ):
+                parseError( "{0} is not a file".format( value ) )
+            if os.path.dirname( value ) == '' or not os.path.isdir( os.path.dirname( value ) ):
+                parseError( "{0} does not point to a new file in an existing directory".format( value ) )
+            self.rootHashCacheFile = value
         else:
             core.file.file.parseSetting(self, key, value)
 
@@ -104,7 +163,121 @@ class fakedata(core.file.file):
             for f in fakedataGeneratorFiles:
                 if not os.path.exists( os.path.join( Campaign.testEnvDir, 'Utils', 'fakedata', f ) ):
                     raise Exception( "A file seems to be missing from Utils/fakedata: {0} is required to build the fakedata utility.".format( f ) )
+        if not self.multiple:
+            self.multiple = 1
+        elif self.multiple > 1:
+            if self.metaFile:
+                raise Exception( "Meta files are not supported when setting multiple > 1." )
+            if self.rootHash:
+                raise Exception( "Preset root hashes are not supported when setting multiple > 1." )
+        if self.generateTorrent and self.metaFile:
+            raise Exception( "If generateTorrent is specified, no meta file is allowed." )
+        if self.generateRootHash and self.rootHash:
+            raise Exception( "If generateRootHash is specified, no rootHash is allowed." )
+        if self.torrentCacheDir and not self.generateTorrent:
+            raise Exception( "A torrent cache without generating torrents? You've forgotten something." )
+        if self.rootHashCacheFile and not self.generateRootHash:
+            raise Exception( "A root hash cache without generating root hashes? You've forgotten something." )
 
+        if self.generateRootHash or self.generateTorrent:        
+            if self.generateRootHash:
+                # Initialize root hash map and load root hash cache
+                if self.rootHashCacheFile and os.path.exists( self.rootHashCacheFile ):
+                    f = open( self.rootHashCacheFile, 'r' )
+                    self.rootHashMap = pickle.load( f )
+                    f.close()
+                    if type(self.rootHashMap) != dict:
+                        raise Exception( "Root hash cache file {0} does not contain a map. Type of unpickled object: {1}".format( self.rootHashCacheFile, type(self.rootHashMap) ) )
+                else:
+                    self.rootHashMap = {}
+            torrentDir = '' # So os.path.join(torrentDir,...) won't complain
+            if self.generateTorrent:
+                # Set torrentDir to either the cache dir or a new temporary dir
+                if self.torrentCacheDir:
+                    torrentDir = self.torrentCacheDir
+                else:
+                    self.tmpTorrentDir = tempfile.mkdtemp()
+                    torrentDir = self.tmpTorrentDir
+            tempdir = ''
+            torrentFound = 0
+            rootHashFound = 0
+            for count in range(self.multiple):
+                if self.generateRootHash and (self.size, count) in self.rootHashMap:
+                    rootHashFound += 1
+                if self.generateTorrent:
+                    if count == 0 and self.multiple == 1:
+                        if os.path.isfile( os.path.join( torrentDir, '{0}.torrent'.format( self.size ) ) ):
+                            torrentFound += 1
+                    else:
+                        if os.path.isfile( os.path.join( torrentDir, '{0}_{1}.torrent'.format( self.size, count ) ) ):
+                            torrentFound += 1
+            print "Generation of meta data requested for {1} files of file:fakedata {0}".format( self.name, self.multiple )
+            needGeneration = False
+            if self.generateTorrent:
+                if torrentFound == self.multiple:
+                    print "- All .torrent files are cached, not generating"
+                else:
+                    print "- {0} out of {1} .torrent files are cached, generating {2}".format( torrentFound, self.multiple, self.multiple - torrentFound )
+                    needGeneration = True
+            if self.generateRootHash:
+                if rootHashFound == self.multiple:
+                    print "- All root hashes are cached, not calculating"
+                else:
+                    print "- {0} out of {1} root hashes are cached, calculating {2}".format( rootHashFound, self.multiple, self.multiple - rootHashFound )
+                    needGeneration = True
+            if needGeneration:
+                if not os.path.exists( os.path.join( Campaign.testEnvDir, 'Utils', 'fakedata', 'genfakedata' ) ):
+                    raise Exception( "The Utils/fakedata/genfakedata utility is required to build a fakedata file for on-the-fly torrent and root hash creation. Please run something like 'g++ *.cpp -o genfakedata' inside Utils/fakedata/ to create it." )
+                try:
+                    tempdir = tempfile.mkdtemp()
+                    for count in range(self.multiple):
+                        # Figure out the would-be names of the file and the torrent file
+                        if count == 0 and self.multiple == 1:
+                            # Special naming convention for multiple == 1
+                            torrentName = os.path.join( torrentDir, '{0}.torrent'.format( self.size ) )
+                            filename = os.path.join( tempdir, self.filename )
+                        else: 
+                            torrentName = os.path.join( torrentDir, '{0}_{1}.torrent'.format( self.size, count ) )
+                            filename = os.path.join( tempdir, '{0}_{1}'.format( self.filename, count ) )
+                        # Check whether root hashes and/or torrent files are needed and not cached
+                        needRootHash = self.generateRootHash and (self.size, count) not in self.rootHashMap
+                        needTorrent = self.generateTorrent and not os.path.isfile( torrentName )
+                        if needRootHash or needTorrent:
+                            # Only create data file if either is needed and not cached
+                            # Creation is done by external process, since python is TOO RUDDY SLOW for it! Takes about the same time to build (not write) a handful of kilobytes of data as the external (native) program needs to write 50M of it
+                            proc = subprocess.Popen([os.path.abspath(os.path.join( Campaign.testEnvDir, 'Utils', 'fakedata', 'genfakedata' )), os.path.abspath(filename), '{0}'.format(self.size), '{0}'.format(count)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            (out,_) = proc.communicate()
+                            if proc.returncode != 0:
+                                raise Exception( "Generating file {0} of file:fakedata {1} failed. Output: {2}".format( count, self.name, out ) )
+                            
+                            if needRootHash:
+                                # Only calculate root hash if needed and not cached
+                                self.rootHashMap[(self.size, count)] = meta.calculateMerkleRootHash( filename, True )
+                            if needTorrent:
+                                # Only generate torrent file if needed and not cached
+                                meta.generateTorrentFile( filename, torrentName )
+                            # Better remove the file after calculating and generating: don't need it anymore and we might need the space
+                            os.remove(filename)
+                finally:
+                    # Clean up temp dir with data files
+                    if tempdir and tempdir != '':
+                        shutil.rmtree(tempdir, True)
+                        #pass
+                if self.generateRootHash:
+                    if self.rootHashCacheFile: 
+                        # Save root hash cache
+                        f = open( self.rootHashCacheFile, 'w' )
+                        pickle.dump( self.rootHashMap, f )
+                        f.close()
+            if self.generateRootHash:
+                # Set own roothash
+                self.rootHash = self.rootHashMap[(self.size, 0)].encode( 'hex' )
+            if self.generateTorrent:
+                if self.multiple == 1:
+                    self.metaFile = os.path.join( torrentDir, '{0}.torrent'.format( self.size ) )
+                else:
+                    self.metaFile = os.path.join( torrentDir, '{0}_0.torrent'.format( self.size ) )
+    
     def resolveNames(self):
         """
         Resolve any names given in the parameters.
@@ -112,6 +285,40 @@ class fakedata(core.file.file):
         This methods is called after all objects have been initialized.
         """
         core.file.file.resolveNames(self)
+    
+    def doPreprocessing(self):
+        """
+        Run directly after all objects in the scenario have run resolveNames and before cross referenced data is filled in (e.g. the files and seedingFiles arrays in all hosts are still empty).
+        
+        This method may alter executions as it sees fit, mainly to allow the file object to add more file objects to executions as needed.
+        
+        When creating extra file objects, don't forget to also register them with the scenario via self.scenario.addObject(theNewFileObject)!
+        """
+        if self.multiple > 1:
+            # Build slave objects that refer to this master for each fake data file beyond number 0
+            for count in range(1, self.multiple):
+                fd = fakedata(self.scenario)
+                fd.name = "{0}!{1}".format( self.name, count )
+                fd.size = self.size
+                fd.binary = self.binary
+                fd.filename = self.filename
+                fd.multiple = self.multiple
+                fd.slave = True
+                fd.master = self
+                fd.slaveNumber = count
+                fd.generateRootHash = self.generateRootHash
+                fd.generateTorrent = self.generateTorrent
+                if self.generateRootHash:
+                    fd.rootHash = self.rootHashMap[(self.size, count)].encode( 'hex' )
+                if self.generateTorrent:
+                    if self.torrentCacheDir:
+                        fd.metaFile = os.path.join( self.torrentCacheDir, '{0}_{1}.torrent'.format( self.size, count ) )
+                    else:
+                        fd.metaFile = os.path.join( self.tmpTorrentDir, '{0}_{1}.torrent'.format( self.size, count ) )
+                self.scenario.addObject(fd)
+                for e in [e for e in self.scenario.getObjects('execution') if e.files and self in e.files]:
+                    e.files.append(fd)
+                    e.fileNames.append(fd.getName())
 
     def sendToHost(self, host):
         """
@@ -131,6 +338,9 @@ class fakedata(core.file.file):
         @param  host        The host to which to send the files.
         """
         core.file.file.sendToHost(self, host)
+        
+        if self.slave:
+            return
 
         host.sendCommand( 'mkdir -p "{0}/files"'.format( self.getFileDir(host) ) )
 
@@ -148,6 +358,10 @@ class fakedata(core.file.file):
         """
         core.file.file.sendToSeedingHost(self, host)
         
+        if self.slave:
+            return
+        
+        # Figure out command
         binaryCommand = None
         if not self.binary:
             remoteBaseDir = '{0}/fakedata-source'.format( self.getFileDir(host) )
@@ -165,11 +379,37 @@ class fakedata(core.file.file):
             if res != 'Y':
                 raise Exception( "Binary {0} for file {1} does not exist on host {2}".format( self.binary, self.name, host.name ) )
             binaryCommand = self.binary
-        res = host.sendCommand( '"{0}" "{1}/files/{2}" {3} && echo && echo "OK"'.format( binaryCommand, self.getFileDir(host), self.filename, self.size ) )
-        if len(res) < 2:
-            raise Exception( "Too short a response when trying to generate the fake data file {0} on host {1}: {2}".format( self.name, host.name, res ) )
-        if res[-2:] != "OK":
-            raise Exception( "Could not generate fake data file {0} on host {1}: {2}".format( self.name, host.name, res ) )
+
+        # Generate files
+        if self.multiple > 1:
+            for filecounter in range(self.multiple):
+                res = host.sendCommand( '"{0}" "{1}/files/{2}_{4}" {3} {4} && echo && echo "OK"'.format( binaryCommand, self.getFileDir(host), self.filename, self.size, filecounter ) )
+                if len(res) < 2:
+                    raise Exception( "Too short a response when trying to generate the fake data file {0}_{3} on host {1}: {2}".format( self.name, host.name, res, filecounter ) )
+                if res[-2:] != "OK":
+                    raise Exception( "Could not generate fake data file {0}_{3} on host {1}: {2}".format( self.name, host.name, res, filecounter ) )
+        else:
+            res = host.sendCommand( '"{0}" "{1}/files/{2}" {3} && echo && echo "OK"'.format( binaryCommand, self.getFileDir(host), self.filename, self.size ) )
+            if len(res) < 2:
+                raise Exception( "Too short a response when trying to generate the fake data file {0} on host {1}: {2}".format( self.name, host.name, res ) )
+            if res[-2:] != "OK":
+                raise Exception( "Could not generate fake data file {0} on host {1}: {2}".format( self.name, host.name, res ) )
+
+    def getFileDir(self, host):
+        """
+        Returns the path on the remote host where this file's files can reside.
+
+        No guarantees are given as to the existence of this path.
+        
+        During cleanup this may return None! 
+
+        @param  host        The host on which the remote path is requested.
+
+        @return The path to the file dir on the remote host.
+        """
+        if self.slave:
+            return self.master.getFileDir(host)
+        return core.file.file.getFileDir(self, host)
 
     def getFile(self, host):
         """
@@ -188,7 +428,44 @@ class fakedata(core.file.file):
 
         @return The path to the (root of) the file(s) on the remote host, or None if they are not (yet) available.
         """
-        return "{0}/files/{1}".format( self.getFileDir(host), self.filename )
+        if self.multiple > 1:
+            return "{0}/files/{1}_{2}".format( self.getFileDir(host), self.filename, self.slaveNumber )
+        else:
+            return "{0}/files/{1}".format( self.getFileDir(host), self.filename )
+
+    def getMetaFile(self, host):
+        """
+        Returns the path to the meta file on the remote host.
+
+        If no meta file was given, None is returned.
+
+        An example of a meta file is a torrent file: a file that describes the actual data file(s).
+
+        Note that you should verify yourself that the file is actually there. This should be true after sendToHost(...) has been
+        called for this host.
+
+
+        @param  host        The host on which to find the meta file.
+
+        @return The path to the meta file on the remote host, or None is no meta file is available.
+        """
+        if not self.metaFile or not self.getFileDir( host ):
+            return None
+        if self.generateTorrent:
+            return '{0}/meta/meta_file_{1}.torrent'.format( self.getFileDir( host ), self.slaveNumber )
+        return core.file.file.getMetaFile(self, host)
+    
+    def cleanup(self):
+        """
+        Cleans up the file object.
+        
+        Do not assume anything has been or has not been done.
+        Check everything and make sure things are clean when you're done.
+        """
+        if self.tmpTorrentDir:
+            if os.path.exists( self.tmpTorrentDir ):
+                shutil.rmtree(self.tmpTorrentDir, True)
+            self.tmpTorrentDir = None
 
     @staticmethod
     def APIVersion():

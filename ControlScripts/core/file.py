@@ -108,7 +108,7 @@ class file(coreObject):
         When creating extra file objects, don't forget to also register them with the scenario via self.scenario.addObject(theNewFileObject)!
         """
         pass
-
+    
     def getFileDir(self, host):
         """
         Returns the path on the remote host where this file's files can reside.
