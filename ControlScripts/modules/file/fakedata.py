@@ -7,9 +7,8 @@ import os
 import pickle
 import tempfile
 import shutil
-import struct
-import array
 import subprocess
+import random
 
 def parseError( msg ):
     """
@@ -47,6 +46,12 @@ class fakedata(core.file.file):
     - rootHashCache     Path to a local file. If set, this file is taken to be a root hash cache for fakedata files. The cache
                         is a binary file containing a pickled python dictionary. Any present root hashes will be used from
                         cache, others will be added. Optional, must point to a writable (possibly not existing) file.
+    
+    Selection arguments:
+    - '?'               Will select a random file object from this file:fakedata's collection. Especially useful if multiple > 1
+                        to select a random file from the set. E.g. file=myfile@? 
+    - n                 The positive zero-based index of the file in the list of files. Allowed ranges [0, multiple). Useful for
+                        selecting one specific file when using multiple > 1. E.g. file=myfile@2    (assumes multiple=3 or larger)
     """
     
     size = None                 # The size of the file in kbytes
@@ -56,7 +61,8 @@ class fakedata(core.file.file):
     
     slave = False               # Flag to mark slave objects
     slaveNumber = 0             # Number of the slave object (starts at 1: non-slave is always 0)
-    master = None               # The master object
+    master = None               # The master object, set only for slave objects
+    slaves = None               # Map of slave objects, only validly filled if not self.slave. Maps from count to file object.
     
     generateRootHash = False    # Flag whether root hashes are to be generated
     generateTorrent = False     # Flag whether torents are to be generated
@@ -65,6 +71,8 @@ class fakedata(core.file.file):
     rootHashMap = None          # Map of generated root hashes
     tmpTorrentDir = None        # Path to a temporary torrent directory
     
+    seedingHostSeen = None      # A list of seeding hosts which have already been seen for sendToSeedingHost
+    
     def __init__(self, scenario):
         """
         Initialization of a generic file object.
@@ -72,6 +80,8 @@ class fakedata(core.file.file):
         @param  scenario        The ScenarioRunner object this client object is part of.
         """
         core.file.file.__init__(self, scenario)
+        self.slaves = {}
+        self.seedingHostSeen = []
 
     def parseSetting(self, key, value):
         """
@@ -288,13 +298,19 @@ class fakedata(core.file.file):
     
     def doPreprocessing(self):
         """
-        Run directly after all objects in the scenario have run resolveNames and before cross referenced data is filled in (e.g. the files and seedingFiles arrays in all hosts are still empty).
+        Run directly before all objects in the scenario will run resolveNames and before cross referenced data is filled in.
         
         This method may alter executions as it sees fit, mainly to allow the file object to add more file objects to executions as needed.
+        Take care to select executions by looking at their fileNames attribute, not the files attribute. Also take into account that
+        file=blabla@ is equal to file=blabla . You'll need to select both if you want either.
         
         When creating extra file objects, don't forget to also register them with the scenario via self.scenario.addObject(theNewFileObject)!
+        Also note that those objects will have their resolveNames method called as well.
         """
+        self.slaves[0] = self
         if self.multiple > 1:
+            name1 = self.getName()
+            name2 = '{0}@'.format(name1)
             # Build slave objects that refer to this master for each fake data file beyond number 0
             for count in range(1, self.multiple):
                 fd = fakedata(self.scenario)
@@ -316,10 +332,40 @@ class fakedata(core.file.file):
                     else:
                         fd.metaFile = os.path.join( self.tmpTorrentDir, '{0}_{1}.torrent'.format( self.size, count ) )
                 self.scenario.addObject(fd)
-                for e in [e for e in self.scenario.getObjects('execution') if e.files and self in e.files]:
-                    e.files.append(fd)
-                    e.fileNames.append(fd.getName())
+                self.slaves[count] = fd
+                for e in [e for e in self.scenario.getObjects('execution') if e.fileNames and (name1 in e.fileNames or name2 in e.fileNames)]:
+                    e.fileNames.append("{0}@{1}".format( self.getName(), count ))
 
+    def getByArguments(self, argumentString):
+        """
+        Selects a file object by specific arguments.
+        
+        The arguments can be used to return a different file object than the one this is called on.
+        
+        This is called for the execution's file parameter's selection syntax:
+            file=name@args
+        Invariant: self.scenario.getObjectsDict('file')[name] == self and argumentString == args
+        
+        The primary use of selection by arguments is to select a single file object from a file object that multiplies itself.
+        
+        The default implementation returns self for no arguments and raises an exception for any other argument.
+        
+        @param     argumentString    The arguments passed in the selection
+        
+        @return    A single, specific file object.
+        """
+        if argumentString == '?':
+            return self.slaves[random.randint(0,self.multiple - 1)]
+        if argumentString == '':
+            return self
+        try:
+            i = int(argumentString)
+            if i < 0 or i >= self.multiple:
+                raise Exception( "File {1}@{0} requested but only {1}@0 through {1}@{2} are available".format( i, self.name, self.multiple - 1 ) )
+            return self.slaves[i]
+        except ValueError:
+            raise Exception( "Argument string '{0}' not supported by file:fakedata in request '{1}@{0}'".format( argumentString, self.name ) )
+    
     def sendToHost(self, host):
         """
         Send any required file to the host.
@@ -339,10 +385,7 @@ class fakedata(core.file.file):
         """
         core.file.file.sendToHost(self, host)
         
-        if self.slave:
-            return
-
-        host.sendCommand( 'mkdir -p "{0}/files"'.format( self.getFileDir(host) ) )
+        host.sendCommand( '[ -d "{0}/files" ] || mkdir -p "{0}/files"'.format( self.getFileDir(host) ) )
 
     def sendToSeedingHost(self, host):
         """
@@ -356,10 +399,15 @@ class fakedata(core.file.file):
 
         @param  host        The host to which to send the files.
         """
-        core.file.file.sendToSeedingHost(self, host)
-        
         if self.slave:
+            self.master.sendToSeedingHost(host)
             return
+        
+        if host in self.seedingHostSeen:
+            return
+        self.seedingHostSeen.append(host)
+        
+        core.file.file.sendToSeedingHost(self, host)
         
         # Figure out command
         binaryCommand = None

@@ -513,16 +513,16 @@ class ScenarioRunner:
         obj.checkSettings()
         self.addObject(obj)
 
+        # Allow file objects to do some preprocessing before name resolving
+        for obj in self.getObjects('file'):
+            obj.doPreprocessing()
+        
         # Check sanity
         if len( self.getObjects('execution') ) == 0:
             raise Exception( "No executions found in scenario {0}".format( self.name ) )
         for resolveObjects in ['execution', 'client', 'file', 'host', 'parser', 'processor', 'viewer', 'workload']:
             for obj in self.getObjects(resolveObjects):
                 obj.resolveNames()
-        
-        # Allow file objects to do some preprocessing after everything has been resolved
-        for obj in self.getObjects('file'):
-            obj.doPreprocessing()
         
         # Fill in extra cross-object data
         for execution in self.getObjects('execution'):

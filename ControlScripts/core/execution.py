@@ -71,17 +71,20 @@ class execution(coreObject):
             if self.hostName:
                 parseError( "A host was already given: {0}".format( self.hostName ) )
             if not isValidName( value ):
-                parseError( "{0} is not a valid host object name".format( value ) )
+                if not isValidName( value[:value.find('@')]):
+                    parseError( "{0} is not a valid host object name".format( value ) )
             self.hostName = value
         elif key == 'client':
             if self.clientName:
                 parseError( "A client was already given: {0}".format( self.clientName ) )
             if not isValidName( value ):
-                parseError( "{0} is not a valid client object name".format( value ) )
+                if not isValidName( value[:value.find('@')]):
+                    parseError( "{0} is not a valid client object name".format( value ) )
             self.clientName = value
         elif key == 'file':
             if not isValidName( value ):
-                parseError( "{0} is not a valid file object name".format( value ) )
+                if not isValidName( value[:value.find('@')]):
+                    parseError( "{0} is not a valid file object name".format( value ) )
             if not self.fileNames:
                 self.fileNames = [value]
             elif value not in self.fileNames:
@@ -136,15 +139,27 @@ class execution(coreObject):
         fdict = self.scenario.getObjectsDict('file')
         pdict = self.scenario.getObjectsDict('parser')
         hdict = self.scenario.getObjectsDict('host')
-        cdict = self.scenario.getObjectsDict('client') 
-        if self.hostName not in hdict:
-            raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )
-        if self.clientName not in cdict:
-            raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
+        cdict = self.scenario.getObjectsDict('client')
+        if self.hostName.find('@') >= 0:
+            if self.hostName[:self.hostName.find('@')] not in hdict:
+                raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )
+        else:
+            if self.hostName not in hdict:
+                raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )
+        if self.clientName.find('@') >= 0:
+            if self.clientName[:self.clientName.find('@')] not in cdict:
+                raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
+        else:
+            if self.clientName not in cdict:
+                raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
         if self.fileNames:
             for fileName in self.fileNames:
-                if fileName not in fdict:
-                    raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, fileName ) )
+                if fileName.find('@') >= 0:
+                    if fileName[:fileName.find('@')] not in fdict:
+                        raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, fileName ) )
+                else:
+                    if fileName not in fdict:
+                        raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, fileName ) )
         if self.parserNames:
             for parser in self.parserNames:
                 if parser not in pdict:
@@ -152,12 +167,21 @@ class execution(coreObject):
                         Campaign.loadModule( 'parser', parser )
                     except ImportError:
                         raise Exception( "Execution defined at line {0} refers to parser {1} which is never declared".format( self.declarationLine, parser ) )
-        self.host = hdict[self.hostName]
-        self.client = cdict[self.clientName]
+        if self.hostName.find('@') >= 0:
+            self.host = hdict[self.hostName[:self.hostName.find('@')]].getByArguments(self.hostName[self.hostName.find('@')+1:])
+        else:
+            self.host = hdict[self.hostName]
+        if self.clientName.find('@') >= 0:
+            self.client = cdict[self.clientName[:self.clientName.find('@')]].getByArguments(self.clientName[self.clientName.find('@')+1:])
+        else:
+            self.client = cdict[self.clientName]
         self.files = []
         if self.fileNames:
             for fileName in self.fileNames:
-                self.files.append( fdict[fileName] )
+                if fileName.find('@') >= 0:
+                    self.files.append( fdict[fileName[:fileName.find('@')]].getByArguments(fileName[fileName.find('@')+1:]) )
+                else:
+                    self.files.append( fdict[fileName] )
         if self.parserNames:
             self.parsers = []
             for parser in self.parserNames:

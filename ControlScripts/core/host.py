@@ -505,6 +505,28 @@ class host(coreObject):
         """
         pass
 
+    def getByArguments(self, argumentString):
+        """
+        Selects a hsot object by specific arguments.
+        
+        The arguments can be used to return a different host object than the one this is called on.
+        
+        This is called for the execution's host parameter's selection syntax:
+            host=name@args
+        Invariant: self.scenario.getObjectsDict('host')[name] == self and argumentString == args
+        
+        The primary use of selection by arguments is to select a single host object from a host object that multiplies itself.
+        
+        The default implementation returns self for no arguments and raises an exception for any other argument.
+        
+        @param     argumentString    The arguments passed in the selection
+        
+        @return    A single, specific host object.
+        """
+        if argumentString != '':
+            raise Exception( 'Host {0} does not support object selection by argument'.format( self.getName() ) )
+        return self
+    
     def setupNewConnection(self):
         """
         Create a new connection to the host.

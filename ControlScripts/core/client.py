@@ -187,6 +187,28 @@ class client(coreObject):
             except ImportError:
                 raise Exception( "Client {0} has no parser specified, but falling back to default parser module parser:{1} is not possible since that module does not exist or is outdated.".format( self.name, self.__class__.__name__ ) )
 
+    def getByArguments(self, argumentString):
+        """
+        Selects a client object by specific arguments.
+        
+        The arguments can be used to return a different client object than the one this is called on.
+        
+        This is called for the execution's client parameter's selection syntax:
+            client=name@args
+        Invariant: self.scenario.getObjectsDict('client')[name] == self and argumentString == args
+        
+        The primary use of selection by arguments is to select a single client object from a client object that multiplies itself.
+        
+        The default implementation returns self for no arguments and raises an exception for any other argument.
+        
+        @param     argumentString    The arguments passed in the selection
+        
+        @return    A single, specific client object.
+        """
+        if argumentString != '':
+            raise Exception( 'Client {0} does not support object selection by argument'.format( self.getName() ) )
+        return self
+    
     def prepare(self):
         """
         Generic preparations for the client, irrespective of executions or hosts.

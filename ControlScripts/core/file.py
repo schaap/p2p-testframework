@@ -101,13 +101,38 @@ class file(coreObject):
     
     def doPreprocessing(self):
         """
-        Run directly after all objects in the scenario have run resolveNames and before cross referenced data is filled in (e.g. the files and seedingFiles arrays in all hosts are still empty).
+        Run directly before all objects in the scenario will run resolveNames and before cross referenced data is filled in.
         
         This method may alter executions as it sees fit, mainly to allow the file object to add more file objects to executions as needed.
+        Take care to select executions by looking at their fileNames attribute, not the files attribute. Also take into account that
+        file=blabla@ is equal to file=blabla . You'll need to select both if you want either.
         
         When creating extra file objects, don't forget to also register them with the scenario via self.scenario.addObject(theNewFileObject)!
+        Also note that those objects will have their resolveNames method called as well.
         """
         pass
+    
+    def getByArguments(self, argumentString):
+        """
+        Selects a file object by specific arguments.
+        
+        The arguments can be used to return a different file object than the one this is called on.
+        
+        This is called for the execution's file parameter's selection syntax:
+            file=name@args
+        Invariant: self.scenario.getObjectsDict('file')[name] == self and argumentString == args
+        
+        The primary use of selection by arguments is to select a single file object from a file object that multiplies itself.
+        
+        The default implementation returns self for no arguments and raises an exception for any other argument.
+        
+        @param     argumentString    The arguments passed in the selection
+        
+        @return    A single, specific file object.
+        """
+        if argumentString != '':
+            raise Exception( 'File {0} does not support object selection by argument'.format( self.getName() ) )
+        return self
     
     def getFileDir(self, host):
         """
