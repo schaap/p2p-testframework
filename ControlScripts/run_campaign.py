@@ -463,6 +463,37 @@ class ScenarioRunner:
         if obj.getName() in self.objects[obj.getModuleType()]:
             raise Exception( "Object {0} already in dictionary for module type {1}. If this occurred while reading the scenario files you might have used the same name twice.".format( obj.getName(), obj.getModuleType() ) )
         self.objects[obj.getModuleType()][obj.getName()] = obj
+    
+    def resolveObjectName(self, moduleType, name):
+        """
+        Returns an object of a specific type, after resolving the given name for the given type.
+        This resolution includes argument-selectors which are passed on to the primarily named object.
+        
+        This method will raise an Exception if the requested object is not found. 
+        
+        @param  moduleType     The type of the object to be resolved.
+        @param  name           The exact name, including argument selectors, to be resolved.
+        
+        @return    The object found after resolution of the name for the given type.
+        """
+        basename = name
+        i = name.find('@')
+        args = ''
+        if i >= 0:
+            basename = name[:i]
+            args = name[i+1:]
+        if moduleType not in self.objects:
+            raise Exception( "Module object '{0}' of type '{1}' was requested, but no such module type exists. You most likely forgot to declare {0}:{2} in your test files.".format( moduleType, name, basename ) )
+        odict = self.objects[moduleType]
+        if basename not in odict:
+            raise Exception( "Module object '{0}' of type '{1}' was requested, but no such object was defined for that type. You most likely forgot to declare {0}:{2} in your test files.".format( moduleType, name, basename ) )
+        if hasattr(odict[basename], 'getByArguments'):
+            return odict[basename].getByArguments(args)
+        else:
+            if args != '':
+                raise Exception( "Module type '{0}' does not support argument selections.".format( moduleType ) )
+            else:
+                return odict[basename]
 
     def read(self):
         """
@@ -513,6 +544,9 @@ class ScenarioRunner:
         obj.checkSettings()
         self.addObject(obj)
 
+        # Allow host objects to do some preprocessing before name resolving
+        for obj in self.getObjects('host'):
+            obj.doPreprocessing()
         # Allow file objects to do some preprocessing before name resolving
         for obj in self.getObjects('file'):
             obj.doPreprocessing()

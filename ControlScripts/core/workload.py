@@ -90,7 +90,10 @@ class workload(coreObject):
         found = False
         for c in self.applyList:
             if c not in self.scenario.getObjectsDict('client'):
-                raise Exception( "Workload {0} is instructed to apply itself to client {1}, but that client does not exist.".format( self.__class__.__name__, c ) )
+                if c.find('@') >= 0:
+                    raise Exception( "Workload {0} is instructed to apply itself to client {1}, but that client contains an argument selector. Argument selectors are not supported by workloads.".format( self.__class__.__name__, c ) )
+                else:
+                    raise Exception( "Workload {0} is instructed to apply itself to client {1}, but that client does not exist.".format( self.__class__.__name__, c ) )
             for e in [e for e in self.scenario.getObjects('execution') if e.client.name == c]:
                 if not e.isSeeder() or self.applySeeders:
                     found = True

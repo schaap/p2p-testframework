@@ -49,6 +49,51 @@ class execution(coreObject):
         coreObject.__init__(self, scenario)
         self.number = execution.executionCount
         execution.executionCount += 1
+    
+    def copyExecution(self, other):
+        """
+        Copies all values of the other execution object into this execution object.
+        
+        This method can be used as the basis for duplicating executions on-the-fly.
+        Be sure to register the new execution correctly with the scenario and to call
+        .checkSettings() and possible .resolveNames() after changing values.
+        
+        You may also want to cross-reference the objects to make sure all objects in
+        the execution are up to date, although if you need to do this you should rather
+        be rethinking where you're duplicating the execution: you're probably too late
+        in the flow of the scenario.
+        
+        Variables not copied:
+        - number
+        - runnerConnection
+        - executionConnection
+        - parent variables
+        
+        @param  other          The execution object from which the values are to be copied.
+        """
+        self.hostName = other.hostName
+        self.clientName = other.clientName
+        if other.fileNames:
+            self.fileNames = list(other.fileNames)
+        else:
+            self.fileNames = None
+        if other.parserNames:
+            self.parserNames = list(other.parserNames)
+        else:
+            self.parserNames = None
+        self.host = other.host
+        self.client = other.client
+        if other.files:
+            self.files = list(other.files)
+        else:
+            self.files = None
+        if other.parsers:
+            self.parsers = list(other.parsers)
+        else:
+            self.parsers = None
+        self.timeout = other.timeout
+        self.keepSeeding = other.keepSeeding
+        self.seeder = other.seeder
 
     def parseSetting(self, key, value):
         """
@@ -136,30 +181,7 @@ class execution(coreObject):
         
         This methods is called after all objects have been initialized.
         """
-        fdict = self.scenario.getObjectsDict('file')
         pdict = self.scenario.getObjectsDict('parser')
-        hdict = self.scenario.getObjectsDict('host')
-        cdict = self.scenario.getObjectsDict('client')
-        if self.hostName.find('@') >= 0:
-            if self.hostName[:self.hostName.find('@')] not in hdict:
-                raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )
-        else:
-            if self.hostName not in hdict:
-                raise Exception( "Execution defined at line {0} refers to host {1} which is never declared".format( self.declarationLine, self.hostName ) )
-        if self.clientName.find('@') >= 0:
-            if self.clientName[:self.clientName.find('@')] not in cdict:
-                raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
-        else:
-            if self.clientName not in cdict:
-                raise Exception( "Execution defined at line {0} refers to client {1} which is never declared".format( self.declarationLine, self.clientName ) )
-        if self.fileNames:
-            for fileName in self.fileNames:
-                if fileName.find('@') >= 0:
-                    if fileName[:fileName.find('@')] not in fdict:
-                        raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, fileName ) )
-                else:
-                    if fileName not in fdict:
-                        raise Exception( "Execution defined at line {0} refers to file {1} which is never declared".format( self.declarationLine, fileName ) )
         if self.parserNames:
             for parser in self.parserNames:
                 if parser not in pdict:
@@ -167,21 +189,12 @@ class execution(coreObject):
                         Campaign.loadModule( 'parser', parser )
                     except ImportError:
                         raise Exception( "Execution defined at line {0} refers to parser {1} which is never declared".format( self.declarationLine, parser ) )
-        if self.hostName.find('@') >= 0:
-            self.host = hdict[self.hostName[:self.hostName.find('@')]].getByArguments(self.hostName[self.hostName.find('@')+1:])
-        else:
-            self.host = hdict[self.hostName]
-        if self.clientName.find('@') >= 0:
-            self.client = cdict[self.clientName[:self.clientName.find('@')]].getByArguments(self.clientName[self.clientName.find('@')+1:])
-        else:
-            self.client = cdict[self.clientName]
+        self.host = self.scenario.resolveObjectName( 'host', self.hostName )
+        self.client = self.scenario.resolveObjectName( 'client', self.clientName )
         self.files = []
         if self.fileNames:
             for fileName in self.fileNames:
-                if fileName.find('@') >= 0:
-                    self.files.append( fdict[fileName[:fileName.find('@')]].getByArguments(fileName[fileName.find('@')+1:]) )
-                else:
-                    self.files.append( fdict[fileName] )
+                self.files.append( self.scenario.resolveObjectName( 'file', fileName ) )
         if self.parserNames:
             self.parsers = []
             for parser in self.parserNames:

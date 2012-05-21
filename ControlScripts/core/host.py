@@ -497,6 +497,21 @@ class host(coreObject):
                 if self.tcJitter > self.tcDelay:
                     raise Exception( "Host {0} was given a jitter ({1}) and delay ({2}) for TC, but the jitter can't be larger tan the delay.".format( self.name, self.tcJitter, self.tcDelay ) )
 
+    def doPreprocessing(self):
+        """
+        Run directly before all objects in the scenario will run resolveNames and before cross referenced data is filled in.
+        Host preprocessing is run before file preprocessing.
+        
+        This method may alter executions as it sees fit, mainly to allow the host object to add more execution objects as needed.
+        Take care to select executions by looking at their hostName attribute, not the host attribute. Also take into account that
+        host=blabla@ is equal to host=blabla . You'll need to select both if you want either.
+        
+        When creating extra execution objects, don't forget to also register them with the scenario via
+        self.scenario.addObject(theNewExecutionObject)! Also note that those objects will have their resolveNames method called
+        as well.
+        """
+        pass
+
     def resolveNames(self):
         """
         Resolve any names given in the parameters.
@@ -507,7 +522,7 @@ class host(coreObject):
 
     def getByArguments(self, argumentString):
         """
-        Selects a hsot object by specific arguments.
+        Selects a host object by specific arguments.
         
         The arguments can be used to return a different host object than the one this is called on.
         

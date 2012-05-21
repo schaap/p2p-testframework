@@ -102,6 +102,7 @@ class file(coreObject):
     def doPreprocessing(self):
         """
         Run directly before all objects in the scenario will run resolveNames and before cross referenced data is filled in.
+        Host preprocessing is run before file preprocessing.
         
         This method may alter executions as it sees fit, mainly to allow the file object to add more file objects to executions as needed.
         Take care to select executions by looking at their fileNames attribute, not the files attribute. Also take into account that

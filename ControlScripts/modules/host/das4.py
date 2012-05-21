@@ -15,6 +15,7 @@ import time
 import socket
 import types
 import traceback
+import random
 
 #==========================
 # Multiplexing connections
@@ -902,7 +903,20 @@ class das4(host):
     Traffic control on the DAS4 is currently not supported. If you try and use it, anyway, results are
     unpredictable. Most likely it will break the moment any DAS4 node needs to fall back to full IP-range based
     traffic control; thereby also breaking it for other users. For your convenience and experimentation no
-    warnings or errors will pop up if you try, though.  
+    warnings or errors will pop up if you try, though.
+    
+    Selection arguments:
+    - '?'                    Select a single host from this DAS4 object. This is equal to '?1'.
+    - '?n'                   With n being a positive non-zero integer no larger than nNodes: selects n nodes from
+                             this DAS4 object. Should not be used with anything other than executions: the
+                             execution referring to this name will be duplicated n times, each with a different
+                             random node. If n is 1, this is equal to '?', if n is nNodes this is similar to no
+                             argument selector at all but with the nodes in non-deterministic.
+    - n                      The positive zero-based index in the list of nodes of this DAS4 object. Will select
+                             that exact node.
+    - ''                     As expected, no selector argument will return the master object. *However*: when used
+                             inside an execution's host argument, this is equal to '?n' with n equal to nNodes but
+                             in deterministic order. 
     """
 
     headNode = None                         # Address of the headNode to use
@@ -910,6 +924,7 @@ class das4(host):
     reserveTime = None                      # Number of seconds to reserve the nodes
     user = None                             # Username to use as login name on the DAS4
     headNode_override = False               # Set to True to disable headNode validity checks
+    master = None                           # Set only for slaves: refers to their master
     
     masterConnection = None                 # The master connection to the headnode; all slave hosts will connect through port
                                             # forwards over this connection.
@@ -933,9 +948,12 @@ class das4(host):
     tempPersistentDirectory = None          # String with the temporary persistent directory on the headnode
     reservationID = None                    # Reservation identifier
     reservationFixed = None                 # Flag to indicate a fixed reservation was used and hence should not be cancelled
-    nodeSet = []                            # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host
-    slaves = []                             # list of slaves of this master node, None for non-master nodes
+    nodeSet = None                          # List of node names to be used by this master host, nodeSet[0] is the node name of this slave host; None for uninitialized supervisors, [] for uninitialized slaves
+    slaves = None                           # Map (int => das4) of slaves of this master node, None for non-master nodes
     bogusRemoteDir = False                  # Flag to signal whether to ignore the value in self.remoteDirectory
+    
+    preprocessingDone = False               # Keeps track of whether preprocessing has been done: before preprocessing getByArguments needs to work differently
+    prepared = False                        # Keeps track of whether prepare has been called: required since it's called twice and should be executed only once 
     
     # DAS4 host objects come in three types:
     # - supervisor
@@ -1074,6 +1092,127 @@ empty
                     self.headNode = 'fs5.das4.astron.nl'
             if not self.headNode:
                 raise Exception( "No headnode was specified for host {0} and this host was not detected to be in one of the hosting networks. Please specify a headnode.")
+    
+    def getByArguments(self, argumentString):
+        """
+        Selects a host object by specific arguments.
+        
+        The arguments can be used to return a different host object than the one this is called on.
+        
+        This is called for the execution's host parameter's selection syntax:
+            host=name@args
+        Invariant: self.scenario.getObjectsDict('host')[name] == self and argumentString == args
+        
+        The primary use of selection by arguments is to select a single host object from a host object that multiplies itself.
+        
+        The default implementation returns self for no arguments and raises an exception for any other argument.
+        
+        @param     argumentString    The arguments passed in the selection
+        
+        @return    A single, specific host object.
+        """
+        # Before preprocessing is done, a master will always return itself
+        if not self.preprocessingDone:
+            return self
+        # Non-masters use default lookup
+        if self.slaves is None:
+            return host.getByArguments(self, argumentString)
+        # Random selector
+        if argumentString == '?' or argumentString == '?1':
+            return self.slaves[random.randint(0,self.nNodes-1)]
+        # Empty selector always returns self; documented special case for execution
+        if argumentString == '':
+            return self
+        # Multi random selector
+        if argumentString[0] == '?':
+            raise Exception( 'Argument selector {0} to DAS4 object {1} refers to multiple nodes, but only one node can be returned.'.format( argumentString, self.getName() ) )
+        # Specific index selector
+        try:
+            i = [int(argumentString)]
+        except ValueError:
+            raise Exception( "Argument selector {0} is not valid.".format( argumentString ) )
+        if i < 0:
+            raise Exception( "An integer argument selector to a DAS4 object must not be negative." )
+        if i >= self.nNodes:
+            raise Exception( "Integer argument selector {0} for DAS4 object {1} was found, but only {2} objects are available which means the argument selector can't be more than {4}.".format( argumentString, self.getName(), self.nNodes, self.nNodes - 1 ) )
+        return self.slaves[i]
+    
+    def doPreprocessing(self):
+        """
+        Run directly before all objects in the scenario will run resolveNames and before cross referenced data is filled in.
+        Host preprocessing is run before file preprocessing.
+        
+        This method may alter executions as it sees fit, mainly to allow the host object to add more execution objects as needed.
+        Take care to select executions by looking at their hostName attribute, not the host attribute. Also take into account that
+        host=blabla@ is equal to host=blabla . You'll need to select both if you want either.
+        
+        When creating extra execution objects, don't forget to also register them with the scenario via
+        self.scenario.addObject(theNewExecutionObject)! Also note that those objects will have their resolveNames method called
+        as well.
+        """
+        if self.nNodes:
+            # Create all slave hosts for this master host
+            self.slaves = {}
+            self.slaves[0] = self
+            for c in range( 1, self.nNodes ):
+                # Create slave host object
+                newObj = das4(self.scenario)
+                newObj.headNode = self.headNode
+                newObj.user = self.user
+                newObj.master = self
+                newObj.preprocessingDone = True
+                newObj.nodeSet = []
+                newObj.copyhost(self)
+                newName = "{0}!{1}".format( self.name, c )
+                if newName in self.scenario.getObjectsDict('host'):
+                    raise Exception( "Insanity! DAS4 host {0} wanted to create slave for connection {1}, which would be named {2}, but a host with that name already exists!".format( self.name, c, newName ) )
+                newObj.name = newName
+                if self.isInCleanup():
+                    return
+                self.scenario.addObject(newObj)
+                self.slaves[c] = newObj
+            for e in [e for e in self.scenario.getObjects('execution') if self.scenario.resolveObjectName('host', e.hostName) == self]:
+                n = self.nNodes # Number of nodes this execution refers to, all nodes by default
+                i = None        # List of indices of nodes this execution refers to, None if not yet initialized
+                if e.hostName.find('@') >= 0:
+                    args = e.hostName[e.hostName.find('@')+1:]
+                    if args == '':
+                        i = range(self.nNodes)
+                    elif args == '?{0}'.format( self.nNodes ):
+                        pass
+                    elif args == '?':
+                        n = 1
+                    elif args[0] == '?':
+                        try:
+                            n = int(args[1:])
+                        except ValueError:
+                            raise Exception( "Execution {0} refers to host '{1}', but the argument selector is not valid. It appears a number of random hosts is requested, but '{2}' was not recognized as an integer.".format( e.getNumber(), e.hostName, args[1:] ) )
+                        if n < 1:
+                            raise Exception( "Execution {0} refers to a number of random nodes of host {1}, but should refer to at least 1 of them, not {2}.".format( e.getNumber(), self.getName(), n ) )
+                        if n > self.nNodes:
+                            raise Exception( "Execution {0} referes to {1} random nodes of host {2}, but only {3} nodes are available.".format( e.getNumber(), n, self.getName(), self.nNodes ) )
+                    else:
+                        n = 1
+                        try:
+                            i = [int(args)]
+                        except ValueError:
+                            raise Exception( "Execution {0} refers to host '{1}', but the argument selector is not valid.".format( e.getNumber(), e.hostName ) )
+                else:
+                    i = range(self.nNodes)
+                if i is None:
+                    i = random.sample( xrange(self.nNodes), n )
+                # Change this execution to make it refer to exactly one node
+                e.hostName = self.slaves[i.pop()].getName()
+                # Duplicate the execution for each other node it references
+                for index in i:
+                    ne = core.execution.execution(self.scenario)
+                    ne.copyExecution(e)
+                    ne.hostName = self.slaves[index].getName()
+                    ne.checkSettings()
+                    if self.isInCleanup():
+                        return
+                    self.scenario.addObject(ne)
+        self.preprocessingDone = True
     
     def resolveNames(self):
         """
@@ -1492,12 +1631,17 @@ empty
 
         The default implementation simply ensures the existence of a remote directory.
         """
-        if self.isInCleanup():
+        # Defer running until master has been prepared (our preparation will fail before that)
+        if self.master is not None and not self.master.prepared:
+            self.master.prepare()
+        # Don't run if we have run already or are cleaning up
+        if self.isInCleanup() or self.prepared:
             return
+        self.prepared = True
         if not self.nodeSet:
             # Supervisor host
             # Check sanity of all DAS4 hosts
-            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4) and h.nNodes]:
                 if h.headNode != self.headNode:
                     raise Exception( "When multiple DAS4 host objects are declared, they must all share the same headnode. Two different headnodes have been found: {0} and {1}. This is unsupported.".format( self.headNode, h.headNode ) )
             # Find python mux file
@@ -1536,9 +1680,9 @@ empty
             self.keepAliveTimers[i].start()
             self.sendMasterCommand('module load prun')
             # Reserve nodes
-            totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, das4)])
-            maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, das4)])
-            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4)]:
+            totalNodes = sum([h.nNodes for h in self.scenario.getObjects('host') if isinstance(h, das4) and h.nNodes])
+            maxReserveTime = max([h.reserveTime for h in self.scenario.getObjects('host') if isinstance(h, das4) and h.nNodes])
+            for h in [h for h in self.scenario.getObjects('host') if isinstance(h, das4) and h.nNodes]:
                 if h.reservationFixed is not None:
                     if self.reservationFixed is None:
                         self.reservationFixed = h.reservationFixed
@@ -1637,7 +1781,7 @@ empty
             print "Nodes on DAS4 available: {0}".format( nodes )
             # Divide all nodes over the master hosts
             counter = 0
-            for h in [h for h in self.scenario.getObjects('host') if isinstance( h, das4 )]:
+            for h in [h for h in self.scenario.getObjects('host') if isinstance( h, das4 ) and h.nNodes]:
                 nextCounter = counter + h.nNodes
                 if nextCounter > len(nodeList):
                     raise Exception( "Handing out nodes from host {0} to the DAS4 host objects. Trying to hand out nodes numbered {1} to {2} (zero-bases), but there are only {3} nodes reserved. Insanity!".format( self.name, counter, nextCounter, totalNodes ) )
@@ -1676,16 +1820,13 @@ empty
                     res1 = self.tempPersistentDirectory
                     self.tempPersistentDirectory = None
                     raise Exception( "Could not verify the existence of the temporary persistent directory on the headnode for host {0}. Response: {1}. Response to the test: {2}.".format( self.name, res1, res ) )
-            # Create all slave hosts for this master host
-            self.slaves = []
-            executions = [e for e in self.scenario.getObjects('execution') if e.host == self]
-            for c in range( 1, len(self.nodeSet) ):
-                # Create slave host object
-                newObj = das4(self.scenario)
-                newObj.headNode = self.headNode
-                newObj.user = self.user
+            # Update all slave hosts for this master host
+            for i in self.slaves:
+                if self.slaves[i] == self:
+                    continue
+                newObj = self.slaves[i]
                 newObj.tempPersistentDirectory = self.tempPersistentDirectory
-                newObj.nodeSet = [self.nodeSet[c]]
+                newObj.nodeSet = [self.nodeSet[i]]
                 newObj.masterConnection = self.masterConnection
                 newObj.masterIO = self.masterIO
                 newObj.sftpConnections = self.sftpConnections
@@ -1693,38 +1834,6 @@ empty
                 newObj.muxIO__lock = self.muxIO__lock
                 newObj.secondaryMuxIO = self.secondaryMuxIO
                 newObj.secondaryMuxIO__lock = self.secondaryMuxIO__lock
-                newObj.copyhost(self)
-                newName = "{0}!{1}".format( self.name, c )
-                if newName in self.scenario.getObjectsDict('host'):
-                    raise Exception( "Insanity! DAS4 host {0} wanted to create slave for connection {1}, which would be named {2}, but a host with that name already exists!".format( self.name, c, newName ) )
-                newObj.name = newName
-                if self.isInCleanup():
-                    return
-                self.scenario.addObject(newObj)
-                self.slaves.append(newObj)
-                # Duplicate each execution with this host for the slave host
-                for e in executions:
-                    ne = core.execution.execution(self.scenario)
-                    ne.hostName = newName
-                    ne.clientName = e.clientName
-                    ne.fileNames = list(e.fileNames)
-                    if e.parserNames:
-                        ne.parserNames = list(e.parserNames)
-                    else:
-                        ne.parserNames = None
-                    ne.seeder = e.seeder
-                    ne.checkSettings()
-                    ne.resolveNames()
-                    if self.isInCleanup():
-                        return
-                    self.scenario.addObject(ne)
-                    if ne.client not in newObj.clients:
-                        newObj.clients.append( ne.client )
-                    for file_ in ne.files:
-                        if file_ not in newObj.files:
-                            newObj.files.append( file_ )
-                        if ne.isSeeder() and file_ not in newObj.seedingFiles:
-                            newObj.seedingFiles.append( file_ )
             # Create sftp forwarding scripts
             if self.isInCleanup():
                 return
@@ -1768,9 +1877,11 @@ empty
             # Master host part 2
             # Prepare all the slave hosts
             for s in self.slaves:
+                if self.slaves[s] == self:
+                    continue
                 if self.isInCleanup():
                     return
-                s.prepare()
+                self.slaves[s].prepare() 
             # / Master host part 2
 
     def cleanup(self, reuseConnection = None):
@@ -1806,8 +1917,10 @@ empty
                         Campaign.logger.exceptionTraceback()
             if self.slaves and len(self.slaves) > 0:
                 for h in self.slaves:
+                    if self.slaves[h] == self:
+                        continue
                     if not h.isInCleanup():
-                        h.cleanup()
+                        self.slaves[h].cleanup()
             if self.reservationFixed is None:
                 self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
             for t in self.keepAliveTimers:
@@ -1904,9 +2017,11 @@ empty
                 # Master host (and not supervisor)
                 if self.slaves and len(self.slaves) > 0:
                     for h in self.slaves:
-                        if not h.isInCleanup():
+                        if self.slaves[h] == self:
+                            continue
+                        if not self.slaves[h].isInCleanup():
                             try:
-                                h.cleanup()
+                                self.slaves[h].cleanup()
                             except Exception as e:
                                 Campaign.logger.log("Ignoring exception while trying to run cleanup on other DAS4 host: {0}".format( e.__str__()))
                                 Campaign.logger.exceptionTraceback()
