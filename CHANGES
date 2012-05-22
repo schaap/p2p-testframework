@@ -1,5 +1,19 @@
 This document describes API changes for the framework for each version (incrementally). Changes are documented here for sure, additions may be left out. Also, parameter changes are not documented here as they generate warnings as they come. Only changes in the python code are given.
 
+== 2.3.0 vs 2.2.0 ==
+- core.execution.execution.fileName is now core.execution.execution.fileNames, None for no files or a possibly empty list of filenames (possibly including selector arguments) to be included in the execution
+- core.execution.execution.file is now core.execution.execution.files, None for no files or a possibly empty list of file objects
+- core.client.client, core.host.host and core.file.file now have a getByArguments(...) method, which allows for selecting specific instances from a group of objects. Example: a host:das4 object called nodes with 3 nodes can return a random note by giving nodes@? as the host parameter (@ is the selection character, ? the selector argument); by default no selectors are supported
+- core.client.client now has a isSideService() method, which can tell the framework to ignore that client for purposes such as log processing or client running checks; useful for e.g. tracker utility programs such as client:opentracker
+- core.execution.execution has several new functions to help dealing with the multi-file capabilities, namely getDataDirList() and getMetaFileDirList()
+- core.file.file and core.host.host now have doPreprocessing() methods, which will be run before any object runs resolveNames; its purpose is to allow changing the objects in the scenario before all crossreferencing happens
+- core.file.file now has a getMetaFileDir(...) method
+- All modules have been adjusted to work with multiple files
+- client:utorrent now requires python on the node side
+- host:das4 and file:fakedata have had big internal changes
+- ScenarioRunner objects, the self.scenario of each module, now supports the addObject(obj) and resolveObjectName(moduleType, name) to facilitate easier object management; the first will register an object with the scenario (type and name are found using the object's methods, as long as it's a subclass of core.coreObject.coreObject) and the second will return one specific object resolving the name (possibly with argument selector) for the given moduleType
+- The fakedata utility now has an extra optional argument to pass an initial offset to the counter
+
 == 2.2.0 vs 2.1.0 ==
 - Changed core.host.host to include a new setupNewCleanupConnection(...), which by default refers to setupNewConnection(...)
 

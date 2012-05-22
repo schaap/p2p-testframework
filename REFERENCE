@@ -2,6 +2,19 @@ This document contains all parameters that can be used with the delivered framew
 
 If you're not sure yet how to use these parameters, please read the HOWTO and/or the README first.
 
+A note on passing host, client or file objects as parameters: these are passed by the name of the declared object. An incomplete example:
+    [file:fakedata]
+    name=myfile
+    [execution]
+    file=myfile
+Certain host, client or file modules also support an extension to this name, called an argument selector, which is basically an extra argument telling the object you want not just that object, but a part of that object. This is useful, for example, with the file:fakedata module which can generate multiple files in one object. Using an argument selector one can select one specific file. For example:
+    [execution]
+    file=myfile@0
+will select the first generated file. Or
+    [execution]
+    file=myfile@?
+would select one random file. The structure of argument selectors is the name of the object followed by '@' followed by the selector argument, in the above cases '0' and '?'. See the specific modules to find out which argument selectors they support, if any.
+
 = scenario =
 - name          The name of the scenario. Required.
 - file          Path to a file on the local machine to be included in the scenario description. Required.
@@ -94,6 +107,20 @@ Special handler for those with access to the DAS4 system.
                         If any host:das4 instance has a reservation set this will be used. If multiple
                         host:das4 instances have a reservation set it must be the same.
 
+Selection arguments:
+- '?'                   Select a single host from this DAS4 object. This is equal to '?1'.
+- '?n'                  With n being a positive non-zero integer no larger than nNodes: selects n nodes from
+                        this DAS4 object. Should not be used with anything other than executions: the
+                        execution referring to this name will be duplicated n times, each with a different
+                        random node. If n is 1, this is equal to '?', if n is nNodes this is similar to no
+                        argument selector at all but with the nodes in non-deterministic.
+- n                     The positive zero-based index in the list of nodes of this DAS4 object. Will select
+                        that exact node.
+- ''                    As expected, no selector argument will return the master object. *However*: when used
+                        inside an execution's host argument, this is equal to '?n' with n equal to nNodes but
+                        in deterministic order. 
+
+
 = file =
 - name              The name of the file object. This name is used to refer to the file object in throughout the scenario.
                     Required.
@@ -131,10 +158,32 @@ Specifies a remote file or directory to use as data.
 == file:fakedata ==
 Creates fake data on the remote host that is always the same, non-trivial, of configurable size and real.
 
-- ksize     A positive integer, divisible by 4, that denotes the size of the generated file in kbytes. Required.
-- binary    The path of the remote binary to use. This might be needed when g++ does not work on one of the hosts
-            this file is used on. Optional, defaults to "" which will have the binary compiled on the fly.
-- filename  The name of the file that will be created. Optional, defaults to "fakedata".
+- ksize             A positive integer, divisible by 4, that denotes the size of the generated file in kbytes. Required.
+- binary            The path of the remote binary to use. This might be needed when g++ does not work on one of the hosts
+                    this file is used on. Optional, defaults to "" which will have the binary compiled on the fly.
+- filename          The name of the file that will be created. Optional, defaults to "fakedata".
+- multiple          The number of fake data files to generate. Optional positive integer, defaults to 1. If a multiple
+                    higher than 1 is specified, the filenames will be "{0}_{1}".format( filename, filecounter ) for
+                    filecounter from 0 to (multiple-1)
+- generateTorrent   If set to anything but "" the file:fakedata will create torrent meta files for each fake data file
+                    and associate the file:fakedata instances with those meta files. Optional, requires metaFile to not
+                    be set.
+- generateRootHash  If set to anything but "" the file:fakedata will calculate the root hash for each fake data file and
+                    associate the file:fakedata instances with those root hashes. Optional, requires rootHash to not be
+                    set.
+- torrentCache      Path to a local directory. If set, this directory is taken to contain a cache of torrents for fakedata
+                    files. Each torrent is named '{0}_{1}.torrent'.format( self.size, self.slaveNumber ) (no _{1} if
+                    multiple is 1). Any present torrent files will be used from cache, others will be added to the cache.
+                    Optional, must point to an existing directory.
+- rootHashCache     Path to a local file. If set, this file is taken to be a root hash cache for fakedata files. The cache
+                    is a binary file containing a pickled python dictionary. Any present root hashes will be used from
+                    cache, others will be added. Optional, must point to a writable (possibly not existing) file.
+
+Selection arguments:
+- '?'               Will select a random file object from this file:fakedata's collection. Especially useful if multiple > 1
+                    to select a random file from the set. E.g. file=myfile@? 
+- n                 The positive zero-based index of the file in the list of files. Allowed ranges [0, multiple). Useful for
+                    selecting one specific file when using multiple > 1. E.g. file=myfile@2    (assumes multiple=3 or larger)
 
 = client =
 Please note that the options for builder and source modules are given here as well, since they are also part of the client object. See the README for more on that. Also see below for a short description of the source and builder modules that are provided by default.
@@ -197,6 +246,11 @@ Uses the libswift command line client
 - wait              Specified the number of seconds to wait (i.e. --wait to swift in seconds)
 - chunkSize         Chunk size to be used by the swift process in bytes. Optional, defaults to 1024.
 
+== client:libtorrent ==
+Uses the libtorrent mini command line client distributed via https://github.com/schaap/p2p-clients
+
+- [none]
+
 == source:directory ==
 Assumes the sources or binaries to be present in the directory pointed to by location; if remoteClient is set this is a directory on the remote host, otherwise on the commanding host
 
@@ -218,7 +272,7 @@ Calls the scons building program to build the client
 = execution =
 - host          The name of the host object on which the execution should run. Required
 - client        The name of the client object which should be executed. Required
-- file          The name of the file object which is to be transferred. Requried
+- file          The name of the file object which is to be transferred. Optional, may be specified multiple times
 - parser        The name of the parser object which should parse the logs of this execution.
                 Optional, can be specified multiple times. See the README for information on how parsers are selected.
 - seeder        Set to anything but '' to mark this execution as a seeding execution. Optional, defaults to ''
@@ -226,6 +280,8 @@ Calls the scons building program to build the client
                 client after the scenario starts. Optional, defaults to 0
 - keepSeeding   Set to anything but '' to make sure this seeding execution has to end by itself before the scenario ends;
                 normally seeders are killed when all leechers have finished
+
+The host and file parameters of an execution are the most important places for use of argument selectors.
 
 = workload =
 - apply             Specifies the name of a client object to apply the workload to; this means every execution of that client 
@@ -235,6 +291,8 @@ Calls the scons building program to build the client
 - applyToSeeders    By default a workload generator will only change non-seeding executions. Set this to 'yes' to have it change
                     seeding executions as well. Optional
 - offset            Starting time of the simulated workload from the start of the scenario in seconds. Optional, floating point
+
+Please note that workloads do not accept apply parameters with selector arguments.
 
 == workload:linear ==
 Creates a division of the clients to arrive at a linear rate
@@ -292,6 +350,11 @@ The parser for logs from swift as retrieved by client:swift
 
 == parser:cpulog ==
 A parser for CPU logs as generated by having the profile parameter set on a client
+
+- [none]
+
+== parser:libtorrent ==
+The parser for logs from libtorrent as retrieved by client:libtorrent
 
 - [none]
 

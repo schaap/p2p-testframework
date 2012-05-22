@@ -144,6 +144,7 @@ The framework is built with extensions in mind. There are several categories of 
     - tc modules
     - builder modules
     - source modules
+    - workload modules
 Those are quite some extension points. This HOWTO doesn't even use all of them and no effort will be made to discuss each extension in detail. For a particular extension's details, please refer to the README and other documentation.
 
 The general process of creating a new module is this:
@@ -222,7 +223,7 @@ Testing your module should be done using your usual software testing techniques:
 When first developed the file:fakedata was not implemented correctly. Some typos, some small mistakes, the usual. The reason you test. More interestingly it turned out that no files were transmitted at all when using file:fakedata, even though the files were created as intended. An error in the design was found: torrents (which were used for its testing) name specific files, but file:fakedata chooses its own name. This led to the file being generated, but never being recognized by the seeder. The filename parameter was introduced because of this.
 
 = Diff =
-Below is the full contextual diff from file:_skeleton_ to file:fakedata. Note that the final version might be slightly different.
+Below is the full contextual diff from file:_skeleton_ to file:fakedata. Note that the current version of file:fakedata is quite different, since it supports multiple files.
 
 Note that this is actually the ported python version instead of the original bash version (for which this, now adapted, HOWTO was originally written).
 

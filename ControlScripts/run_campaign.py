@@ -24,7 +24,7 @@ from core.parsing import isSectionHeader, getModuleType, getSectionName, getModu
 import core.debuglogger
 
 # Global API version of the core
-APIVersion="2.2.0"
+APIVersion="2.3.0"
 
 def loadCoreModule( moduleType ):
     """

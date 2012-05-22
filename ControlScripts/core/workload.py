@@ -132,4 +132,4 @@ class workload(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.2.0-core"
+        return "2.3.0-core"

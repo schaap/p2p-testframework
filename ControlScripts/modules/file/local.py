@@ -211,4 +211,4 @@ class local(core.file.file):
 
     @staticmethod
     def APIVersion():
-        return "2.2.0"
+        return "2.3.0"
