@@ -258,6 +258,7 @@ def interact(webport, metadirs, stopWhenSeeding):
             if torrentLoaded:
                 break
             continue
+        #print >> sys.stderr, "DEBUG LIST:\n{0}".format( page )
         # Check if client still exists
         if utorrent_process.poll() is not None:
             # Client died
@@ -296,7 +297,8 @@ def interact(webport, metadirs, stopWhenSeeding):
                     data = data.replace('{{BOUNDARY}}', bnd)
                     headers = {}
                     headers['Content-Type'] = 'multipart/form-data; boundary=' + bnd
-                    conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
+                    page2 = conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
+                    #print >> sys.stderr, "DEBUG ADD:\n{0}".format( page2 )
             print >> sys.stderr, time.time()
             print >> sys.stderr, "Loaded {0} files".format(torrentCounter)
             torrentLoaded = True

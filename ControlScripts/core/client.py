@@ -485,10 +485,28 @@ class client(coreObject):
             if self.logStart:
                 fileObj.write( 'date > {0}/starttime.log\n'.format( self.getExecutionLogDir(execution) ) )
             if simpleCommandLine:
-                print "DEBUG: Preparing execution {0} of client {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine )
+                if execution.host.getAddress() != '':
+                    if execution.isSeeder:
+                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                    else:
+                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                else:
+                    if execution.isSeeder:
+                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
+                    else:
+                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
                 fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
             else:
-                print "DEBUG: Preparing execution {0} of client {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine )
+                if execution.host.getAddress() != '':
+                    if execution.isSeeder:
+                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                    else:
+                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                else:
+                    if execution.isSeeder:
+                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
+                    else:
+                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
                 fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
             if self.profile:
                 fileObj.write( 'myPid=$!\n' )
