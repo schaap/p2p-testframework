@@ -280,6 +280,7 @@ Calls the scons building program to build the client
                 client after the scenario starts. Optional, defaults to 0
 - keepSeeding   Set to anything but '' to make sure this seeding execution has to end by itself before the scenario ends;
                 normally seeders are killed when all leechers have finished
+- multiply      Specify a positive integer number of copies to be created of this execution. Optional, defaults to 1.
 
 The host and file parameters of an execution are the most important places for use of argument selectors.
 

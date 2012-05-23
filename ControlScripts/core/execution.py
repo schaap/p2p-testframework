@@ -1,4 +1,4 @@
-from core.parsing import isValidName, isPositiveFloat
+from core.parsing import isValidName, isPositiveFloat, isPositiveInt
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -36,6 +36,8 @@ class execution(coreObject):
     timeout = None              # A number of seconds to wait before starting the client (float)
     
     keepSeeding = False         # Set to True to have this execution keep on seeding when all leechers are done
+
+    multiply = None             # The number of copies of this execution to be created (None for 1)
 
     # @static
     executionCount = 0          # The total number of executions
@@ -154,6 +156,12 @@ class execution(coreObject):
         elif key == 'keepSeeding':
             if value != '':
                 self.keepSeeding = False
+        elif key == 'multiply':
+            if self.multiply is not None:
+                parseError( "Multiply already set: {0}".format( self.multiply ) )
+            if not isPositiveInt(value, True):
+                parseError( "The multiply parameter must be a non-zero positive integer." )
+            self.multiply = int(value)
         else:
             parseError( 'Unknown parameter name: {0}'.format( key ) )
 
@@ -174,6 +182,13 @@ class execution(coreObject):
             self.timeout = 0
         if not self.isSeeder() and self.keepSeeding:
             Campaign.logger.log( "Warning: Execution define at line {0} is declared to keep seeding, but it's not a seeder.".format( self.declarationLine ))
+        if self.multiply is not None and self.multiply > 1:
+            m = self.multiply
+            self.multiply = None
+            for _ in range( 1, self.multiply ):
+                e = execution( self.scenario )
+                e.copyExecution( self )
+                self.scenario.addObject( e )
 
     def resolveNames(self):
         """
