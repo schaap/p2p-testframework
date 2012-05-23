@@ -185,7 +185,7 @@ class execution(coreObject):
         if self.multiply is not None and self.multiply > 1:
             m = self.multiply
             self.multiply = None
-            for _ in range( 1, self.multiply ):
+            for _ in range( 1, m ):
                 e = execution( self.scenario )
                 e.copyExecution( self )
                 self.scenario.addObject( e )
