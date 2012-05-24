@@ -1,5 +1,6 @@
 import core.logger
 import core.debuglogger
+import os
 
 # We have unused arguments; that's fine
 # pylint: disable-msg=W0613
@@ -7,6 +8,8 @@ import core.debuglogger
 class Campaign:
     """
     Campaign class for the global environment of all campaigns.
+
+    Also holds a few miscellaneous helper functions that are useful throughout all modules.
     """
     ######
     # Static part of the class: initialization and option parsing
@@ -94,4 +97,28 @@ class Campaign:
         """
         # Will be changed on-the-fly when a campaign is run
         return Campaign.notInitialized
+
+    @staticmethod
+    def which(name):
+        """
+        Returns a list of programs found in the PATH that are called name.
+
+        @param  name    The name of the program to find.
+
+        @return A list of full paths that can refer to the program, [] if the program wasn't found.
+        """
+        result = []
+        exts = [ex for ex in os.environ.get('PATHEXT', '').split(os.pathsep) if ex]
+        path = os.environ.get('PATH', None)
+        if path is None:
+            return []
+        for p in os.environ.get('PATH', '').split(os.pathsep):
+            p = os.path.join(p, name)
+            if os.access(p, os.X_OK):
+                result.append(p)
+            for ex in exts:
+                pext = p + ex
+                if os.access(pext, os.X_OK):
+                    result.append(pext)
+        return result
 

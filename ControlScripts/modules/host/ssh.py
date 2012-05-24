@@ -184,56 +184,57 @@ class sshParamikoConnectionObject(countedConnectionObject):
         attribs = sftp.stat(remotePath)
         return stat.S_ISDIR( attribs.st_mode )
 
-class sshWarnHostKeyPolicy(paramiko.MissingHostKeyPolicy):
-    allowedKeys = {}
-    disallowing = False
-    
-    def __init__(self):
-        paramiko.MissingHostKeyPolicy.__init__(self)
-    
-    def missing_host_key(self, client, hostname, key):
-        if sshWarnHostKeyPolicy.disallowing:
-            raise Exception( "Key {0} for host {1} disallowed: Not allowing any new keys after one was disallowed.".format( hexlify( key.get_fingerprint() ), hostname ) )
-        if hostname in sshWarnHostKeyPolicy.allowedKeys:
-            if sshWarnHostKeyPolicy.allowedKeys[hostname] != key.get_fingerprint():
-                print "!!! ERROR !!! ERROR !!!"
-                print "Host {0} was allowed with key {1} earlier during this session, but now it suddenly has key {2}. Disallowing.".format( hostname, hexlify(sshWarnHostKeyPolicy.allowedKeys[hostname]), hexlify(key.get_fingerprint()) )
-                print "This means something is seriously wrong."
-                print "!!! ERROR !!! ERROR !!!"
-                Campaign.logger.log( "ERROR! paramiko: Disallowing unknown SSH key {2} for hostname {0}, since it already had key {1} before. This means something is seriously wrong.".format( hostname, hexlify(sshWarnHostKeyPolicy.allowedKeys[hostname]), hexlify(key.get_fingerprint()) ) )
-            else:
-                return
-        try:
-            print "!!! WARNING !!! WARNING !!!"
-            print "paramiko could not verify the following host key using the loaded system host keys: "
-            print "host: {0}".format(hostname)
-            print "key:  {0}".format(hexlify(key.get_fingerprint()))
-            print "The key will be added and allowed for the current session in 10 seconds."
-            print "Press Ctrl+C to abort."
-            print "!!! WARNING !!! WARNING !!!"
-            print "5",
-            sys.stdout.flush()
-            time.sleep(1)
-            print "4",
-            sys.stdout.flush()
-            time.sleep(1)
-            print "3",
-            sys.stdout.flush()
-            time.sleep(1)
-            print "2",
-            sys.stdout.flush()
-            time.sleep(1)
-            print "1",
-            sys.stdout.flush()
-            time.sleep(1)
-            print "Allowing"
-            client.get_host_keys().add( hostname, key.get_name(), key )
-            Campaign.logger.log( "WARNING! paramiko: Allowing unknown SSH key {0} for hostname {1}".format( hexlify(key.get_fingerprint()), hostname ) )
-            sshWarnHostKeyPolicy.allowedKeys[hostname] = key.get_fingerprint()
-        except KeyboardInterrupt as e:
-            print "Rejecting"
-            sshWarnHostKeyPolicy.disallowing = True
-            raise e
+if paramiko:
+    class sshWarnHostKeyPolicy(paramiko.MissingHostKeyPolicy):
+        allowedKeys = {}
+        disallowing = False
+        
+        def __init__(self):
+            paramiko.MissingHostKeyPolicy.__init__(self)
+        
+        def missing_host_key(self, client, hostname, key):
+            if sshWarnHostKeyPolicy.disallowing:
+                raise Exception( "Key {0} for host {1} disallowed: Not allowing any new keys after one was disallowed.".format( hexlify( key.get_fingerprint() ), hostname ) )
+            if hostname in sshWarnHostKeyPolicy.allowedKeys:
+                if sshWarnHostKeyPolicy.allowedKeys[hostname] != key.get_fingerprint():
+                    print "!!! ERROR !!! ERROR !!!"
+                    print "Host {0} was allowed with key {1} earlier during this session, but now it suddenly has key {2}. Disallowing.".format( hostname, hexlify(sshWarnHostKeyPolicy.allowedKeys[hostname]), hexlify(key.get_fingerprint()) )
+                    print "This means something is seriously wrong."
+                    print "!!! ERROR !!! ERROR !!!"
+                    Campaign.logger.log( "ERROR! paramiko: Disallowing unknown SSH key {2} for hostname {0}, since it already had key {1} before. This means something is seriously wrong.".format( hostname, hexlify(sshWarnHostKeyPolicy.allowedKeys[hostname]), hexlify(key.get_fingerprint()) ) )
+                else:
+                    return
+            try:
+                print "!!! WARNING !!! WARNING !!!"
+                print "paramiko could not verify the following host key using the loaded system host keys: "
+                print "host: {0}".format(hostname)
+                print "key:  {0}".format(hexlify(key.get_fingerprint()))
+                print "The key will be added and allowed for the current session in 10 seconds."
+                print "Press Ctrl+C to abort."
+                print "!!! WARNING !!! WARNING !!!"
+                print "5",
+                sys.stdout.flush()
+                time.sleep(1)
+                print "4",
+                sys.stdout.flush()
+                time.sleep(1)
+                print "3",
+                sys.stdout.flush()
+                time.sleep(1)
+                print "2",
+                sys.stdout.flush()
+                time.sleep(1)
+                print "1",
+                sys.stdout.flush()
+                time.sleep(1)
+                print "Allowing"
+                client.get_host_keys().add( hostname, key.get_name(), key )
+                Campaign.logger.log( "WARNING! paramiko: Allowing unknown SSH key {0} for hostname {1}".format( hexlify(key.get_fingerprint()), hostname ) )
+                sshWarnHostKeyPolicy.allowedKeys[hostname] = key.get_fingerprint()
+            except KeyboardInterrupt as e:
+                print "Rejecting"
+                sshWarnHostKeyPolicy.disallowing = True
+                raise e
 
 class ssh(host):
     """
@@ -515,10 +516,9 @@ class ssh(host):
             finally:
                 self.releaseConnection(reuseConnection, connection)
         else:
-            connection = reuseConnection
-            if connection == False:
-                connection = self.setupNewConnection()
+            connection = None
             try:
+                connection = self.getConnection(reuseConnection)
                 if sshFallbackConnectionObject.existsRemote(self, connection, remoteDestinationPath):
                     if not overwrite:
                         raise Exception( "Sending file {0} to {1} on host {2} without allowing overwrite, but the destination already exists".format( localSourcePath, remoteDestinationPath, self.name ) )
@@ -542,8 +542,7 @@ class ssh(host):
                 # The three localMode expressions extract the octal values for the user, group and other parts of the mode
                 self.sendCommand( 'chmod {0}{1}{2} "{3}"'.format( (localMode & 0x1C0) / 0x40, (localMode & 0x38) / 0x8, localMode & 0x7, remoteDestinationPath ), connection )
             finally:
-                if reuseConnection == False:
-                    self.closeConnection(connection)
+                self.releaseConnection(reuseConnection, connection)
     
     def sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection = True):
         """
@@ -598,14 +597,12 @@ class ssh(host):
             finally:
                 self.releaseConnection(reuseConnection, connection)
         else:
-            if reuseConnection == False:
-                connection = self.setupNewConnection()
-                try:
-                    host.sendFiles(self, localSourcePath, remoteDestinationPath, connection)
-                finally:
-                    self.closeConnection(connection)
-            else:
-                host.sendFiles(self, localSourcePath, remoteDestinationPath, reuseConnection)
+            connection = None
+            try:
+                connection = self.getConnection(reuseConnection)
+                host.sendFiles(self, localSourcePath, remoteDestinationPath, connection)
+            finally:
+                self.releaseConnection(reuseConnection, connection)
 
     def getFile(self, remoteSourcePath, localDestinationPath, overwrite = False, reuseConnection = True):
         """
@@ -644,18 +641,23 @@ class ssh(host):
             finally:
                 self.releaseConnection(reuseConnection, connection)
         else:
-            args = ['{0}'.format(sshFallbackConnectionObject.getSCPProgram())]
-            if self.port:
-                args.append( '-P' )
-                args.append( '{0}'.format( self.port ) )
-            args.append( '{0}@{1}:{2}'.format( self.user, self.hostname, remoteSourcePath ) )
-            args.append( localDestinationPath )
+            connection = None
             try:
-                Campaign.debuglogger.log( connection.getIdentification(), 'SCP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
-                subprocess.check_output( args, bufsize=8192 )
-            except subprocess.CalledProcessError as e:
-                Campaign.logger.log( "Retrieving file {1} to {2} from host {0} failed: {3}".format( self.name, remoteSourcePath, localDestinationPath, e.output ) )
-                raise e
+                connection = self.getConnection(reuseConnection)
+                args = ['{0}'.format(sshFallbackConnectionObject.getSCPProgram())]
+                if self.port:
+                    args.append( '-P' )
+                    args.append( '{0}'.format( self.port ) )
+                args.append( '{0}@{1}:{2}'.format( self.user, self.hostname, remoteSourcePath ) )
+                args.append( localDestinationPath )
+                try:
+                    Campaign.debuglogger.log( connection.getIdentification(), 'SCP RETRIEVE FILE {0} TO {1}'.format( remoteSourcePath, localDestinationPath ) )
+                    subprocess.check_output( args, bufsize=8192 )
+                except subprocess.CalledProcessError as e:
+                    Campaign.logger.log( "Retrieving file {1} to {2} from host {0} failed: {3}".format( self.name, remoteSourcePath, localDestinationPath, e.output ) )
+                    raise e
+            finally:
+                self.releaseConnection(reuseConnection, connection)
 
     def prepare(self):
         """

@@ -14,7 +14,7 @@ def parseError( msg ):
     """
     raise Exception( "Parse error for viewer object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
-# TODO: Change the name of the class. See the remark above abou the names of the module and the class. Example:
+# TODO: Change the name of the class. See the remark above about the names of the module and the class. Example:
 #
 #   class useless(viewer):
 class _skeleton_(viewer):

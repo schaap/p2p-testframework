@@ -17,6 +17,7 @@ import time
 import shutil
 import threading
 import re
+import subprocess
 
 # P2P Testing Framework imports
 from core.campaign import Campaign
@@ -1015,6 +1016,8 @@ class CampaignRunner:
     
     scenarios = []          # List of scenarios to run
 
+    notifications = False   # Set to True iff desktop notifications seem available
+
     def __init__(self, campaign_file):
         """
         Sets up the campaign object.
@@ -1032,6 +1035,9 @@ class CampaignRunner:
             raise Exception( 'Could not create campaign results directory "{0}"'.format( self.campaignResultsDir ) )
 
         Campaign.logger.logToFile( os.path.join( self.campaignResultsDir, 'err.log' ) )
+
+        if len( Campaign.which( 'notify-send' ) ) > 0:
+            self.notifications = True
 
     def readCampaignFile(self, justScenario = None):
         """
@@ -1170,20 +1176,28 @@ class CampaignRunner:
                 for scenario in self.scenarios:
                     if scenario.name in justScenario:
                         scenario.run()
+                        if self.notifications:
+                            subprocess.call('notify-send -t 2000 Scenario "Scenario {0} finished"'.format( scenario.name ), shell=True)
             else:
                 for scenario in self.scenarios:
                     if scenario.name in justScenario and scenario.name not in badScenarios:
                         try:
                             scenario.run()
+                            if self.notifications:
+                                subprocess.call('notify-send -t 2000 Scenario "Scenario {0} finished"'.format( scenario.name ), shell=True)
                         except Exception as exc:
                             if isinstance( exc, KeyboardInterrupt ):
                                 raise exc
                             else:
+                                if self.notifications:
+                                    subprocess.call('notify-send -t 2000 Scenario "Scenario {0} failed"'.format( scenario.name ), shell=True)
                                 Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
                                 Campaign.logger.exceptionTraceback( True )
                                 Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
                                 badScenarios.append( scenario.name )
         
+        if self.notifications:
+            subprocess.call('notify-send -t 5000 Campaign "Campaign {0} finished"'.format( self.campaignFile ), shell=True)
         print "Campaign finished"
         print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
 
