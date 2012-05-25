@@ -27,7 +27,7 @@ class swift(client):
     - wait              Specified the number of seconds to wait
                         (i.e. --wait to swift in seconds)
     - chunkSize         Chunk size to be used by the swift process in bytes.
-                        Optional, defaults to 1024.
+                        Optional, defaults to 1024. Must be a multiple of 1024.
     
     The libswift client will require --wait for seeders. By default it is set to 900s for seeders.
     
@@ -106,7 +106,9 @@ class swift(client):
             if self.chunkSize:
                 parseError( "chunck size is already set: {0}".format( self.chunkSize ) )
             if not isPositiveInt( value, True ):
-                parseError( "chunck size must be a positive integer" )                
+                parseError( "chunck size must be a positive integer" )
+            if int(value) % 1024 != 0:
+                parseError( "chunk sizes not divisible by 1024 are not supported" )                
             self.chunkSize = int(value)
         else:
             client.parseSetting(self, key, value)
@@ -126,6 +128,8 @@ class swift(client):
                 self.listenAddress = "{0}:{1}".format( self.listenAddress, self.listenPort )
             else:
                 self.listenAddress = ":{0}".format( self.listenPort )
+        if self.chunkSize is None:
+            self.chunkSize = 1024
 
     def resolveNames(self):
         """
@@ -172,9 +176,9 @@ class swift(client):
                 allParams += ' --wait 900s'
         else:
             for f in execution.files:
-                roothash = f.getRootHash()
+                roothash = f.getRootHash(self.chunkSize / 1024)
                 if not roothash:
-                    raise Exception( "The swift client, when leeching, requires the root hash of each file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set.".format( execution.getNumber(), self.name, execution.host.name, f.name) )
+                    raise Exception( "The swift client, when leeching, requires the correct root hash of each file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set for chunksize {4}.".format( execution.getNumber(), self.name, execution.host.name, f.name, self.chunkSize ) )
                 allParams += ' --hash {0} --file "{1}"'.format( roothash, f.getFile(execution.host) )
         if self.wait:
             allParams += ' --wait {0}s'.format( self.wait )

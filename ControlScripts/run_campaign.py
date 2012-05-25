@@ -1045,121 +1045,100 @@ class CampaignRunner:
         
         @param  justScenario    A list of scenario names to run, or None to run all scenarios.
         """
-        print "Reading campaign from campaign file {0}".format( self.campaignFile )
-        print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
-
-        fileObj = open( self.campaignFile, 'r' )
-        Campaign.currentLineNumber = 1
-        scenarioName = ''
-        scenarioFiles = []
-        scenarioLine = 0
-        scenarioTimeLimit = 600
-        scenarioParallel = True
-        for line in fileObj:
-            line = line.strip()
-            print "Parsing {0}".format(line)
-            if line == '' or re.match( "^ *#", line ):
+        try:
+            print "Reading campaign from campaign file {0}".format( self.campaignFile )
+            print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
+    
+            fileObj = open( self.campaignFile, 'r' )
+            Campaign.currentLineNumber = 1
+            scenarioName = ''
+            scenarioFiles = []
+            scenarioLine = 0
+            scenarioTimeLimit = 600
+            scenarioParallel = True
+            for line in fileObj:
+                line = line.strip()
+                print "Parsing {0}".format(line)
+                if line == '' or re.match( "^ *#", line ):
+                    Campaign.currentLineNumber += 1
+                    continue
+                elif isSectionHeader( line ):
+                    # New section, extract section name and check that it's a scenario
+                    sectionName = getSectionName( line )
+                    if sectionName != 'scenario':
+                        raise Exception( "Unexpected section name {0} in campaign file on line {1}. Only scenario sections are allowed in campaign files.".format( sectionName, Campaign.currentLineNumber ) )
+                    # New scenario, so check sanity of the old one, but not for the scenario before the first scenario
+                    if scenarioLine != 0:
+                        self.scenarios.append( ScenarioRunner( scenarioName, scenarioFiles, scenarioTimeLimit, scenarioParallel, self ) )
+                    # New scenario is OK, let's initialize for the next one
+                    scenarioName = ''
+                    scenarioFiles = []
+                    scenarioLine = Campaign.currentLineNumber
+                    scenarioTimeLimit = 300
+                    scenarioParallel = True
+                else:
+                    # Not a section, so should be a parameter
+                    parameterName = getParameterName( line )
+                    parameterValue = getParameterValue( line )
+                    if scenarioLine == 0:
+                        raise Exception( "Did not expect parameters before any section header (line {0})".format( Campaign.currentLineNumber ) )
+                    if parameterName == 'name':
+                        # The name of the scenario: check uniqueness, validity as directory name and create directory
+                        if scenarioName != '':
+                            raise Exception( "Scenario started on line {0} has two names: {1} and {2}; only one name is allowed (line {3})".format( scenarioLine, scenarioName, parameterValue, Campaign.currentLineNumber ) )
+                        if not isValidName( parameterValue ):
+                            raise Exception( '"{0}" is not a valid scenario name on line {1}'.format( parameterValue, Campaign.currentLineNumber ) )
+                        if os.path.exists( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) ):
+                            raise Exception( 'Scenario {0} already exists (line {1})'.format( parameterValue, Campaign.currentLineNumber ) )
+                        os.makedirs( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) )
+                        if not os.path.exists( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) ):
+                            raise Exception( 'Could not create result directory "{0}" for scenario {1}'.format( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ), parameterValue ) )
+                        scenarioName = parameterValue
+                    elif parameterName == 'file':
+                        # A file for the scenario: check existence and add to files array
+                        f = os.path.join( Campaign.testEnvDir, parameterValue )
+                        if not os.path.exists( f ) or not os.path.isfile( f ):
+                            raise Exception( 'Scenario file "{0}" does not exist or is not a file (line {1})'.format( f, Campaign.currentLineNumber ) )
+                        scenarioFiles.append( f )
+                    elif parameterName == 'parallel':
+                        # disable parallel handling of clients if it gives trouble
+                        scenarioParallel = ( parameterValue != 'no' )
+                    elif parameterName == 'timelimit' or parameterName == 'timeout':
+                        # I keep calling it timeout, so I'm guessing that is also/more natural
+                        # Time limit for the execution of a scenario, in seconds
+                        if not isPositiveInt( parameterValue, True ):
+                            raise Exception( 'The time limit for the scenario defined on line {0} should be given in second, which is a positive non-zero integever value, unlike "{1}" (line {2})'.format( scenarioLine, parameterValue, Campaign.currentLineNumber ) )
+                        scenarioTimeLimit = int(parameterValue)
+                    else:
+                        raise Exception( 'Unsupported parameter "{0}" found on line {1}'.format( parameterName, Campaign.currentLineNumber ) )
                 Campaign.currentLineNumber += 1
-                continue
-            elif isSectionHeader( line ):
-                # New section, extract section name and check that it's a scenario
-                sectionName = getSectionName( line )
-                if sectionName != 'scenario':
-                    raise Exception( "Unexpected section name {0} in campaign file on line {1}. Only scenario sections are allowed in campaign files.".format( sectionName, Campaign.currentLineNumber ) )
-                # New scenario, so check sanity of the old one, but not for the scenario before the first scenario
-                if scenarioLine != 0:
-                    self.scenarios.append( ScenarioRunner( scenarioName, scenarioFiles, scenarioTimeLimit, scenarioParallel, self ) )
-                # New scenario is OK, let's initialize for the next one
-                scenarioName = ''
-                scenarioFiles = []
-                scenarioLine = Campaign.currentLineNumber
-                scenarioTimeLimit = 300
-                scenarioParallel = True
+            self.scenarios.append( ScenarioRunner( scenarioName, scenarioFiles, scenarioTimeLimit, scenarioParallel, self ) )
+            
+            if justScenario:
+                for scName in justScenario:
+                    for sc in self.scenarios:
+                        if sc.name == scName:
+                            break
+                    else:
+                        return CampaignRunner.usage("Scenario {0} is to be run, but does not exist.".format(scName))
             else:
-                # Not a section, so should be a parameter
-                parameterName = getParameterName( line )
-                parameterValue = getParameterValue( line )
-                if scenarioLine == 0:
-                    raise Exception( "Did not expect parameters before any section header (line {0})".format( Campaign.currentLineNumber ) )
-                if parameterName == 'name':
-                    # The name of the scenario: check uniqueness, validity as directory name and create directory
-                    if scenarioName != '':
-                        raise Exception( "Scenario started on line {0} has two names: {1} and {2}; only one name is allowed (line {3})".format( scenarioLine, scenarioName, parameterValue, Campaign.currentLineNumber ) )
-                    if not isValidName( parameterValue ):
-                        raise Exception( '"{0}" is not a valid scenario name on line {1}'.format( parameterValue, Campaign.currentLineNumber ) )
-                    if os.path.exists( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) ):
-                        raise Exception( 'Scenario {0} already exists (line {1})'.format( parameterValue, Campaign.currentLineNumber ) )
-                    os.makedirs( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) )
-                    if not os.path.exists( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ) ):
-                        raise Exception( 'Could not create result directory "{0}" for scenario {1}'.format( os.path.join( self.campaignResultsDir, 'scenarios', parameterValue ), parameterValue ) )
-                    scenarioName = parameterValue
-                elif parameterName == 'file':
-                    # A file for the scenario: check existence and add to files array
-                    f = os.path.join( Campaign.testEnvDir, parameterValue )
-                    if not os.path.exists( f ) or not os.path.isfile( f ):
-                        raise Exception( 'Scenario file "{0}" does not exist or is not a file (line {1})'.format( f, Campaign.currentLineNumber ) )
-                    scenarioFiles.append( f )
-                elif parameterName == 'parallel':
-                    # disable parallel handling of clients if it gives trouble
-                    scenarioParallel = ( parameterValue != 'no' )
-                elif parameterName == 'timelimit' or parameterName == 'timeout':
-                    # I keep calling it timeout, so I'm guessing that is also/more natural
-                    # Time limit for the execution of a scenario, in seconds
-                    if not isPositiveInt( parameterValue, True ):
-                        raise Exception( 'The time limit for the scenario defined on line {0} should be given in second, which is a positive non-zero integever value, unlike "{1}" (line {2})'.format( scenarioLine, parameterValue, Campaign.currentLineNumber ) )
-                    scenarioTimeLimit = int(parameterValue)
-                else:
-                    raise Exception( 'Unsupported parameter "{0}" found on line {1}'.format( parameterName, Campaign.currentLineNumber ) )
-            Campaign.currentLineNumber += 1
-        self.scenarios.append( ScenarioRunner( scenarioName, scenarioFiles, scenarioTimeLimit, scenarioParallel, self ) )
-        
-        if justScenario:
-            for scName in justScenario:
-                for sc in self.scenarios:
-                    if sc.name == scName:
-                        break
-                else:
-                    return CampaignRunner.usage("Scenario {0} is to be run, but does not exist.".format(scName))
-        else:
-            justScenario = [scenario.name for scenario in self.scenarios]
-        
-        print ""
-        print "Reading scenarios"
-        print ""
-        
-        badScenarios = []
-
-        if self.deadlyScenarios:
-            for scenario in self.scenarios:
-                if scenario.name in justScenario:
-                    scenario.read()
-        else:
-            for scenario in self.scenarios:
-                if scenario.name in justScenario:
-                    try:
-                        scenario.read()
-                    except Exception as exc:
-                        if isinstance( exc, KeyboardInterrupt ):
-                            raise exc
-                        else:
-                            Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
-                            Campaign.logger.exceptionTraceback( True )
-                            Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
-                            badScenarios.append( scenario.name )
-
-        if Campaign.doCheckRun:
+                justScenario = [scenario.name for scenario in self.scenarios]
+            
             print ""
-            print "Checking scenarios"
+            print "Reading scenarios"
             print ""
+            
+            badScenarios = []
+    
             if self.deadlyScenarios:
                 for scenario in self.scenarios:
                     if scenario.name in justScenario:
-                        scenario.test()
+                        scenario.read()
             else:
                 for scenario in self.scenarios:
-                    if scenario.name in justScenario and scenario.name not in badScenarios:
+                    if scenario.name in justScenario:
                         try:
-                            scenario.test()
+                            scenario.read()
                         except Exception as exc:
                             if isinstance( exc, KeyboardInterrupt ):
                                 raise exc
@@ -1168,38 +1147,67 @@ class CampaignRunner:
                                 Campaign.logger.exceptionTraceback( True )
                                 Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
                                 badScenarios.append( scenario.name )
-        if Campaign.doRealRun:
-            print ""
-            print "Running scenarios"
-            print ""
-            if self.deadlyScenarios:
-                for scenario in self.scenarios:
-                    if scenario.name in justScenario:
-                        scenario.run()
-                        if self.notifications:
-                            subprocess.call('notify-send -t 2000 Scenario "Scenario {0} finished"'.format( scenario.name ), shell=True)
-            else:
-                for scenario in self.scenarios:
-                    if scenario.name in justScenario and scenario.name not in badScenarios:
-                        try:
+    
+            if Campaign.doCheckRun:
+                print ""
+                print "Checking scenarios"
+                print ""
+                if self.deadlyScenarios:
+                    for scenario in self.scenarios:
+                        if scenario.name in justScenario:
+                            scenario.test()
+                else:
+                    for scenario in self.scenarios:
+                        if scenario.name in justScenario and scenario.name not in badScenarios:
+                            try:
+                                scenario.test()
+                            except Exception as exc:
+                                if isinstance( exc, KeyboardInterrupt ):
+                                    raise exc
+                                else:
+                                    Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
+                                    Campaign.logger.exceptionTraceback( True )
+                                    Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
+                                    badScenarios.append( scenario.name )
+            if Campaign.doRealRun:
+                print ""
+                print "Running scenarios"
+                print ""
+                if self.deadlyScenarios:
+                    for scenario in self.scenarios:
+                        if scenario.name in justScenario:
                             scenario.run()
                             if self.notifications:
                                 subprocess.call('notify-send -t 2000 Scenario "Scenario {0} finished"'.format( scenario.name ), shell=True)
-                        except Exception as exc:
-                            if isinstance( exc, KeyboardInterrupt ):
-                                raise exc
-                            else:
+                else:
+                    for scenario in self.scenarios:
+                        if scenario.name in justScenario and scenario.name not in badScenarios:
+                            try:
+                                scenario.run()
                                 if self.notifications:
-                                    subprocess.call('notify-send -t 2000 Scenario "Scenario {0} failed"'.format( scenario.name ), shell=True)
-                                Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
-                                Campaign.logger.exceptionTraceback( True )
-                                Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
-                                badScenarios.append( scenario.name )
-        
-        if self.notifications:
-            subprocess.call('notify-send -t 5000 Campaign "Campaign {0} finished"'.format( self.campaignFile ), shell=True)
-        print "Campaign finished"
-        print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
+                                    subprocess.call('notify-send -t 2000 Scenario "Scenario {0} finished"'.format( scenario.name ), shell=True)
+                            except Exception as exc:
+                                if isinstance( exc, KeyboardInterrupt ):
+                                    raise exc
+                                else:
+                                    if self.notifications:
+                                        subprocess.call('notify-send -t 2000 Scenario "Scenario {0} failed"'.format( scenario.name ), shell=True)
+                                    Campaign.logger.log( "{0}: {1}".format( exc.__class__.__name__, exc.__str__() ), True )
+                                    Campaign.logger.exceptionTraceback( True )
+                                    Campaign.logger.log( "Scenarios are not deadly. Marking this scenario as bad and continuing.", True )
+                                    badScenarios.append( scenario.name )
+            
+            if self.notifications:
+                subprocess.call('notify-send -t 5000 Campaign "Campaign {0} finished"'.format( self.campaignFile ), shell=True)
+            print "Campaign finished"
+            print "Results for this campaign will be stored in {0}".format( self.campaignResultsDir )
+        except Exception:
+            try:
+                if self.notifications:
+                    subprocess.call('notify-send -t 5000 Campaign "Campaign {0} failed"'.format( self.campaignFile ), shell=True)
+            except Exception:
+                pass
+            raise
 
     ######
     # Static part of the class: initialization and option parsing

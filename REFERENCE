@@ -124,8 +124,11 @@ Selection arguments:
 = file =
 - name              The name of the file object. This name is used to refer to the file object in throughout the scenario.
                     Required.
-- rootHash          The Merkle root hash of the file. Consists of 40 hexadecimal digits. Please take care that several
-                    ways of calculating the root hash are out there; pick the right one for the client you use. Optional.
+- rootHash[xx]      A Merkle root hash of the file. Consists of 40 hexadecimal digits. Replace xx in the parameter name with
+                    the chunksize in kbytes upon which the root hash is based (that is the size of the data from which each
+                    leaf hash is calculated). Postfix this by L if you wish to have legacy root hashes, i.e. where the root
+                    is always the 63rd level in the tree. Examples of parameter names: rootHash[1]=... rootHash[8L]=...
+                    Optional, may be specified multiple times but not for the same chunksize.
 - metaFile          A file with metadata, such as a torrent file. This file will be made available to all client executions,
                     both seeders and leechers. Should be a path to a file on the command machine. Optional.
 
@@ -141,9 +144,9 @@ Specifies a local file or directory to use as data.
 - generateTorrent       Set this to "yes" to have a torrent file automatically generated from the file;
                         the torrent file will be uplaoded and its location available through getMetaFile(...).
                         The metaFile parameter must not be set in this case.
-- generateRootHash      Set this to "yes" to have the SHA1 root hash automatically generated from the file;
-                        the rootHash parameter must not be set in this case. path must refer to a single file
-                        for a root hash to be calculated.
+- generateRootHash      Set to a chunksize in kbytes to generate root hashes for that chunksize. Chunksizes may
+                        be postfixed with L to generate legacy root hashes. Optional, can be specified multiple
+                        times, requires that the rootHash parameter for the requested chunksize is not set.
 - renameFile            Set this to "yes" to have the file renamed when uploaded to an automatically generated
                         name. This is forbidden when automated torent generation is requested. Not valid if
                         path points to a directory.
@@ -168,9 +171,10 @@ Creates fake data on the remote host that is always the same, non-trivial, of co
 - generateTorrent   If set to anything but "" the file:fakedata will create torrent meta files for each fake data file
                     and associate the file:fakedata instances with those meta files. Optional, requires metaFile to not
                     be set.
-- generateRootHash  If set to anything but "" the file:fakedata will calculate the root hash for each fake data file and
-                    associate the file:fakedata instances with those root hashes. Optional, requires rootHash to not be
-                    set.
+- generateRootHash  Set to a chunksize in kbytes to generate root hashes for that chunksize. Chunksizes may be postfixed with
+                    L to generate legacy root hashes. The generated root hashes will be associated with the correct 
+                    file:fakedata instances. Optional, can be specified multiple times, requires that the rootHash parameter
+                    for the requested chunksize is not set.
 - torrentCache      Path to a local directory. If set, this directory is taken to contain a cache of torrents for fakedata
                     files. Each torrent is named '{0}_{1}.torrent'.format( self.size, self.slaveNumber ) (no _{1} if
                     multiple is 1). Any present torrent files will be used from cache, others will be added to the cache.

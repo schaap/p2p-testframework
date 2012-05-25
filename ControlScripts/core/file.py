@@ -1,6 +1,6 @@
 import os
 
-from core.parsing import isValidName
+from core.parsing import isValidName, isPositiveInt
 from core.campaign import Campaign
 from core.coreObject import coreObject
 
@@ -16,7 +16,10 @@ class file(coreObject):
     When subclassing file be sure to use the skeleton class as a basis: it saves you a lot of time.
     """
 
-    rootHash = None         # The root hash of the file.
+    #@deprecated
+    rootHash = None         # The root hash of the file. Deprecated! Will be removed in 2.4.0
+    rootHashes = None       # Map of roothashes of the file. maps from chunksize (possibly postfixed with L for
+                            # legacy format) to the actual roothash
     metaFile = None         # The meta file of the file, such as a torrent file.
 
     def __init__(self, scenario):
@@ -26,6 +29,7 @@ class file(coreObject):
         @param  scenario        The ScenarioRunner object this file object is part of.
         """
         coreObject.__init__(self, scenario)
+        self.rootHashes = {}
 
     def parseSetting(self, key, value):
         """
@@ -53,11 +57,29 @@ class file(coreObject):
                 parseError( 'File object called {0} already exists'.format( value ) )
             self.name = value
         elif key == "rootHash":
-            if self.rootHash:
-                parseError( 'Root hash already set: {0}'.format( self.rootHash ) )
+            Campaign.logger.log( "Warning: The rootHash parameter to a file is deprecated due to ambiguity. Please use rootHash[1] instead." )
+            if self.rootHashes[1]:
+                parseError( 'Root hash for chunksize 1 already set: {0}'.format( self.rootHash ) )
             if not isinstance( value, basestring ) or len( value ) != 40 or reduce( lambda x, y: x or not ( ( y >= '0' and y <= '9' ) or ( y >= 'A' and y <= 'F' ) or ( y >= 'a' and y <= 'f' ) ), value, False ):
                 parseError( 'Valid root hashes consist of exactly 40 hexadecimal digits, unlike "{0}"'.format( value ) )
             self.rootHash = value
+            self.rootHashes[1] = value
+        elif key[:9] == 'rootHash[' and key[-1:] == ']':
+            chunksize = key[9:-1]
+            if chunksize[-1:] == 'L':
+                if not isPositiveInt(chunksize[:-1], True):
+                    parseError( 'The chunksize of a root hash must be a positive non-zero integer, possibly postfixed by L for legacy root hashes.' )
+            else:
+                if not isPositiveInt(chunksize, True):
+                    parseError( 'The chunksize of a root hash must be a positive non-zero integer, possibly postfixed by L for legacy root hashes.' )
+                chunksize = int(chunksize)
+            if chunksize in self.rootHashes:
+                parseError( 'The root hash for chunksize {0} has already been set: {1}'.format( chunksize, self.rootHashes[chunksize] ) )
+            if not isinstance( value, basestring ) or len( value ) != 40 or reduce( lambda x, y: x or not ( ( y >= '0' and y <= '9' ) or ( y >= 'A' and y <= 'F' ) or ( y >= 'a' and y <= 'f' ) ), value, False ):
+                parseError( 'Valid root hashes consist of exactly 40 hexadecimal digits, unlike "{0}"'.format( value ) )
+            self.rootHashes[chunksize] = value
+            if chunksize == 1:
+                self.rootHash = value 
         elif key == "metaFile":
             if self.metaFile:
                 parseError( 'Meta file already set: {0}'.format( self.metaFile ) )
@@ -77,6 +99,7 @@ class file(coreObject):
         """
         self.scenario = other.scenario
         self.rootHash = other.rootHash
+        self.rootHashes = dict(other.rootHashes)
         self.metaFile = other.metaFile
 
     def checkSettings(self):
@@ -279,13 +302,26 @@ class file(coreObject):
         """
         return "{0}/meta".format( self.getFileDir( host ) )
 
-    def getRootHash(self):
+    def getRootHash(self, chunksize = ''):
         """
         Returns the root hash of the file.
+        
+        Please note that chunksize is optional only to keep backwards compatibility during 2.3.0.
+        When 2.4.0 is introduced chunksize will be a mandatory argument. chunksize defaults to
+        1 until then.
+        
+        @param chunksize    The size in bytes of the chunks for which the root hash is required.
+                            Can be postfixed with L for legacy root hashes.
 
-        @return The root hash of the file, or None is no root hash was specified.
+        @return The requested root hash of the file, or None is no such root hash was specified.
         """
-        return self.rootHash
+        if chunksize == '':
+            chunksize = 1
+            Campaign.logger.log( 'Warning: core.core.file.getRootHash() with no arguments is deprecated. Coming 2.4.0 an argument is required. Traceback follows.' )
+            Campaign.logger.localTraceback()
+        if chunksize in self.rootHashes:
+            return self.rootHashes[chunksize]
+        return None
 
     def getModuleType(self):
         """

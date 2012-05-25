@@ -1,6 +1,7 @@
 import os
 import tempfile
 
+from core.parsing import isPositiveInt
 from core.campaign import Campaign
 import core.file
 
@@ -19,9 +20,11 @@ class local(core.file.file):
     - generateTorrent       Set this to "yes" to have a torrent file automatically generated from the file;
                             the torrent file will be uplaoded and its location available through getMetaFile(...).
                             The metaFile parameter must not be set in this case.
-    - generateRootHash      Set this to "yes" to have the SHA1 root hash automatically generated from the file;
-                            the rootHash parameter must not be set in this case. path must refer to a single file
-                            for a root hash to be calculated.
+    - generateRootHash      Set to a chunksize in kbytes to generate root hashes for that chunksize. Chunksizes may
+                            be postfixed with L to generate legacy root hashes. Optional, can be specified multiple
+                            times, requires that the rootHash parameter for the requested chunksize is not set.
+                            For backward compatibility any illegal chunksize is read as 1, but this deprecated
+                            behavior will disappear in 2.4.0.
     - renameFile            Set this to "yes" to have the file renamed when uploaded to an automatically generated
                             name. This is forbidden when automated torent generation is requested. Not valid if
                             path points to a directory.
@@ -29,7 +32,7 @@ class local(core.file.file):
 
     path = None                 # The path of the local file or directory
     generateTorrent = False     # True iff automated torrent generation is requested
-    generateRootHash = False    # True iff automated root hash calculation is requested
+    generateRootHashes = None   # List of chunksizes for which root hash calculation is requested
     renameFile = False          # True iff the single file is to be renamed after uploading
     
     tempMetaFile = None         # The temporary file created for the meta file
@@ -41,6 +44,7 @@ class local(core.file.file):
         @param  scenario        The ScenarioRunner object this client object is part of.
         """
         core.file.file.__init__(self, scenario)
+        self.generateRootHashes = []
 
     def parseSetting(self, key, value):
         """
@@ -71,8 +75,21 @@ class local(core.file.file):
             if value == 'yes':
                 self.generateTorrent = True
         elif key == 'generateRootHash':
-            if value == 'yes':
-                self.generateRootHash = True
+            fallback = False
+            if value[-1:] == 'L':
+                if not isPositiveInt(value[:-1], True):
+                    fallback = True
+            else:
+                if not isPositiveInt(value, True):
+                    fallback = True
+                else:
+                    value = int(value)
+            if fallback:
+                Campaign.logger.log( "Warning! Chunksize {0} was detected as the value of a generateRootHash parameter to a file:local. This is not a valid chunksize (which would be a positive non-zero integer possible postfixed by L) and is replaced by 1 for backwards compatibility. This behavior will disappear in 2.4.0.".format( value ) )
+                value = 1
+            if value in self.generateRootHashes:
+                parseError( "Generation of root hashes for chunksize {0} was already requested.".format( value ) )
+            self.generateRootHashes.append(value)
         elif key == 'renameFile':
             if value == 'yes':
                 self.renameFile = True
@@ -94,25 +111,32 @@ class local(core.file.file):
             raise Exception( "file:local {0} must have a local path specified".format( self.name ) )
         if self.metaFile and self.generateTorrent:
             raise Exception( "file:local {0} has requested automated torrent generation, but a meta file was already given".format( self.name ) )
-        if self.rootHash and self.generateRootHash:
-            raise Exception( "file:local {0} has requested automated root hash calculation, but a root hash was already given".format( self.name ) )
+        for cs in self.generateRootHashes:
+            if cs in self.rootHashes:
+                raise Exception( "Generation of root hash for chunksize {0} was requested, but that root hash was already set on the file.".format( cs ) )
         if os.path.isdir( self.path ):
-            if self.generateRootHash:
+            if len(self.generateRootHashes) > 0:
                 raise Exception( "file:local {0} has requested automated root hash calculation, but {1} is a directory, for which root hashes aren't supported".format( self.name, self.path ) )
             if self.renameFile:
                 raise Exception( "file:local {0} has requested the uploaded file to be renamed, but {1} is a directory, for which this is not supported".format( self.name, self.path ) )
-        meta = Campaign.loadCoreModule('meta')
-        # PyLint really doesn't understand dynamic loading
-        # pylint: disable-msg=E1101
-        if self.generateRootHash:
-            self.rootHash = meta.calculateMerkleRootHash( self.path ).encode( 'hex' )
-        if self.generateTorrent:
-            if self.isInCleanup():
-                return
-            _, self.tempMetaFile = tempfile.mkstemp('.torrent')
-            self.metaFile = self.tempMetaFile
-            meta.generateTorrentFile( self.path, self.metaFile)
-        # pylint: enable-msg=E1101
+        if len(self.generateRootHashes) > 0 or self.generateTorrent:
+            meta = Campaign.loadCoreModule('meta')
+            # PyLint really doesn't understand dynamic loading
+            # pylint: disable-msg=E1101
+            for cs in self.generateRootHashes:
+                if type(cs) != int and cs[-1:] == 'L':
+                    self.rootHashes[cs] = meta.calculateMerkleRootHash( self.path, False, int(cs[:-1]) ).encode( 'hex' )
+                else:
+                    self.rootHashes[cs] = meta.calculateMerkleRootHash( self.path, True, cs).encode( 'hex' )
+                if cs == 1:
+                    self.rootHash = self.rootHashes[1]
+            if self.generateTorrent:
+                if self.isInCleanup():
+                    return
+                _, self.tempMetaFile = tempfile.mkstemp('.torrent')
+                self.metaFile = self.tempMetaFile
+                meta.generateTorrentFile( self.path, self.metaFile)
+            # pylint: enable-msg=E1101
 
     def resolveNames(self):
         """

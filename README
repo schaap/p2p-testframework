@@ -114,7 +114,9 @@ File modules describe data to be transferred. Usually this will consist of one o
 
 Parameters:
 - name              The name of the file object. This name is used to refer to the file object in throughout the scenario. Required.
-- rootHash          The Merkle root hash of the file. Consists of 40 hexadecimal digits. Please take care that several ways of calculating the root hash are out there; pick the right one for the client you use. Optional.
+- rootHash[xx]      A Merkle root hash of the file. Consists of 40 hexadecimal digits. Replace xx in the parameter name with the chunksize in kbytes upon which the root hash is based (that is the size of the data from which
+                    each leaf hash is calculated). Postfix this by L if you wish to have legacy root hashes, i.e. where the root is always the 63rd level in the tree. Examples of parameter names: rootHash[1]=... rootHash[8L]=...
+                    Optional, may be specified multiple times but not for the same chunksize.
 - metaFile          A file with metadata, such as a torrent file. This file will be made available to all client executions, both seeders and leechers. Should be a path to a file on the command machine. Optional.
 
 By default the following file modules are provided:

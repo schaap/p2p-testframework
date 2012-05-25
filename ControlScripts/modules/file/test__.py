@@ -51,8 +51,9 @@ class test__(core.file.file):
         """
         core.file.file.checkSettings(self)
 
-        if not self.rootHash:
-            self.rootHash = '97bb2117ad9bc68bc8bec3cca3a113ef30aebc37'
+        if not self.rootHashes[1]:
+            self.rootHashes[1] = '97bb2117ad9bc68bc8bec3cca3a113ef30aebc37'
+            self.rootHash = self.rootHashes[1]
 
     def resolveNames(self):
         """

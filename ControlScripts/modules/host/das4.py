@@ -1076,7 +1076,7 @@ empty
             self.nNodes = 2
         if not self.headNode_override and self.headNode:
             if self.headNode not in [ 'fs0.das4.vu.nl', 'fs1.das4.liacs.nl', 'fs4.das4.science.uva.nl', 'fs3.das4.tudelft.nl', 'fs5.das4.astron.nl', 'fs2.das4.science.uva.nl' ]:
-                raise Exception( "The host {1} was given {0} as headnode, but that is not a headnode of DAS4. Please use fs0.das4.cs.vu.nl, fs1.das4.liacs.nl, fs2.das4.science.uva.nl, fs3.das4.tudelft.nl, fs4.das4.science.uva.nl or fs5.das4.astron.nl. Alternatively you can set headNodeOverride if you're sure the headNode you gave is correct.".format( self.headNode, self.name ) )
+                raise Exception( "The host {1} was given {0} as headnode, but that is not a headnode of DAS4. Please use fs0.das4.cs.vu.nl, fs1.das4.liacs.nl, fs2.das4.science.uva.nl, fs3.das4.tudelft.nl, fs4.das4.science.uva.nl or fs5.das4.astron.nl. Alternatively you can set headnodeOverride if you're sure the headNode you gave is correct.".format( self.headNode, self.name ) )
         if not self.headNode:
             for ip in getIPAddresses():
                 hostname = getHostnameByIP(ip)
@@ -1919,10 +1919,10 @@ empty
                 for h in self.slaves:
                     if self.slaves[h] == self:
                         continue
-                    if not h.isInCleanup():
+                    if not self.slaves[h].isInCleanup():
                         self.slaves[h].cleanup()
             if self.reservationFixed is None:
-                self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
+                resp = self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
             for t in self.keepAliveTimers:
                 try:
                     t.cancel()

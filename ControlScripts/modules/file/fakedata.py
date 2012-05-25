@@ -36,9 +36,11 @@ class fakedata(core.file.file):
     - generateTorrent   If set to anything but "" the file:fakedata will create torrent meta files for each fake data file
                         and associate the file:fakedata instances with those meta files. Optional, requires metaFile to not
                         be set.
-    - generateRootHash  If set to anything but "" the file:fakedata will calculate the root hash for each fake data file and
-                        associate the file:fakedata instances with those root hashes. Optional, requires rootHash to not be
-                        set.
+    - generateRootHash  Set to a chunksize in kbytes to generate root hashes for that chunksize. Chunksizes may be postfixed with
+                        L to generate legacy root hashes. The generated root hashes will be associated with the correct 
+                        file:fakedata instances. Optional, can be specified multiple times, requires that the rootHash parameter
+                        for the requested chunksize is not set. For backward compatibility any illegal chunksize is read as 1,
+                        but this deprecated behavior will disappear in 2.4.0.
     - torrentCache      Path to a local directory. If set, this directory is taken to contain a cache of torrents for fakedata
                         files. Each torrent is named '{0}_{1}.torrent'.format( self.size, self.slaveNumber ) (no _{1} if
                         multiple is 1). Any present torrent files will be used from cache, others will be added to the cache.
@@ -64,15 +66,15 @@ class fakedata(core.file.file):
     master = None               # The master object, set only for slave objects
     slaves = None               # Map of slave objects, only validly filled if not self.slave. Maps from count to file object.
     
-    generateRootHash = False    # Flag whether root hashes are to be generated
+    generateRootHashes = None   # List of chunksizes for which root hashes are to be generated
     generateTorrent = False     # Flag whether torents are to be generated
     torrentCacheDir = None      # Path to local directory containing nothing but cached torrent files for fakedata
     rootHashCacheFile = None    # Path to local file containing cached root hashes for fakedata
     rootHashMap = None          # Map of generated root hashes
     tmpTorrentDir = None        # Path to a temporary torrent directory
-    
+
     seedingHostSeen = None      # A list of seeding hosts which have already been seen for sendToSeedingHost
-    
+
     def __init__(self, scenario):
         """
         Initialization of a generic file object.
@@ -82,6 +84,7 @@ class fakedata(core.file.file):
         core.file.file.__init__(self, scenario)
         self.slaves = {}
         self.seedingHostSeen = []
+        self.generateRootHashes = []
 
     def parseSetting(self, key, value):
         """
@@ -132,7 +135,21 @@ class fakedata(core.file.file):
                 parseError( "multiple must be a positive, non-zero integer" )
             self.multiple = int(value)
         elif key == 'generateRootHash':
-            self.generateRootHash = (value != '')
+            fallback = False
+            if value[-1:] == 'L':
+                if not isPositiveInt(value[:-1], True):
+                    fallback = True
+            else:
+                if not isPositiveInt(value, True):
+                    fallback = True
+                else:
+                    value = int(value)
+            if fallback:
+                Campaign.logger.log( "Warning! Chunksize {0} was detected as the value of a generateRootHash parameter to a file:fakedata. This is not a valid chunksize (which would be a positive non-zero integer possible postfixed by L) and is replaced by 1 for backwards compatibility. This behavior will disappear in 2.4.0.".format( value ) )
+                value = 1
+            if value in self.generateRootHashes:
+                parseError( "Generation of root hashes for chunksize {0} was already requested.".format( value ) )
+            self.generateRootHashes.append(value)
         elif key == 'generateTorrent':
             self.generateTorrent = (value != '')
         elif key == 'torrentCache':
@@ -178,19 +195,20 @@ class fakedata(core.file.file):
         elif self.multiple > 1:
             if self.metaFile:
                 raise Exception( "Meta files are not supported when setting multiple > 1." )
-            if self.rootHash:
+            if len(self.rootHashes) > 0:
                 raise Exception( "Preset root hashes are not supported when setting multiple > 1." )
         if self.generateTorrent and self.metaFile:
             raise Exception( "If generateTorrent is specified, no meta file is allowed." )
-        if self.generateRootHash and self.rootHash:
-            raise Exception( "If generateRootHash is specified, no rootHash is allowed." )
+        for cs in self.generateRootHashes:
+            if cs in self.rootHashes:
+                raise Exception( "Generation of root hash for chunksize {0} was requested, but that root hash was already set on the file.".format( cs ) )
         if self.torrentCacheDir and not self.generateTorrent:
             raise Exception( "A torrent cache without generating torrents? You've forgotten something." )
-        if self.rootHashCacheFile and not self.generateRootHash:
+        if self.rootHashCacheFile and len( self.generateRootHashes ) == 0:
             raise Exception( "A root hash cache without generating root hashes? You've forgotten something." )
 
-        if self.generateRootHash or self.generateTorrent:        
-            if self.generateRootHash:
+        if len(self.generateRootHashes) > 0 or self.generateTorrent:        
+            if len(self.generateRootHashes) > 0:
                 # Initialize root hash map and load root hash cache
                 if self.rootHashCacheFile and os.path.exists( self.rootHashCacheFile ):
                     f = open( self.rootHashCacheFile, 'r' )
@@ -198,6 +216,11 @@ class fakedata(core.file.file):
                     f.close()
                     if type(self.rootHashMap) != dict:
                         raise Exception( "Root hash cache file {0} does not contain a map. Type of unpickled object: {1}".format( self.rootHashCacheFile, type(self.rootHashMap) ) )
+                    for key in self.rootHashMap:
+                        if type(self.rootHashMap[key]) != dict:
+                            Campaign.logger.log( 'Old format root hash cache found. Removing all and regenerating.' )
+                            self.rootHashMap = {}
+                            break
                 else:
                     self.rootHashMap = {}
             torrentDir = '' # So os.path.join(torrentDir,...) won't complain
@@ -212,8 +235,12 @@ class fakedata(core.file.file):
             torrentFound = 0
             rootHashFound = 0
             for count in range(self.multiple):
-                if self.generateRootHash and (self.size, count) in self.rootHashMap:
-                    rootHashFound += 1
+                if len(self.generateRootHashes) > 0:
+                    if (self.size, count) in self.rootHashMap:
+                        hm = self.rootHashMap[(self.size, count)]
+                        for cs in self.generateRootHashes:
+                            if cs in hm:
+                                rootHashFound += 1
                 if self.generateTorrent:
                     if count == 0 and self.multiple == 1:
                         if os.path.isfile( os.path.join( torrentDir, '{0}.torrent'.format( self.size ) ) ):
@@ -229,11 +256,11 @@ class fakedata(core.file.file):
                 else:
                     print "- {0} out of {1} .torrent files are cached, generating {2}".format( torrentFound, self.multiple, self.multiple - torrentFound )
                     needGeneration = True
-            if self.generateRootHash:
-                if rootHashFound == self.multiple:
+            if len(self.generateRootHashes) > 0:
+                if rootHashFound == self.multiple * len(self.generateRootHashes):
                     print "- All root hashes are cached, not calculating"
                 else:
-                    print "- {0} out of {1} root hashes are cached, calculating {2}".format( rootHashFound, self.multiple, self.multiple - rootHashFound )
+                    print "- {0} out of {1} root hashes are cached, calculating {2}".format( rootHashFound, self.multiple * len(self.generateRootHashes), (self.multiple * len(self.generateRootHashes)) - rootHashFound )
                     needGeneration = True
             if needGeneration:
                 if not os.path.exists( os.path.join( Campaign.testEnvDir, 'Utils', 'fakedata', 'genfakedata' ) ):
@@ -250,9 +277,17 @@ class fakedata(core.file.file):
                             torrentName = os.path.join( torrentDir, '{0}_{1}.torrent'.format( self.size, count ) )
                             filename = os.path.join( tempdir, '{0}_{1}'.format( self.filename, count ) )
                         # Check whether root hashes and/or torrent files are needed and not cached
-                        needRootHash = self.generateRootHash and (self.size, count) not in self.rootHashMap
+                        needRootHashes = []
+                        if len(self.generateRootHashes) > 0:
+                            if (self.size, count) not in self.rootHashMap:
+                                needRootHashes = self.generateRootHashes
+                            else:
+                                hm = self.rootHashMap[(self.size, count)]
+                                for cs in self.generateRootHashes:
+                                    if cs not in hm:
+                                        needRootHashes.append( cs )
                         needTorrent = self.generateTorrent and not os.path.isfile( torrentName )
-                        if needRootHash or needTorrent:
+                        if len(needRootHashes) > 0 or needTorrent:
                             # Only create data file if either is needed and not cached
                             # Creation is done by external process, since python is TOO RUDDY SLOW for it! Takes about the same time to build (not write) a handful of kilobytes of data as the external (native) program needs to write 50M of it
                             proc = subprocess.Popen([os.path.abspath(os.path.join( Campaign.testEnvDir, 'Utils', 'fakedata', 'genfakedata' )), os.path.abspath(filename), '{0}'.format(self.size), '{0}'.format(count)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -260,9 +295,14 @@ class fakedata(core.file.file):
                             if proc.returncode != 0:
                                 raise Exception( "Generating file {0} of file:fakedata {1} failed. Output: {2}".format( count, self.name, out ) )
                             
-                            if needRootHash:
-                                # Only calculate root hash if needed and not cached
-                                self.rootHashMap[(self.size, count)] = meta.calculateMerkleRootHash( filename, True )
+                            for cs in needRootHashes:
+                                if (self.size, count) not in self.rootHashMap:
+                                    self.rootHashMap[(self.size, count)] = {}
+                                # Only calculate root hashes that are needed and not cached
+                                if type(cs) != int and cs[-1:] == 'L':
+                                    self.rootHashMap[(self.size, count)][cs] = meta.calculateMerkleRootHash( filename, False, int(cs[:-1]))
+                                else:
+                                    self.rootHashMap[(self.size, count)][cs] = meta.calculateMerkleRootHash( filename, True, cs )
                             if needTorrent:
                                 # Only generate torrent file if needed and not cached
                                 # About blocksize: uTorrent doesn't understand 1K blocksizes
@@ -274,15 +314,17 @@ class fakedata(core.file.file):
                     if tempdir and tempdir != '':
                         shutil.rmtree(tempdir, True)
                         #pass
-                if self.generateRootHash:
+                if len(self.generateRootHashes) > 0:
                     if self.rootHashCacheFile: 
                         # Save root hash cache
                         f = open( self.rootHashCacheFile, 'w' )
                         pickle.dump( self.rootHashMap, f )
                         f.close()
-            if self.generateRootHash:
-                # Set own roothash
-                self.rootHash = self.rootHashMap[(self.size, 0)].encode( 'hex' )
+            # Set own roothashes
+            for cs in self.generateRootHashes:
+                self.rootHashes[cs] = self.rootHashMap[(self.size, 0)][cs].encode( 'hex' )
+                if cs == 1:
+                    self.rootHash = self.rootHashes[1]
             if self.generateTorrent:
                 if self.multiple == 1:
                     self.metaFile = os.path.join( torrentDir, '{0}.torrent'.format( self.size ) )
@@ -324,10 +366,12 @@ class fakedata(core.file.file):
                 fd.slave = True
                 fd.master = self
                 fd.slaveNumber = count
-                fd.generateRootHash = self.generateRootHash
+                fd.generateRootHashes = list(self.generateRootHashes)
                 fd.generateTorrent = self.generateTorrent
-                if self.generateRootHash:
-                    fd.rootHash = self.rootHashMap[(self.size, count)].encode( 'hex' )
+                for cs in self.generateRootHashes:
+                    fd.rootHashes[cs] = self.rootHashMap[(self.size, count)][cs].encode( 'hex' )
+                    if cs == 1:
+                        fd.rootHash = fd.rootHashes[1]
                 if self.generateTorrent:
                     if self.torrentCacheDir:
                         fd.metaFile = os.path.join( self.torrentCacheDir, '{0}_{1}.torrent'.format( self.size, count ) )
