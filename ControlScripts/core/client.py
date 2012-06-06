@@ -500,59 +500,69 @@ class client(coreObject):
                 return
             if simpleCommandLine and complexCommandLine:
                 raise Exception( "The documentation explicitly states: do NOT use both simpleCommandLine and complexCommandLine together." )
-            crf, clientRunner = tempfile.mkstemp()
-            fileObj = os.fdopen( crf, 'w' )
-            remoteClientDir = self.getClientDir( execution.host )
-            if self.isRemote:
-                remoteClientDir = self.sourceObj.remoteLocation(self, execution.host)
-            fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
-            if self.logStart:
-                fileObj.write( 'date > {0}/starttime.log\n'.format( self.getExecutionLogDir(execution) ) )
-            if len(prependCommands) > 0:
-                fileObj.write( prependCommands )
-            if simpleCommandLine:
-                if execution.host.getAddress() != '':
-                    if execution.isSeeder:
-                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
+            crf = None
+            clientRunner = None
+            fileObj = None
+            try:
+                crf, clientRunner = tempfile.mkstemp()
+                fileObj = os.fdopen( crf, 'w' )
+                crf = None
+                remoteClientDir = self.getClientDir( execution.host )
+                if self.isRemote:
+                    remoteClientDir = self.sourceObj.remoteLocation(self, execution.host)
+                fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
+                if self.logStart:
+                    fileObj.write( 'date > {0}/starttime.log\n'.format( self.getExecutionLogDir(execution) ) )
+                if len(prependCommands) > 0:
+                    fileObj.write( prependCommands )
+                if simpleCommandLine:
+                    if execution.host.getAddress() != '':
+                        if execution.isSeeder:
+                            print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                        else:
+                            print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
                     else:
-                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                        if execution.isSeeder:
+                            print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
+                        else:
+                            print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
+                    fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
                 else:
-                    if execution.isSeeder:
-                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
+                    if execution.host.getAddress() != '':
+                        if execution.isSeeder:
+                            print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                        else:
+                            print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
                     else:
-                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
-                fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
-            else:
-                if execution.host.getAddress() != '':
-                    if execution.isSeeder:
-                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
-                    else:
-                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
+                        if execution.isSeeder:
+                            print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
+                        else:
+                            print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
+                    fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
+                print ""
+                if self.profile:
+                    fileObj.write( 'myPid=$!\n' )
+                    fileObj.write( 'echo $myPid\n' )
+                    fileObj.write( '(while kill -0 $myPid > /dev/null 2> /dev/null; do ' )
+                    fileObj.write( 'date "+%y-%m-%d %H:%M:%S.%N" >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
+                    fileObj.write( 'ps -p $myPid -o %cpu,rss 2>&1 >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
+                    fileObj.write( 'sleep 1;  done) &\n' )
                 else:
-                    if execution.isSeeder:
-                        print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
-                    else:
-                        print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
-                fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
-            print ""
-            if self.profile:
-                fileObj.write( 'myPid=$!\n' )
-                fileObj.write( 'echo $myPid\n' )
-                fileObj.write( '(while kill -0 $myPid > /dev/null 2> /dev/null; do ' )
-                fileObj.write( 'date "+%y-%m-%d %H:%M:%S.%N" >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
-                fileObj.write( 'ps -p $myPid -o %cpu,rss 2>&1 >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
-                fileObj.write( 'sleep 1;  done) &\n' )
-            else:
-                fileObj.write( 'echo $!\n' )
-            fileObj.close()
+                    fileObj.write( 'echo $!\n' )
+                fileObj.close()
+                fileObj = None
 
-            fileObj.close()
-            os.chmod( clientRunner, os.stat( clientRunner ).st_mode | stat.S_IXUSR )
-            if self.isInCleanup():
-                os.remove( clientRunner )
-                return
-            execution.host.sendFile( clientRunner, "{0}/clientRunnerScript".format( self.getExecutionClientDir( execution ) ) )
-            os.remove( clientRunner )
+                os.chmod( clientRunner, os.stat( clientRunner ).st_mode | stat.S_IXUSR )
+                if self.isInCleanup():
+                    return
+                execution.host.sendFile( clientRunner, "{0}/clientRunnerScript".format( self.getExecutionClientDir( execution ) ) )
+            finally:
+                if fileObj:
+                    fileObj.close()
+                elif crf is not None:
+                    os.close(crf)
+                if clientRunner:
+                    os.remove( clientRunner )
 
     def start(self, execution):
         """

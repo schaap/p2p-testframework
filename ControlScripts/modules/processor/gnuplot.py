@@ -123,11 +123,15 @@ class gnuplot(processor):
         """
         f = None
         tmpFile = None
+        tmpfd = None
         try:
             f = open( self.script, 'r' )
             scriptdata = f.read()
             f.close()
-            _, tmpFile = tempfile.mkstemp()
+            f = None
+            tmpfd, tmpFile = tempfile.mkstemp()
+            os.close(tmpfd)
+            tmpfd = None
             for e in self.scenario.getObjects('execution'):
                 if e.client.isSideService():
                     continue
@@ -148,6 +152,8 @@ class gnuplot(processor):
                     f.close()
                 except Exception:
                     pass
+            elif tmpfd is not None:
+                os.close(tmpfd)
             if tmpFile:
                 os.remove( tmpFile )
 

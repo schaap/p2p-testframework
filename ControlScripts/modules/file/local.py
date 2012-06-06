@@ -133,9 +133,10 @@ class local(core.file.file):
             if self.generateTorrent:
                 if self.isInCleanup():
                     return
-                _, self.tempMetaFile = tempfile.mkstemp('.torrent')
+                tempfd, self.tempMetaFile = tempfile.mkstemp('.torrent')
+                os.close(tempfd)
                 self.metaFile = self.tempMetaFile
-                meta.generateTorrentFile( self.path, self.metaFile)
+                meta.generateTorrentFile( self.path, self.metaFile )
             # pylint: enable-msg=E1101
 
     def resolveNames(self):

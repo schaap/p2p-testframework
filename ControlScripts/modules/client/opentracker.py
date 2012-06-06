@@ -154,33 +154,52 @@ class opentracker(client):
                         self.changeTrackers.append( f.getName() )
             # Update all file objects mentioned in changeTrackers
             for f in self.changeTrackers:
-                _, tmpFile = tempfile.mkstemp('.torrent')
+                tmpfd = None
+                tmpfobj = None
+                tmpFile = None
+                tmpSaved = False
                 try:
-                    self.tempUpdatedFiles__lock.acquire()
-                    if self.isInCleanup():
-                        os.remove( tmpFile )
-                        return
-                    self.tempUpdatedFiles.append( tmpFile )
+                    tmpfd, tmpFile = tempfile.mkstemp('.torrent')
+                    tmpfobj = os.fdopen(tmpfd, 'w')
+                    tmpfd = None
+                    try:
+                        self.tempUpdatedFiles__lock.acquire()
+                        if self.isInCleanup():
+                            os.remove( tmpFile )
+                            tmpFile = None
+                            return
+                        self.tempUpdatedFiles.append( tmpFile )
+                        tmpSaved = True
+                    finally:
+                        self.tempUpdatedFiles__lock.release()
+                    fobj = None
+                    try:
+                        fobj = open( self.scenario.getObjectsDict( 'file' )[f].metaFile, 'r' )
+                        torrentdata = fobj.read( )
+                    finally:
+                        if fobj:
+                            fobj.close()
+                    torrentdict = external.bencode.bdecode( torrentdata )
+                    if not torrentdict or not 'info' in torrentdict:
+                        raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter seems not to be a .torrent file." )
+                    torrentdict['announce'] = newTracker
+                    if 'announce-list' in torrentdict:
+                        torrentdict['announce-list'] = [[newTracker]]
+                    torrentdata = external.bencode.bencode( torrentdict )
+                    tmpfobj.write( torrentdata )
+                    tmpfobj.flush()
                 finally:
-                    self.tempUpdatedFiles__lock.release()
-                fobj = open( self.scenario.getObjectsDict( 'file' )[f].metaFile, 'r' )
-                try:
-                    torrentdata = fobj.read( )
-                finally:
-                    fobj.close()
-                torrentdict = external.bencode.bdecode( torrentdata )
-                if not torrentdict or not 'info' in torrentdict:
-                    raise Exception( "Client {0} was instructed to change the torrent file of file {1}, but the metafile of the latter seems not to be a .torrent file." )
-                torrentdict['announce'] = newTracker
-                if 'announce-list' in torrentdict:
-                    torrentdict['announce-list'] = [[newTracker]]
-                torrentdata = external.bencode.bencode( torrentdict )
-                fobj = open( tmpFile, 'w' )
-                try:
-                    fobj.write( torrentdata )
-                    fobj.flush()
-                finally:
-                    fobj.close()
+                    if tmpfobj:
+                        tmpfobj.close()
+                    elif tmpfd is not None:
+                        os.close(tmpfd)
+                    if tmpFile and not tmpSaved:
+                        try:
+                            self.tempUpdatedFiles__lock.acquire()
+                            if tmpFile not in self.tempUpdatedFiles:
+                                os.remove( tmpFile )
+                        finally:
+                            self.tempUpdatedFiles__lock.release()
                 self.scenario.getObjectsDict( 'file' )[f].metaFile = tmpFile
 
     # That's right, 2 arguments less.

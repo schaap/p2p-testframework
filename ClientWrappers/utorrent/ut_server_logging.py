@@ -352,7 +352,7 @@ def interact(webport, metadirs, stopWhenSeeding):
 
 def patchLinuxConfig(port, webport, workingDir, _): # _ == clientDir
     print >> sys.stderr, "WARNING: The settings of the Linux client are not up to date. They are especially not equal to the Windows settings."
-    f = open( os.path.join( workingDir, 'utserver.conf' ) )
+    f = open( os.path.join( workingDir, 'utserver.conf' ), 'w' )
     f.write( "token_auth_enable: 0\n" )
     f.write( "dir_active: {0}/\n".format( os.path.join(workingDir, 'download_data') ) )
     f.write( "dir_autoload: {0}/torrents/\n".format( workingDir ) )
