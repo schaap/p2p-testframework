@@ -3,6 +3,8 @@
 from core.campaign import Campaign
 import core.file
 
+import posixpath
+
 def parseError( msg ):
     """
     A simple helper function to make parsing a lot of parameters a bit nicer.
@@ -15,6 +17,10 @@ class remote(core.file.file):
     
     This file module is similar to file:local, except that it uses already available upload to prevent uploading it for
     every scenario. This can be a great boost in scenario speed when dealing with large files.
+    
+    Note that if multiple hosts are used with the same remote file, the remote file will check that the directory structure
+    if equal, i.e. the same directories and files are referenced (recursively over directories). An exception will occur
+    during sendToSeedingHost(...) if this check fails.
 
     Extra parameters:
     - path                  The path to the actual file or directory on the remote machine.
@@ -24,6 +30,11 @@ class remote(core.file.file):
 
     path = None                 # The path of the local file or directory
     renameFile = False          # True iff the single file is to be renamed after uploading
+    
+    remoteTree = None           # The list containing the directory tree of the remote file. [] for unknown. Each element is [relativePath, type] with
+                                # realativePath in list notation and type either 'd' (directory) or 'f'. This means that a remote file pointing to a file
+                                # has, after the first sendToSeedingHost call:
+                                # len(self.remoteTree) == 1 and len(self.remoteTree[0][0]) == 1 and self.remoteTree[0][1] == 'f'
 
     def __init__(self, scenario):
         """
@@ -32,6 +43,7 @@ class remote(core.file.file):
         @param  scenario        The ScenarioRunner object this client object is part of.
         """
         core.file.file.__init__(self, scenario)
+        self.remoteTree = []
 
     def parseSetting(self, key, value):
         """
@@ -116,19 +128,140 @@ class remote(core.file.file):
 
         @param  host        The host to which to send the files.
         """
+        # Don't do anything if host isn't prepared well
         if not self.getFileDir(host):
             return
         core.file.file.sendToSeedingHost(self, host)
-        res = host.sendCommand( '[ -d "{0}" ] && echo "D" || echo "F"'.format( self.path ) )
-        isdir = res.splitlines()[-1] 
-        if isdir == "D":
+        # Get the base name of our file
+        if self.path[-1:] == '/':
+            name = posixpath.basename(self.path[:-1])
+        else:
+            name = posixpath.basename(self.path)
+        # Extract the complete file tree from the remote host
+        remoteTree = []
+        dirStack = [[]]
+        while len(dirStack) > 0:
+            d = dirStack.pop()
+            # pylint: disable-msg=W0142
+            fullpath = posixpath.join( self.path, *d )
+            # pylint: enable-msg=W0142
+            res = host.sendCommand( '[ -d "{0}" ] && echo "D" || echo "F"'.format( fullpath ) )
+            isdir = res.splitlines()[-1]
+            if isdir == 'D':
+                remoteTree.append( ([name] + d, 'd') )
+                res = host.sendCommand( 'echo "____START____!!!!____STARTLIST____" && ls "{0}"'.format( fullpath ) )
+                dirlist = res.splitlines()
+                startFound = False
+                for i in dirlist:
+                    if startFound:
+                        if i == '.' or i == '..':
+                            continue
+                        dirStack.append( d + [i] )
+                    else:
+                        if i == '____START____!!!!____STARTLIST____':
+                            startFound = True
+                if not startFound:
+                    raise Exception( "file:remote got an unexpected response from host {2} when requesting the directory listing of directory {0}: {1}".format( fullpath, res, host.name ) )
+            elif isdir == 'F':
+                if len(remoteTree) == 0 and self.renameFile:
+                    remoteTree.append( ( ['inputFile'], 'f') )
+                else: 
+                    remoteTree.append( ([name] + d, 'f') )
+            else:
+                raise Exception( "file:remote got an unexpected response from host {2} when trying to see if {0} is a directory or a file: {1}".format( self.path, res, host.name ) )
+        # Compare the file tree to an earlier found one, or set this one as the base comparison
+        if len(self.remoteTree) < 1:
+            self.remoteTree = remoteTree
+        elif self.remoteTree != remoteTree:
+            raise Exception( "file:remote found a remote instance of the file on host {0} that is different from an earlier found instance on another host; this is not supported".format( host.name ) )
+        # Check validity of some options based on what the remote file turned out to be, and copy it
+        if remoteTree[0][1] == 'd':
             if self.renameFile:
                 raise Exception( "The renameFile parameter to file:remote is not allowed for directories and {0} seems to be a directory on host {1}.".format( self.path, host.name ) )
             host.sendCommand( 'cp -r "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
-        elif isdir == "F":
-            host.sendCommand( 'cp "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
         else:
-            raise Exception( "file:remote got an unexpected response from host {2} when trying to see if {0} is a directory or a file: {1}".format( self.path, res, host.name ) )
+            host.sendCommand( 'cp "{0}" "{1}"'.format( self.path, self.getFile(host) ) )
+
+    def getDataDirTree(self):
+        """
+        Returns the directory tree of the data found in getFile().
+        
+        This is the list of directories with getFile() as their common root, including getFile() itself. An empty list is returned in case
+        getFile() is not a directory.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataDirTree() would return the list:
+            [
+                ['Videos'],
+                ['Videos','Humor'],
+                ['Videos','Drama'],
+                ['Videos','Horror'],
+                ['Videos','Horror','Bloody'],
+                ['Videos','Horror','Comedy'],
+                ['Videos','Action']
+            ]
+        Note that this says nothing whatsoever about actual files inside those directories.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation returns an empty list.
+        
+        @return    A list of directories in list notation.
+        """
+        return [d[0] for d in self.remoteTree if d[1] == 'd']
+
+    def getDataFileTree(self):
+        """
+        Returns the file tree of the data found in getFile().
+        
+        This is the list of files with getFile() as their common root (if it's a directory), including getFile() itself.
+        This also holds for file objects pointing to a single file: the returned list will then contain 1 element.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataFileTree() would return the list:
+            [
+                ['Videos', 'generic.avi'],
+                ['Videos','Humor', 'humor1.avi'],
+                ['Videos','Humor', 'humor2.avi'],
+                ['Videos','Horror','Bloody', 'blood1.mpg'],
+                ['Videos','Action','take1001.avi']
+                ['Videos','Action','take1002.avi']
+            ]
+        Note that this does not reflect the complete directory structure.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation return None.
+        
+        @return    A list of files in list notation.
+        """
+        return [d[0] for d in self.remoteTree if d[1] == 'f']
 
     def getFile(self, host):
         """
@@ -147,36 +280,14 @@ class remote(core.file.file):
 
         @return The path to the (root of) the file(s) on the remote host, or None if they are not (yet) available.
         """
-        if not self.getFileDir(host):
+        if len(self.remoteTree) < 1 or self.getFileDir(host) is None:
             return None
-        res = host.sendCommand( '[ -d "{0}" ] && echo "D" || echo "F"'.format( self.path ) )
-        isdir = res.splitlines()[-1] 
-        if isdir == "D":
-            if self.path[-1:] == '/':
-                p = self.path[:-1].rfind('/')
-                if p == -1:
-                    name = self.path[:-1]
-                else:
-                    name = self.path[:p]
-            else:
-                p = self.path.rfind('/')
-                if p == -1:
-                    name = self.path
-                else:
-                    name = self.path[:p]
-        elif isdir == "F":
-            if self.renameFile:
-                name = 'inputFile'
-            else:
-                p = self.path.rfind('/')
-                if p == -1:
-                    name = self.path
-                else:
-                    name = self.path[:p]
+        if self.remoteTree[0][1] == 'f' and self.renameFile:
+            name = 'inputFile'
         else:
-            raise Exception( "file:remote got an unexpected response from host {2} when trying to see if {0} is a directory or a file: {1}".format( self.path, res, host.name ) )
+            name = self.remoteTree[0][0]
         return '{0}/files/{1}'.format( self.getFileDir(host), name )
     
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

@@ -4,6 +4,7 @@ import stat
 import threading
 import re
 import time
+import posixpath
 
 from core.parsing import isValidName
 from core.campaign import Campaign
@@ -426,7 +427,7 @@ class client(coreObject):
                 return "{0}/logs/{1}/exec_{2}".format( execution.host.getTestDir(), self.name, execution.getNumber() )
         return None
 
-    def prepareExecution(self, execution, simpleCommandLine = None, complexCommandLine = None):
+    def prepareExecution(self, execution, simpleCommandLine = None, complexCommandLine = None, linkDataIn = None):
         """
         Client specific preparations for a specific execution.
 
@@ -460,15 +461,38 @@ class client(coreObject):
         only part of your command line is actually executed; as an example the framework could decide to stop all
         executions while the imaginary client is still leeching. The subshell is stopped, which in turn will stop
         the leeching client. The seeding client will never be run.
+        
+        For seeders it's very common to have their data linked for the specific execution. Setting linkDataIn to
+        the path to a remote directory will add commands before your simple or complex command line to copy the
+        directory structure of all the files to be seeded and to link all the files into that directory structure.
+        The data directory will be created if needed. Setting linkDataIn does nothing if the execution is not a
+        seeder and will raise an Exception is neither simpleCommandLine nor complexCommandLine is set.
 
         @param  execution           The execution to prepare this client for.
         @param  simpleCommandLine   Fill in to have a client runner script ready with a simple command.
         @param  complexCommandLine  Fill in to have a client runner script ready with a complex command.
+        @param  linkDataIn          Set this to the remote path where all data for the client is to be linked.
         """
         if self.isInCleanup():
             return
         # Create client/execution specific directories
         execution.host.sendCommand( 'mkdir -p "{0}/clients/{2}/exec_{3}"; mkdir -p "{0}/logs/{2}/exec_{3}"; mkdir -p "{1}/clients/{2}/exec_{3}"; mkdir -p "{1}/logs/{2}/exec_{3}"'.format( execution.host.getTestDir(), execution.host.getPersistentTestDir(), self.name, execution.getNumber() ) )
+
+        prependCommands = ''
+        if linkDataIn is not None:
+            if simpleCommandLine is None and complexCommandLine is None:
+                raise Exception( "linkDataIn is set, but neither simpleCommandLine not complexCommandLine is set: error in calling code" )
+            if execution.isSeeder():
+                res = execution.host.sendCommand( '([ -e "{0}" ] && (([ -d "{0}" ] && echo "D") || echo "E")) || (mkdir -p "{0}" && echo "D")'.format( linkDataIn ) )
+                isDir = res.splitlines()[-1]
+                if isDir != 'D':
+                    if isDir == 'F':
+                        raise Exception( 'linkDataIn for execution {2} client {1} is set to {0} but that already exists and is not a directory'.format( linkDataIn, self.name, execution.getNumber() ) )
+                    else:
+                        raise Exception( "Checking linkDataIn directory {0} for existence and creating if needed in execution {2} of client {3}; got unexpected response {1}".format( linkDataIn, res, execution.getNumber(), self.name ) )
+                prependCommands = " ".join( ['mkdir -p "{0}";'.format(posixpath.join(linkDataIn, *d[1])) for d in execution.getDataDirTree()])
+                prependCommands += " ".join( ['ln "{0}" "{1}";'.format( posixpath.join(*d[0]), posixpath.join(linkDataIn, *d[1])) for d in execution.getDataFileTree()])
+                prependCommands += "\n"
 
         # Build runner script, if requested
         if simpleCommandLine or complexCommandLine:
@@ -484,6 +508,8 @@ class client(coreObject):
             fileObj.write( 'cd "{0}"\n'.format( remoteClientDir ) )
             if self.logStart:
                 fileObj.write( 'date > {0}/starttime.log\n'.format( self.getExecutionLogDir(execution) ) )
+            if len(prependCommands) > 0:
+                fileObj.write( prependCommands )
             if simpleCommandLine:
                 if execution.host.getAddress() != '':
                     if execution.isSeeder:
@@ -508,6 +534,7 @@ class client(coreObject):
                     else:
                         print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
                 fileObj.write( '( {0} ) &\n'.format( complexCommandLine ) )
+            print ""
             if self.profile:
                 fileObj.write( 'myPid=$!\n' )
                 fileObj.write( 'echo $myPid\n' )
@@ -915,4 +942,4 @@ class client(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0-core"
+        return "2.4.0-core"

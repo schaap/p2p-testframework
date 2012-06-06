@@ -17,7 +17,7 @@ class file(coreObject):
     """
 
     #@deprecated
-    rootHash = None         # The root hash of the file. Deprecated! Will be removed in 2.4.0
+    rootHash = None         # The root hash of the file. Deprecated! Will be removed in 2.5.0
     rootHashes = None       # Map of roothashes of the file. maps from chunksize (possibly postfixed with L for
                             # legacy format) to the actual roothash
     metaFile = None         # The meta file of the file, such as a torrent file.
@@ -236,6 +236,87 @@ class file(coreObject):
         return None
     # pylint: enable-msg=W0613
     
+    def getDataDirTree(self):
+        """
+        Returns the directory tree of the data found in getFile().
+        
+        This is the list of directories with getFile() as their common root, including getFile() itself. An empty list is returned in case
+        getFile() is not a directory.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataDirTree() would return the list:
+            [
+                ['Videos'],
+                ['Videos','Humor'],
+                ['Videos','Drama'],
+                ['Videos','Horror'],
+                ['Videos','Horror','Bloody'],
+                ['Videos','Horror','Comedy'],
+                ['Videos','Action']
+            ]
+        Note that this says nothing whatsoever about actual files inside those directories.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation returns an empty list.
+        
+        @return    A list of directories in list notation.
+        """
+        return []
+    
+    def getDataFileTree(self):
+        """
+        Returns the file tree of the data found in getFile().
+        
+        This is the list of files with getFile() as their common root (if it's a directory), including getFile() itself.
+        This also holds for file objects pointing to a single file: the returned list will then contain 1 element.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataFileTree() would return the list:
+            [
+                ['Videos', 'generic.avi'],
+                ['Videos','Humor', 'humor1.avi'],
+                ['Videos','Humor', 'humor2.avi'],
+                ['Videos','Horror','Bloody', 'blood1.mpg'],
+                ['Videos','Action','take1001.avi']
+                ['Videos','Action','take1002.avi']
+            ]
+        Note that this does not reflect the complete directory structure.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation return None.
+        
+        @return    A list of files in list notation.
+        """
+        return None
+    
     def getDataDir(self, host):
         """
         Returns the path to the directory containing the files on the remote seeding host.
@@ -296,6 +377,8 @@ class file(coreObject):
         
         This returns None if self.getFileDir(host) returns None.
         
+        Please be advised that the meta file dir can hold more meta files than just the one for this file.
+        
         @param  host        The host on which to find the meta file dir.
         
         @return The path to the directory on the remote host.
@@ -307,7 +390,7 @@ class file(coreObject):
         Returns the root hash of the file.
         
         Please note that chunksize is optional only to keep backwards compatibility during 2.3.0.
-        When 2.4.0 is introduced chunksize will be a mandatory argument. chunksize defaults to
+        When 2.5.0 is introduced chunksize will be a mandatory argument. chunksize defaults to
         1 until then.
         
         @param chunksize    The size in bytes of the chunks for which the root hash is required.
@@ -317,7 +400,7 @@ class file(coreObject):
         """
         if chunksize == '':
             chunksize = 1
-            Campaign.logger.log( 'Warning: core.core.file.getRootHash() with no arguments is deprecated. Coming 2.4.0 an argument is required. Traceback follows.' )
+            Campaign.logger.log( 'Warning: core.core.file.getRootHash() with no arguments is deprecated. Coming 2.5.0 an argument is required. Traceback follows.' )
             Campaign.logger.localTraceback()
         if chunksize in self.rootHashes:
             return self.rootHashes[chunksize]
@@ -352,4 +435,4 @@ class file(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0-core"
+        return "2.4.0-core"

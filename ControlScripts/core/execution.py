@@ -5,6 +5,47 @@ from core.coreObject import coreObject
 def parseError( msg ):
     raise Exception( "Parse error for execution object on line {0}: {1}".format( Campaign.currentLineNumber, msg ) )
 
+def _getDataTree(host, number, _type, files):
+    """
+    Internal implementation method for getDataDirTree() (type == 'd') and getDataFileTree() (type == 'f').
+    """
+    l = []
+    for f in host.seedingFiles:
+        if f not in files:
+            continue
+        # Get the data's structure. If empty, don't bother with the rest
+        if _type == 'd':
+            t = f.getDataDirTree()
+        else:
+            t = f.getDataFileTree()
+        if len(t) == 0:
+            continue
+        # First get the actual data directory in which the data for f reside, and convert it to list notation
+        basedir_s = f.getDataDir(host)
+        basedir = []
+        if basedir_s is not None:
+            p = 0
+            if basedir_s[0] == '/':
+                basedir.append( '/' )
+                p = 1
+            while p < len(basedir_s):
+                np = basedir_s.find('/', p)
+                if np == -1:
+                    basedir.append( basedir_s[p:] )
+                    break
+                basedir.append( basedir_s[p:np] )
+                p = np + 1
+        # Check the unicity of each element in t and build the results 
+        for d in t:
+            for ed in l:
+                if ed[1] == d:
+                    if _type == 'd':
+                        raise Exception( "Duplicate relative data directory found in files for execution {0}.".format( number ) )
+                    else:
+                        raise Exception( "Duplicate relative data file found in files for execution {0}.".format( number ) )
+            l.append( (basedir + d, d) )
+    return l
+    
 class execution(coreObject):
     """
     An execution object.
@@ -293,7 +334,7 @@ class execution(coreObject):
         """
         self.runnerConnection = self.host.setupNewConnection()
         self.executionConnection = self.host.setupNewConnection()
-    
+
     def getRunnerConnection(self):
         """
         Returns a separate connection to be used to query a client in parallel.
@@ -320,6 +361,10 @@ class execution(coreObject):
         
         This is basically just a loop over all seeding file objects in the host which request their data dir and appends it to the list.
         Each element is guaranteed to be unique.
+        
+        Please note that this list is usually the wrong one to use. Consider a combination of getDataDirTree() and getDataFiles(), instead.
+        Those allow you to copy the directory structure and link all the files you need, and more specifically *only* the files you need, in
+        that copied directory structure.
         """
         l = []
         for f in self.host.seedingFiles:
@@ -328,6 +373,44 @@ class execution(coreObject):
                 if d not in l:
                     l.append(d)
         return l
+    
+    def getDataDirTree(self):
+        """
+        Returns a list of directories in the data directories of seeding files for this execution.
+        
+        This is a loop that will go over all those files and call getDataDirTree() on them. The resulting lists will be transformed and
+        concatenated and the relativeDir part (see below) of each item is checked for unicity. If duplicates are found an Exception is
+        raised.
+        
+        Please note that the resulting list of this method is different from file's getDataDirTree(). This method will return a list of
+        pairs of lists instead of just a list of lists. The pairs are (remoteSourceDir, destinationDir) where remoteSourceDir is the
+        absolute path to the existing directory on this execution's remote host and destinationDir is the relative directory as returned
+        in the list of file's getDataDirTree(). In pseudocode:
+            for relativeDir in file.getDataDirTree():
+                result.append( (file.getDataDir() + relativeDir, relativeDir) )
+        
+        @return    The list of tuples of all files' directory structures giving (original, relative), in list notation.
+        """
+        return _getDataTree(self.host, self.getNumber(), 'd', self.files)
+    
+    def getDataFileTree(self):
+        """
+        Returns a list of files in the data of seeding files for this execution.
+        
+        This is a loop that will go over all those files and call getDataFileTree() on them. The resulting list will be transformed and
+        concatenated and the relativePath (see below) of each item is checked for unicity. If duplicates are found an Exception is
+        raised.
+        
+        Plase note that the resulting list of this method is different from file's getDataFileTree(). This method will return a list of
+        pairs of lists instead of just a list of lists. The pairs are (remoteSourceFile, destinationFile) where remoteSourceFile is the
+        absolute path to the existing file on this execution's remote host and destinationFile is the relative destination as returned
+        in the list of file's getDataFileTree(). In pseudocode:
+            for relativePath in file.getDataFileTree():
+                result.append( (file.getDataDir() + relativePath, relativePath) )
+                
+        @return    The list of tuples of all files' files giving (original, relative), in list notation.
+        """
+        return _getDataTree(self.host, self.getNumber(), 'f', self.files)
 
     def getMetaFileDirList(self):
         """
@@ -335,15 +418,44 @@ class execution(coreObject):
         
         This is basically just a loop over all file objects in the host which request their metafile dir and appends it to the list.
         Each element is guaranteed to be unique.
+        
+        WARNING! DEPRECATED!
+        This method gives treacherous results: you might be reading much more meta files than just the ones you want.
+        Please use getMetaFileList() instead, possible combined with linking to an execution specific directory.
         """
+        Campaign.logger.log("WARNING! execution.getMetaFileDirList() was used, but is treacherous and hence deprecated. Backtrace follows.")
+        Campaign.logger.localTraceback()
         l = []
         for f in self.host.files:
+            if f not in self.files:
+                continue
             d = f.getMetaFileDir(self.host)
             if d is not None:
                 if d not in l:
                     l.append(d)
         return l
+    
+    def getMetaFileList(self, required = False):
+        """
+        Returns the list of all metafiles of files for this execution.
+        
+        This is basically just a loop over all file objects in the host which requests their metafile and appends it to the list.
+        Each element is guaranteed to be unique.
+        
+        @param    required    Set to True to have an Exception raised if any of the files does not have a metafile associated.
+        """
+        l = []
+        for f in self.host.files:
+            if f not in self.files:
+                continue
+            mf = f.getMetaFile(self.host)
+            if mf is not None:
+                if mf not in l:
+                    l.append(mf)
+            elif required:
+                raise Exception( "File {0} has no metafile associated, but is required to have one by our caller.".format( f.getName() ) )
+        return l
 
     @staticmethod
     def APIVersion():
-        return "2.3.0-core"
+        return "2.4.0-core"

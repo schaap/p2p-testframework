@@ -1,6 +1,7 @@
 from core.client import client
 
 import os.path
+import posixpath
 
 class libtorrent(client):
     """
@@ -86,30 +87,33 @@ class libtorrent(client):
         """
         if self.isInCleanup():
             return
+
+        torrentDir = '{0}/clients/{1}/exec_{2}/torrent_files'.format( execution.host.getTestDir(), self.name, execution.getNumber() )
+        dataDir = posixpath.join( self.getExecutionClientDir(execution), 'data' )
         
-        for f in execution.files:
-            if not f.getMetaFile(execution.host):
-                raise Exception( "In order to use libtorrent all files must have a .torrent file associated with them. No .torrent file was found for file {0}.".format( f.name ) )
-        
-        metadirs = execution.getMetaFileDirList()
-        datadirs = []
+        torrentLinks = ''
+        count = 0
+        for f in execution.getMetaFileList(required = True):
+            if f[-8:] != '.torrent':
+                raise Exception( "In order to use libtorrent all files must have a .torrent file associated with them. The meta file {0} seems not to be a .torrent file.".format( f.name ) )
+            torrentLinks += 'ln "{0}" "{1}"; '.format( f, posixpath.join( torrentDir, 'meta_file_{0}.torrent'.format(count) ) )
+            count += 1
         
         seeding = ''
-        
         if execution.isSeeder():
             seeding = '-s'
-            datadirs = execution.getDataDirList()
-            if len(datadirs) == 0:
-                raise Exception( "No data directories were found. Data directories are required to use libtorrent as a seeder." )
+
         client.prepareExecution(self, execution,
-                                complexCommandLine = '{3} LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent {0} -o {1} {2} 2> "{4}/log.log"'.format(
+                                simpleCommandLine = '{4} LD_LIBRARY_PATH=~/lib:$LD_LIBRARY_PATH ./libtorrent {0} -o {1} -d {2} 2> "{3}/log.log"'.format(
                                                     seeding,
-                                                    self.getExecutionClientDir(execution),
-                                                    " ".join( ['-d "{0}"'.format(d) for d in metadirs] ),
-                                                    " ".join( ['cp -r "{0}"/* "{1}";'.format(d, self.getExecutionClientDir(execution)) for d in datadirs] ),
+                                                    dataDir,
+                                                    torrentDir,
                                                     self.getExecutionLogDir(execution),
-                                                    )
+                                                    torrentLinks
+                                                    ),
+                                linkDataIn = dataDir
                                 )
+        execution.host.sendCommand( 'mkdir -p "{0}"'.format( torrentDir ) )
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):
@@ -243,4 +247,4 @@ class libtorrent(client):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

@@ -224,12 +224,20 @@ Uses lighttpd and aria2 to provided HTTP(S) downloads
 == client:opentracker ==
 Allows running the opentracker BitTorrent tracker software, useful in combination with other BitTorrent clients
 
-- port              The port on which the tracker will be listening; required, 1023 < positive int < 65536
-- changeTracker     The name of a file object for which the metaFile parameter has been set and points to a .torrent file; the
-                    torrent file will be changed to point to the dynamically retrieved address of the first host running this
-                    client; the file object will be altered to have their metaFile point to the changed torrent file before the
-                    files will be uploaded; can be specified multiple times. Note that the .torrent files to be altered must
-                    have a single tracker set already: the change is based on replacing the existing single tracker.
+- port                  The port on which the tracker will be listening; required, 1023 < positive int < 65536
+- changeTracker         The name of a file object for which the metaFile parameter has been set and points
+                        to a .torrent file; the torrent file will be changed to point to the dynamically
+                        retrieved address of the first host running this client; the file object will be
+                        altered to have their metaFile point to the changed torrent file before the files
+                        will be uploaded; can be specified multiple times. Note that the .torrent files to
+                        be altered must have a single tracker set already: the change is based on replacing
+                        the existing single tracker. Please note this does not work with self-multiplying
+                        files. Use changeClientTracker in such cases.
+- changeClientTracker   The name of a client object for which all associated files are to have their metaFile
+                        parameters checked and, if they point to a .torrent file, the torrent file is to be
+                        updated as if the file object was given as a changeTracker to this object. Note that
+                        the metaFile of that very object will be updated, and hence all clients using that
+                        file object will see the updated meta file.
 
 == client:utorrent ==
 Uses the uTorrent binary clients with the webui

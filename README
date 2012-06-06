@@ -2,8 +2,13 @@ The P2P Testing Framework is a framework for automated running of peer to peer c
 
 This document contains the general documentation, including a version history, the design of the framework and the parameters to the core modules. The HOWTO document gives a more introductory description of how to use the framework and how to extend it, both including examples. For a complete documentation of the framework, please run 'doxygen doxy' inside the Docs directory.
 
-= API Version History =
+= Version History =
 See CHANGES for details.
+2.4.0
+    - Support for desktop notifications
+    - Multiple instances of the same execution
+    - Multiple root hashes per file
+    - Fixes in the way multiple files are handled
 2.3.0
     - Multiplexed connections on host:das4
     - Multiple file support

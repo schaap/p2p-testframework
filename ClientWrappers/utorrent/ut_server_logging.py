@@ -297,7 +297,8 @@ def interact(webport, metadirs, stopWhenSeeding):
                     data = data.replace('{{BOUNDARY}}', bnd)
                     headers = {}
                     headers['Content-Type'] = 'multipart/form-data; boundary=' + bnd
-                    page2 = conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
+                    #page2 = 
+                    conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
                     #print >> sys.stderr, "DEBUG ADD:\n{0}".format( page2 )
             print >> sys.stderr, time.time()
             print >> sys.stderr, "Loaded {0} files".format(torrentCounter)
@@ -442,7 +443,7 @@ def runWindowsClient(workingDir, clientDir):
     # Add wine and X variables to execution environment and run uTorrent windows client
     os.environ['WINEPREFIX'] = os.path.join( os.path.abspath(workingDir), '.wine' )
     os.environ['DISPLAY'] = ":{0}".format( sn )
-    utorrent_process = subprocess.Popen(["wine", "utorrent", "/noinstall", "/logfile", posixToNT( os.path.abspath(workingDir) )], cwd = os.path.abspath(workingDir))
+    utorrent_process = subprocess.Popen(["wine", "utorrent", "/noinstall", "/logfile", posixToNT( os.path.abspath(os.path.join(workingDir, 'utserver.log')) )], cwd = os.path.abspath(workingDir))
 
 def mainFunction():
     # pylint: disable-msg=W0603,W0602
@@ -497,11 +498,6 @@ def mainFunction():
         os.remove( f )
     if not os.path.exists( os.path.join( workingDir, 'download_data' ) ):
         os.makedirs(os.path.join( workingDir, 'download_data' ) )
-    for f in [os.path.join( workingDir, 'download_data', n ) for n in os.listdir(os.path.join(workingDir, 'download_data'))]:
-        if os.path.isfile(f):
-            os.remove( f )
-        else:
-            shutil.rmtree(f)
     if not os.path.exists( os.path.join( workingDir, 'torrents' ) ):
         os.makedirs(os.path.join( workingDir, 'torrents' ) )
     for f in [os.path.join( workingDir, 'torrents', n ) for n in os.listdir(os.path.join(workingDir, 'torrents')) if os.path.isfile( os.path.join( workingDir, 'torrents', n ) )]:

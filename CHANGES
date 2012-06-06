@@ -1,5 +1,10 @@
 This document describes API changes for the framework for each version (incrementally). Changes are documented here for sure, additions may be left out. Also, parameter changes are not documented here as they generate warnings as they come. Only changes in the python code are given.
 
+== 2.4.0 vs 2.3.0 ==
+- core.execution.execution.getMetaFileDirList(...) is deprecated because it returned treacherous results, use getMetaFileList(...) instead
+- core.execution.execution.getDataDirList(...) is highly discouraged in use, use a combination of getDataDirTree() and getDataFileTree() instead, or even better let core.client.client handle it by padding a correct linkDataIn parameer to its prepareExecution(...)
+- core.file.file.rootHash is deprecated in favor of core.file.file.rootHashes
+
 == 2.3.0 vs 2.2.0 ==
 - core.execution.execution.fileName is now core.execution.execution.fileNames, None for no files or a possibly empty list of filenames (possibly including selector arguments) to be included in the execution
 - core.execution.execution.file is now core.execution.execution.files, None for no files or a possibly empty list of file objects

@@ -131,4 +131,4 @@ class processor(coreObject):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0-core"
+        return "2.4.0-core"

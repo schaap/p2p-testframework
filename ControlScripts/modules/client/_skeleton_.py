@@ -197,6 +197,11 @@ class _skeleton_(client):
         #       client.prepareExecution(self, execution, complexCommandLine =
         #           "./yourClientBinary --leech {0} && ./yourClientBinary --seed {0}".format( allParams ) )
         #
+        # Together with the simpleCommandLine or complexCommandLine options the use of linkDataIn is very useful.
+        # That option can link all data needed for seeding in a specified remote directory, which ensures not only
+        # the availability, but also checks for duplicates (which mean trouble) and ensures that only the data you
+        # need is available, preventing your execution from seeding more than intended. 
+        #
         # Be sure to take self.extraParameters and your own parameters into account when building the command line
         # for the runner script. Also don't forget to make sure logs end up where you want them.
         #
@@ -402,4 +407,4 @@ class _skeleton_(client):
     @staticmethod
     def APIVersion():
         # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
-        return "2.3.0"
+        return "2.4.0"

@@ -177,6 +177,98 @@ class _skeleton_(core.file.file):
         # This implementation assumes you don't really have files, which is unlikely but possible:
         return None
     
+    def getDataDirTree(self):
+        """
+        Returns the directory tree of the data found in getFile().
+        
+        This is the list of directories with getFile() as their common root, including getFile() itself. An empty list is returned in case
+        getFile() is not a directory.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataDirTree() would return the list:
+            [
+                ['Videos'],
+                ['Videos','Humor'],
+                ['Videos','Drama'],
+                ['Videos','Horror'],
+                ['Videos','Horror','Bloody'],
+                ['Videos','Horror','Comedy'],
+                ['Videos','Action']
+            ]
+        Note that this says nothing whatsoever about actual files inside those directories.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation returns an empty list.
+        
+        @return    A list of directories in list notation.
+        """
+        # TODO: Return the list of directories in the directory pointed to by getFile(), if applicable.
+        #
+        # This implementation assumes getFile() points to a single file:
+        return []
+
+    def getDataFileTree(self):
+        """
+        Returns the file tree of the data found in getFile().
+        
+        This is the list of files with getFile() as their common root (if it's a directory), including getFile() itself.
+        This also holds for file objects pointing to a single file: the returned list will then contain 1 element.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataFileTree() would return the list:
+            [
+                ['Videos', 'generic.avi'],
+                ['Videos','Humor', 'humor1.avi'],
+                ['Videos','Humor', 'humor2.avi'],
+                ['Videos','Horror','Bloody', 'blood1.mpg'],
+                ['Videos','Action','take1001.avi']
+                ['Videos','Action','take1002.avi']
+            ]
+        Note that this does not reflect the complete directory structure.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation return None.
+        
+        @return    A list of files in list notation.
+        """
+        # TODO: Return the list of files (recursively) pointed to by getFile(), if applicable.
+        # Take into acocunt that the return value is a list of lists! So if you have just one (statically named) file,
+        # you should write something like:
+        #
+        #    return [['yourStaticFileName']]
+        #
+        #
+        # This implementation assumes you have no files, which is unlikely:
+        return None
+    
     # TODO: If your getFile(...) does not always return a path (e.g. for non-seeding hosts) or not always a path in the same parent directory,
     # you may need to reimplement getDataDir(...)
 
@@ -185,4 +277,4 @@ class _skeleton_(core.file.file):
     @staticmethod
     def APIVersion():
         # TODO: Make sure this is correct. You don't want to run the risk of running against the wrong API version
-        return "2.3.0"
+        return "2.4.0"

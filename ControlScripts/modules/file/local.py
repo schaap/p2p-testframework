@@ -24,7 +24,7 @@ class local(core.file.file):
                             be postfixed with L to generate legacy root hashes. Optional, can be specified multiple
                             times, requires that the rootHash parameter for the requested chunksize is not set.
                             For backward compatibility any illegal chunksize is read as 1, but this deprecated
-                            behavior will disappear in 2.4.0.
+                            behavior will disappear in 2.5.0.
     - renameFile            Set this to "yes" to have the file renamed when uploaded to an automatically generated
                             name. This is forbidden when automated torent generation is requested. Not valid if
                             path points to a directory.
@@ -85,7 +85,7 @@ class local(core.file.file):
                 else:
                     value = int(value)
             if fallback:
-                Campaign.logger.log( "Warning! Chunksize {0} was detected as the value of a generateRootHash parameter to a file:local. This is not a valid chunksize (which would be a positive non-zero integer possible postfixed by L) and is replaced by 1 for backwards compatibility. This behavior will disappear in 2.4.0.".format( value ) )
+                Campaign.logger.log( "Warning! Chunksize {0} was detected as the value of a generateRootHash parameter to a file:local. This is not a valid chunksize (which would be a positive non-zero integer possible postfixed by L) and is replaced by 1 for backwards compatibility. This behavior will disappear in 2.5.0.".format( value ) )
                 value = 1
             if value in self.generateRootHashes:
                 parseError( "Generation of root hashes for chunksize {0} was already requested.".format( value ) )
@@ -219,6 +219,124 @@ class local(core.file.file):
                 name = os.path.basename( self.path )
         return '{0}/files/{1}'.format( self.getFileDir(host), name )
 
+    def getDataDirTree(self):
+        """
+        Returns the directory tree of the data found in getFile().
+        
+        This is the list of directories with getFile() as their common root, including getFile() itself. An empty list is returned in case
+        getFile() is not a directory.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataDirTree() would return the list:
+            [
+                ['Videos'],
+                ['Videos','Humor'],
+                ['Videos','Drama'],
+                ['Videos','Horror'],
+                ['Videos','Horror','Bloody'],
+                ['Videos','Horror','Comedy'],
+                ['Videos','Action']
+            ]
+        Note that this says nothing whatsoever about actual files inside those directories.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        @return    A list of directories in list notation.
+        """
+        if not os.path.isdir( self.path ):
+            return []
+        if self.path[-1:] == '/':
+            name = os.path.basename( self.path[:-1] )
+        else:
+            name = os.path.basename( self.path )
+        dirstack = []
+        dirstack.append( [] )
+        result = [[name]]
+        while len(dirstack) > 0:
+            d = dirstack.pop()
+            # pylint: disable-msg=W0142
+            fullpath = os.path.join( self.path, *d )
+            # pylint: enable-msg=W0142
+            l = os.listdir(fullpath)
+            for a in l:
+                if os.path.isdir( os.path.join( fullpath, a ) ):
+                    result.append( [name] + d + [a] )
+                    dirstack.append( d + [a] )
+        return result
+
+    def getDataFileTree(self):
+        """
+        Returns the file tree of the data found in getFile().
+        
+        This is the list of files with getFile() as their common root (if it's a directory), including getFile() itself.
+        This also holds for file objects pointing to a single file: the returned list will then contain 1 element.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataFileTree() would return the list:
+            [
+                ['Videos', 'generic.avi'],
+                ['Videos','Humor', 'humor1.avi'],
+                ['Videos','Humor', 'humor2.avi'],
+                ['Videos','Horror','Bloody', 'blood1.mpg'],
+                ['Videos','Action','take1001.avi']
+                ['Videos','Action','take1002.avi']
+            ]
+        Note that this does not reflect the complete directory structure.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation return None.
+        
+        @return    A list of files in list notation.
+        """
+        if self.path[-1:] == '/':
+            name = os.path.basename( self.path[:-1] )
+        else:
+            name = os.path.basename( self.path )
+        if not os.path.isdir( self.path ):
+            return [[name]]
+        dirstack = []
+        dirstack.append( [] )
+        result = []
+        while len(dirstack) > 0:
+            d = dirstack.pop()
+            # pylint: disable-msg=W0142
+            fullpath = os.path.join( self.path, *d )
+            # pylint: enable-msg=W0142
+            l = os.listdir(fullpath)
+            for a in l:
+                if os.path.isdir( os.path.join( fullpath, a ) ):
+                    dirstack.append( d + [a] )
+                else:
+                    result.append( [name] + d + [a] )
+        return result
+    
     def cleanup(self):
         """
         Cleans up the file object.
@@ -235,4 +353,4 @@ class local(core.file.file):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

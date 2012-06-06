@@ -37,4 +37,4 @@ class git(source):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

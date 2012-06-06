@@ -2,6 +2,7 @@ from core.campaign import Campaign
 from core.client import client
 
 import os
+import posixpath
 
 class utorrent(client):
     """
@@ -112,36 +113,37 @@ class utorrent(client):
 
         @param  execution           The execution to prepare this client for.
         """
-        # Check sanity of files
-        for f in execution.files:
-            if not f.getMetaFile(execution.host):
-                raise Exception( "In order to use uTorrent all files must have a .torrent file associated with them. No .torrent was found for file {0}.".format( f.name ) )
+        # Initialize some directories
+        torrentDir = '{0}/clients/{1}/exec_{2}/torrent_files'.format( execution.host.getTestDir(), self.name, execution.getNumber() )
+        dataDir = posixpath.join( self.getExecutionClientDir(execution), 'download_data' )
         
-        # Initialize directory lists
-        metadirs = execution.getMetaFileDirList()
-        datadirs = []
-        
-        stopWhenSeeding = 0
-        # Seeder specific settings
-        if execution.isSeeder():
-            datadirs = execution.getDataDirList()
+        # Check sanity of files and torrents
+        torrentLinks = ''
+        count = 0
+        for f in execution.getMetaFileList(required = True):
+            if f[-8:] != '.torrent':
+                raise Exception( "In order to use uTorrent all files must have a .torrent file associated with them. The meta file {0} seems not to be a .torrent file.".format( f.name ) )
+            torrentLinks += 'ln "{0}" "{1}"; '.format( f, posixpath.join( torrentDir, 'meta_file_{0}.torrent'.format(count) ) )
+            count += 1
+
         # Leecher specific settings
-        elif self.stopWhenSeeding:
+        stopWhenSeeding = 0
+        if not execution.isSeeder() and self.stopWhenSeeding:
             stopWhenSeeding = 1
         
         # Build command and prepare
         client.prepareExecution(self, execution, simpleCommandLine = 
-                                    'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {7} {2} {3} {4} {5} > {6}/log.log 2> {6}/errlog.log'.format( 
+                                    '{5} LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {4} 1 {2} 0 > {3}/log.log 2> {3}/errlog.log'.format( 
                                         self.getClientDir(execution.host),
                                         self.getExecutionClientDir(execution),
-                                        len(metadirs),
-                                        " ".join(metadirs),  
-                                        len(datadirs),
-                                        " ".join(datadirs), 
+                                        torrentDir,  
                                         self.getExecutionLogDir(execution),
-                                        stopWhenSeeding
-                                    ) # simpleCommandLine
+                                        stopWhenSeeding,
+                                        torrentLinks
+                                    ), # simpleCommandLine
+                                    linkDataIn = dataDir
                                 )
+        execution.host.sendCommand( 'mkdir -p "{0}"'.format( torrentDir ) )
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):
@@ -284,4 +286,4 @@ class utorrent(client):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

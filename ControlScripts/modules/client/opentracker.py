@@ -27,7 +27,8 @@ class opentracker(client):
                             altered to have their metaFile point to the changed torrent file before the files
                             will be uploaded; can be specified multiple times. Note that the .torrent files to
                             be altered must have a single tracker set already: the change is based on replacing
-                            the existing single tracker.
+                            the existing single tracker. Please note this does not work with self-multiplying
+                            files. Use changeClientTracker in such cases.
     - changeClientTracker   The name of a client object for which all associated files are to have their metaFile
                             parameters checked and, if they point to a .torrent file, the torrent file is to be
                             updated as if the file object was given as a changeTracker to this object. Note that
@@ -348,4 +349,4 @@ class opentracker(client):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

@@ -144,6 +144,46 @@ class test__(core.file.file):
             return None
         return "{0}/files/testseedingfile".format( self.getFileDir( host ) )
 
+    def getDataFileTree(self):
+        """
+        Returns the file tree of the data found in getFile().
+        
+        This is the list of files with getFile() as their common root (if it's a directory), including getFile() itself.
+        This also holds for file objects pointing to a single file: the returned list will then contain 1 element.
+        
+        E.g. a file that points to a directory called Videos with the following structure:
+            Videos/
+                generic.avi
+                Humor/
+                    humor1.avi
+                    humor2.avi
+                Drama/
+                Horror/
+                    Bloody/
+                        blood1.mpg
+                    Comedy/
+                Action/
+                    take1001.avi
+                    take1002.avi
+        getDataFileTree() would return the list:
+            [
+                ['Videos', 'generic.avi'],
+                ['Videos','Humor', 'humor1.avi'],
+                ['Videos','Humor', 'humor2.avi'],
+                ['Videos','Horror','Bloody', 'blood1.mpg'],
+                ['Videos','Action','take1001.avi']
+                ['Videos','Action','take1002.avi']
+            ]
+        Note that this does not reflect the complete directory structure.
+        
+        This list may not be available before sendToSeedingHost(...) has been called.
+        
+        The default implementation return None.
+        
+        @return    A list of files in list notation.
+        """
+        return [['testseedingfile']]
+    
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"

@@ -3,6 +3,7 @@ from core.campaign import Campaign
 from core.client import client
 
 import os.path
+import posixpath
 
 def parseError( msg ):
     """
@@ -170,8 +171,9 @@ class swift(client):
         @param  execution           The execution to prepare this client for.
         """
         allParams = ""
+        dataDir = posixpath.join( self.getExecutionClientDir(execution), 'data' )
         if execution.isSeeder():
-            allParams += "".join( [' -d {0}'.format( d ) for d in execution.getDataDirList()] )
+            allParams += '-d "{0}"'.format( dataDir )
             if not self.wait:
                 allParams += ' --wait 900s'
         else:
@@ -206,7 +208,7 @@ class swift(client):
             allParams += ' {0}'.format( self.extraParameters )
         if self.isInCleanup():
             return
-        client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:. ./swift --progress {0} 2> "{1}/log.log"'.format( allParams, self.getExecutionLogDir(execution) ) )
+        client.prepareExecution(self, execution, simpleCommandLine = 'LD_LIBRARY_PATH=$LD_LIBRARY_PATH:. ./swift --progress {0} 2> "{1}/log.log"'.format( allParams, self.getExecutionLogDir(execution) ), linkDataIn = dataDir )
     # pylint: enable-msg=W0221
 
     def retrieveLogs(self, execution, localLogDestination):
@@ -343,4 +345,4 @@ class swift(client):
 
     @staticmethod
     def APIVersion():
-        return "2.3.0"
+        return "2.4.0"
