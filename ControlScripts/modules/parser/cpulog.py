@@ -103,8 +103,23 @@ class cpulog(parser):
             startDate = None
             datePattern = cpulog.fullDatePattern
             dateFunc = cpulog.fullDateToSecs
+            # pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime
+            # %d  (%s)   %c    %d   %d   %d      %d     %d    %d    %d     %d      %d     %d      %d    %d    %d     %d
+            statPattern = '^{0}\([^)]*\) +. +{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}({0})({0})({0})({0})'.format( '-?[0-9]* +' )
             relTime = -1
+            clockticks = -1
+            cpuTime = -1
+            utime = 0
+            stime = 0
+            cutime = 0
+            cstime = 0
+            cpuTime = 0.0
+            prevRelTime = -1.0
             for line in fl:
+                # First line must be clocks ticks per sec (sysconf(_SC_CLK_TCK))
+                if clockticks == -1:
+                    clockticks = float(line)
+                    continue                
                 #12-03-15 12:22:12.386824326
                 m = re.match(datePattern, line)
                 if startTime == -1:
@@ -126,9 +141,25 @@ class cpulog(parser):
                     if m.group(1) != startDate:
                         relTime += 24 * 3600
                     continue
-                m = re.match('^[ \\t]*([0-9]*\\.?[0-9]*)[ \\t]+([0-9]*)$', line)
+                # pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime
+                # %d  (%s)   %c    %d   %d   %d      %d     %d    %d    %d     %d      %d     %d      %d    %d    %d     %d
+                m = re.match(statPattern, line)
                 if m:
-                    fd.write( '{0} {1} {2}\n'.format( relTime, m.group(1), m.group(2) ) )
+                    newutime = int(m.group(1))
+                    newstime = int(m.group(2))
+                    newcutime = int(m.group(3))
+                    newcstime = int(m.group(4))
+                    cpuTime = (((newutime - utime) + (newstime - stime) + (newcutime - cutime) + (newcstime - cstime)) / (clockticks * (relTime - prevRelTime))) * 100.0
+                    utime = newutime
+                    stime = newstime
+                    cutime = newcutime
+                    cstime = newcstime
+                    continue 
+                # VSZ, RSS
+                m = re.match('^[ \\t]*([0-9]*)[ \\t]+([0-9]*)$', line)
+                if m:
+                    fd.write( '{0} {1} {2}\n'.format( relTime, cpuTime, m.group(2) ) )
+                    prevRelTime = relTime
         finally:
             try:
                 if fd:

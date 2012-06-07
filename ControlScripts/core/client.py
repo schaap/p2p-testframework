@@ -342,7 +342,16 @@ class client(coreObject):
                     if not os.path.exists( entry[0] ):
                         raise Exception( "Client module {0} has an entry to upload file {1}, but that doesn't exist locally.".format( self.__class__.__name__, entry[0] ) )
                     host.sendFile( entry[0], "{0}/{1}".format( self.getClientDir(host), entry[1] ), True )
-                            
+        # Check availability of /proc if profiling is requested
+        if self.profile:
+            res = host.sendCommand( 'cat /proc/$$/stat && echo "OK" || echo "NO"' )
+            if res.splitlines()[-1] == 'OK':
+                pass
+            elif res.splitlines()[-1] == 'NO':
+                raise Exception( "Client {0} has requested profiling, but a usable /proc seems not to be available on host {1}.".format( self.name, host.name ) )
+            else:
+                raise Exception( "Client {0} has requested profiling, but a strange response was received when testing availability of /proc on host {1}: {2}".format( self.name, host.name, res ) )
+
     def getClientDir(self, host, persistent = False):
         """
         Convenience function that constructs the path to the test directory of the client on the remote host.
@@ -543,9 +552,12 @@ class client(coreObject):
                 if self.profile:
                     fileObj.write( 'myPid=$!\n' )
                     fileObj.write( 'echo $myPid\n' )
+                    # FIXME: CLK_TCK is deprecated, but the linux kernel uses it for stats??? - needs sysconf(), really
+                    fileObj.write( '(getconf CLK_TCK 2>/dev/null || echo 100) >> {0}/cpu.log\n'.format( self.getExecutionLogDir(execution) ) )
                     fileObj.write( '(while kill -0 $myPid > /dev/null 2> /dev/null; do ' )
                     fileObj.write( 'date "+%y-%m-%d %H:%M:%S.%N" >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
-                    fileObj.write( 'ps -p $myPid -o %cpu,rss 2>&1 >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
+                    fileObj.write( 'cat /proc/$myPid/stat 2>&1 >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
+                    fileObj.write( 'ps -p $myPid -o vsz= -o rss= 2>&1 >> {0}/cpu.log; '.format( self.getExecutionLogDir(execution) ) )
                     fileObj.write( 'sleep 1;  done) &\n' )
                 else:
                     fileObj.write( 'echo $!\n' )

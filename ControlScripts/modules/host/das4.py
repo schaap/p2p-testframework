@@ -264,7 +264,8 @@ def keepAlive(muxIO, muxIO__lock, host_, timerlist, timerindex, mux_connection_n
         Campaign.logger.log( "DEBUG: keepAlive on mux connection {0}: already closed".format( mux_connection_number ) )
         alreadyClosed = True
     finally:
-        Campaign.logger.log( "DEBUG: {2} keepAlive on mux connection {1}: released lock {0} seconds after acquiring".format( time.time() - muxLockStart, mux_connection_number, time.time() ) )
+        if time.time() - muxLockStart > 0.05: 
+            Campaign.logger.log( "DEBUG: {2} keepAlive on mux connection {1}: released lock {0} seconds after acquiring".format( time.time() - muxLockStart, mux_connection_number, time.time() ) )
         muxIO__lock[0].release()
     if alreadyClosed:
         return
