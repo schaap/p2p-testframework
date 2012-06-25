@@ -1,4 +1,5 @@
 from core.parser import parser
+from core.campaign import Campaign
 
 import os
 import re
@@ -95,8 +96,11 @@ class utorrent(parser):
             percentDone = ''
             prevDown = 0
             prevUp = 0
+            prevRelTime = -1
+            count = 0
             
             for line in fl:
+                count += 1
                 if firstTime == -1:
                     if not re.match( '^[0-9]*\\.[0-9]*$', line ):
                         continue
@@ -104,6 +108,8 @@ class utorrent(parser):
                 
                 if re.match( '^[0-9]*\\.[0-9]*$', line ):
                     relTime = float(line) - firstTime
+                    if prevRelTime == relTime:
+                        relTime = -1
                     continue
                 
                 if relTime == -1:
@@ -118,13 +124,21 @@ class utorrent(parser):
                         up = prevUp
                     if down < prevDown:
                         down = prevDown
-                    downspeed = ( down - prevDown ) / 1024.0
-                    upspeed = ( up - prevUp ) / 1024.0
+                    div = 1024.0 * (relTime - prevRelTime)
+                    try:
+                        1 / div
+                    except ZeroDivisionError:
+                        Campaign.logger.log( "Line {0} of log file {1} == {2}".format( count, logfile, line ) )
+                        Campaign.logger.log( "ZeroDivisionError: relTime == {0} and prevRelTime == {1}".format( relTime, prevRelTime ) )
+                        div = 1
+                    downspeed = ( down - prevDown ) / ( 1024.0 * (relTime - prevRelTime) )
+                    upspeed = ( up - prevUp ) / ( 1024.0 * (relTime - prevRelTime) )
                     prevDown = down
                     prevUp = up
                     
                     fd.write( "{0} {1} {2} {3}\n".format( relTime, percentDone, upspeed, downspeed ) )
                     
+                    prevRelTime = relTime
                     relTime = -1
         finally:
             try:

@@ -118,13 +118,12 @@ class utorrent(client):
         dataDir = posixpath.join( self.getExecutionClientDir(execution), 'download_data' )
         
         # Check sanity of files and torrents
-        torrentLinks = ''
-        count = 0
-        for f in execution.getMetaFileList(required = True):
+        lnstring = 'ln "{0}" "{1}"; '.format( "{0}", posixpath.join( torrentDir, 'meta_file_{1}.torrent' ) )
+        metafiles = execution.getMetaFileList(required = True)
+        for f in metafiles:
             if f[-8:] != '.torrent':
                 raise Exception( "In order to use uTorrent all files must have a .torrent file associated with them. The meta file {0} seems not to be a .torrent file.".format( f.name ) )
-            torrentLinks += 'ln "{0}" "{1}"; '.format( f, posixpath.join( torrentDir, 'meta_file_{0}.torrent'.format(count) ) )
-            count += 1
+        torrentLinks = ''.join( lnstring.format( metafiles[i], i ) for i in range(len(metafiles)) )
 
         # Leecher specific settings
         stopWhenSeeding = 0

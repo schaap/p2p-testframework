@@ -25,6 +25,9 @@ class gnuplot(processor):
     
     Extra parameters:
     - script       Path to the fnuplot script to be run
+    - showErrors   Set to 'yes' to have processor:gnuplot show errors found when running gnuplot; these are normally
+                   hidden since it's not uncommon to have gnuplot scripts that can run for only a part of the executions
+                   but hence would spam the log with output. Be sure to enable this while testing new gnuplot scripts.
     
     Raw logs expected:
     - depends on the gnuplot script
@@ -37,6 +40,7 @@ class gnuplot(processor):
     """
     
     script = None       # Location of the script file
+    showErrors = False  # Whether to show gnuplot errors
     
     # @static
     gnuplot = None      # The location of gnuplot
@@ -82,6 +86,9 @@ class gnuplot(processor):
             if not os.path.exists( value ) or not os.path.isfile( value ):
                 parseError( "Script file '{0}' seems not be an existing file".format( value ) )
             self.script = value
+        elif key == 'showErrors':
+            if value == 'yes':
+                self.showErrors = True
         else:
             processor.parseSetting(self, key, value)
 
@@ -145,7 +152,8 @@ class gnuplot(processor):
                 try:
                     subprocess.check_output( [gnuplot.gnuplot, tmpFile], bufsize=8192, stderr=subprocess.STDOUT )
                 except subprocess.CalledProcessError as e:
-                    Campaign.logger.log( "Running gnuplot failed: {0}. Ignoring.".format( e.output ) )
+                    if self.showErrors:
+                        Campaign.logger.log( "Running gnuplot failed: {0}. Ignoring.".format( e.output ) )
         finally:
             if f:
                 try:

@@ -38,6 +38,8 @@ class client(coreObject):
     
     profile = False             # Flag to include external profiling code
     logStart = False            # Flag to include logging of the starting time of the client on the remote host
+    
+    onHosts = None              # Temporary list of hosts where this client will run; do not use
 
     # For more clarity: the way source, isRemote, location and builder work together is as follows.
     #
@@ -63,6 +65,7 @@ class client(coreObject):
         coreObject.__init__(self, scenario)
         self.pid__lock = threading.Lock()
         self.pids = {}
+        self.onHosts = []
 
     def parseSetting(self, key, value):
         """

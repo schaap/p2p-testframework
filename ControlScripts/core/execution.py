@@ -10,8 +10,11 @@ def _getDataTree(host, number, _type, files):
     Internal implementation method for getDataDirTree() (type == 'd') and getDataFileTree() (type == 'f').
     """
     l = []
+    fdict = {}
+    for f in files:
+        fdict[f] = 0
     for f in host.seedingFiles:
-        if f not in files:
+        if f not in fdict:
             continue
         # Get the data's structure. If empty, don't bother with the rest
         if _type == 'd':
@@ -196,7 +199,7 @@ class execution(coreObject):
             self.timeout = float(value)
         elif key == 'keepSeeding':
             if value != '':
-                self.keepSeeding = False
+                self.keepSeeding = True
         elif key == 'multiply':
             if self.multiply is not None:
                 parseError( "Multiply already set: {0}".format( self.multiply ) )
@@ -367,11 +370,13 @@ class execution(coreObject):
         that copied directory structure.
         """
         l = []
+        ldict = {}
         for f in self.host.seedingFiles:
             d = f.getDataDir(self.host)
             if d is not None:
-                if d not in l:
+                if d not in ldict:
                     l.append(d)
+                    ldict[d] = 0
         return l
     
     def getDataDirTree(self):
@@ -445,13 +450,18 @@ class execution(coreObject):
         @param    required    Set to True to have an Exception raised if any of the files does not have a metafile associated.
         """
         l = []
+        fdict = {}
+        for f in self.files:
+            fdict[f] = 0
+        ldict = {}
         for f in self.host.files:
-            if f not in self.files:
+            if f not in fdict:
                 continue
             mf = f.getMetaFile(self.host)
             if mf is not None:
-                if mf not in l:
+                if mf not in ldict:
                     l.append(mf)
+                    ldict[mf] = 0
             elif required:
                 raise Exception( "File {0} has no metafile associated, but is required to have one by our caller.".format( f.getName() ) )
         return l

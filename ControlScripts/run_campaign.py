@@ -541,10 +541,11 @@ class ScenarioRunner:
             raise Exception( "No objects found in scenario {0}".format( self.name ) )
         obj.checkSettings()
         self.addObject(obj)
-
+        
         # Allow host objects to do some preprocessing before name resolving
         for obj in self.getObjects('host'):
             obj.doPreprocessing()
+        
         # Allow file objects to do some preprocessing before name resolving
         for obj in self.getObjects('file'):
             obj.doPreprocessing()
@@ -557,17 +558,46 @@ class ScenarioRunner:
                 obj.resolveNames()
         
         # Fill in extra cross-object data
+        fdict = {}
+        hdict = {}
+        hlist = []
+        for host in self.getObjects('host'):
+            hdict[host] = len(hlist)
+            hlist.append(host)
+        for file_ in self.getObjects('file'):
+            fdict[file_] = 0
         for execution in self.getObjects('execution'):
-            if execution.client not in execution.host.clients:
-                execution.host.clients.append( execution.client )
-            flist = self.getObjects('file')
+            hostn = hdict[execution.host]
+            if hostn not in execution.client.onHosts:
+                execution.client.onHosts.append( hostn )
             for file_ in execution.files:
-                if file_ not in flist:
+                if file_ not in fdict:
                     raise Exception( "Insanity! Found a file object named {0} in an execution object that is not registered with the scenario. This is most likely caused by an erroneously initialized multi-file object.".format( file_.getName() ) )
-                if file_ not in execution.host.files:
-                    execution.host.files.append( file_ )
-                if execution.isSeeder() and file_ not in execution.host.seedingFiles:
-                    execution.host.seedingFiles.append( file_ )
+                if hostn not in file_.onHosts:
+                    file_.onHosts.append( hostn )
+                if execution.isSeeder() and hostn not in file_.onSeedingHosts:
+                    file_.onSeedingHosts.append( hostn )
+        for client in self.getObjects('client'):
+            for hostn in client.onHosts:
+                hlist[hostn].clients.append( client )
+            client.onHosts = None
+        for file_ in self.getObjects('file'):
+            for hostn in file_.onHosts:
+                hlist[hostn].files.append( file_ )
+            for hostn in file_.onSeedingHosts:
+                hlist[hostn].seedingFiles.append( file_ )
+            file_.onHosts = None
+            file_.onSeedingHosts = None
+        # The above piece of code seems pretty convoluted. The reason is simple: it's much, much faster.
+        # The end result is that for each host we have a list of which clients, which files and which seeding files are associated with that host
+        # The naive implementation should be obvious: go over all executions, check whether the client is in the hosts' list of clients, if not add; ditto for (seeding) files
+        # Instead, we build a list on each client and file which contains the hosts they're associated with and after that go over those lists to add them
+        #    The speedup here is that there are probably much less hosts than other things, so the if x not in [] check is much faster
+        # Instead of doing this with host objects, we map those objects to integers and keep integers in those lists
+        #    The speedup here is that it's simply much faster to check whether an integer is in a list than to check whether an object is in a list
+        #    So much so that it by far outweighs the cost of creatings those mappings and translations
+        # Instead of looking up whether the file exists in the list of files, we create a dictionary from those files to 0 and check if it's in there...
+        #    I don't know how they implemented the differences, but for 10000 files that went from ~200 to <0.1 seconds...
 
     def fallbackWarning(self, host, direction):
         """Log a warning that the host has to fall back to full traffic control in the given direction."""
@@ -594,9 +624,17 @@ class ScenarioRunner:
             os.makedirs( os.path.join( self.resultsDir, 'executions' ) )
         # All hosts that are actually used in executions
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
+        
+        print "PROFILE: Setup starting @ 0"
+        startTime = time.time()
+        
         # Prepare all hosts
         for host in executionHosts:
             host.prepare()
+        
+        print "PROFILE: Hosts prepared in {0}".format( time.time()-startTime )
+        startTime = time.time()
+
         # Executions may by now have been altered by the host.prepare() calls, so rebuild the host list
         # All executions must refer to prepared hosts, which means that any host.prepare() that alters the executions
         # must take precautions to ensure this.
@@ -604,9 +642,17 @@ class ScenarioRunner:
         # Now change all those executions as needed to get the right workloads
         for workload in self.getObjects('workload'):
             workload.applyWorkload()
+
+        print "PROFILE: Workloads prepared in {0}".format( time.time()-startTime )
+        startTime = time.time()
+
         # Prepare all clients
         for client in self.getObjects('client'):
             client.prepare()
+
+        print "PROFILE: Clients prepared in {0}".format( time.time()-startTime )
+        startTime = time.time()
+
         # Prepare TC and clients
         for host in executionHosts:
             # Build traffic control instructions for each host, based on how the clients can be controlled
@@ -691,10 +737,16 @@ class ScenarioRunner:
                         raise Exception( "Host {0} could not initiate the requested traffic control.".format( host.name ) )
             # If we've reached this point, then we have a succeeding tc.check(), unless no TC was requested at all
 
+            print "PROFILE: Host TC done in {0}".format( time.time()-startTime )
+            startTime = time.time()
+    
             # If we're not just testing: prepare clients for this host
             if not testRun:
                 for client in host.clients:
                     client.prepareHost( host )
+                print "PROFILE: Clients prepared their hosts in {0}".format( time.time()-startTime )
+                startTime = time.time()
+
 
         # If we're not just testing: prepare files
         if not testRun:
@@ -705,6 +757,7 @@ class ScenarioRunner:
                 # Send all files to the host that have this host as seeder
                 for f in host.seedingFiles:
                     f.sendToSeedingHost( host )
+            print "PROFILE: Files prepared their hosts in {0}".format( time.time()-startTime )
 
     def executeRun(self):
         """
@@ -713,9 +766,16 @@ class ScenarioRunner:
         This method assumes everything is set to go.
         Clients will be prepared for execution, TC will be applied and the clients then run.
         """
+        print "PROFILE: Run starting @ 0"
+        startTime = time.time()
+        
         # Prepare all clients for execution
         for execution in self.getObjects('execution'):
             execution.client.prepareExecution( execution )
+
+        print "PROFILE: Clients prepared their executions in {0}".format( time.time() - startTime )
+        startTime = time.time()
+        
         # All hosts that are part of an execution
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
         # Try to make sure and TC is always removed
@@ -725,15 +785,26 @@ class ScenarioRunner:
                 if host.tc == '':
                     continue
                 host.tcObj.install( host, list(set([host.getSubnet() for host in executionHosts])) )
+
+            print "PROFILE: Hosts have TC installed in {0}".format( time.time() - startTime )
+            startTime = time.time()
+            
             # Start all clients
             execThreads = []
             for execution in self.getObjects('execution'):
                 execThreads.append( ClientRunner( execution ) )
             self.threads += execThreads
+
+            print "PROFILE: Execution threads created in {0}".format( time.time() - startTime )
+            startTime = time.time()
+            
             print "Preparing connections to run clients over"
             # First prepare all connections (has to be done consecutively in order to allow throttling to prevent overloading)
             for thread in execThreads:
                 thread.prepareConnection()
+
+            print "PROFILE: Connections prepared in {0}".format( time.time() - startTime )
+            
             # Precalculate when we should be done
             endTime = time.time() + self.timelimit
             for thread in execThreads:
@@ -767,6 +838,9 @@ class ScenarioRunner:
     
             print "All clients should be done now, checking and killing if needed."
             
+            print "PROFILE: After-run starting @ 0"
+            startTime = time.time()
+        
             killThreads = []
             for execution in self.getObjects('execution'):
                 killThreads.append( ClientKiller( execution ) )
@@ -781,6 +855,9 @@ class ScenarioRunner:
                             Campaign.logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
             else:
                 killThreads[0].runSequentially(killThreads)
+
+            print "PROFILE: Threads killed in {0}".format( time.time() - startTime )
+            startTime = time.time()
     
         finally:
             print "Removing all traffic control from hosts."
@@ -788,6 +865,10 @@ class ScenarioRunner:
                 if host.tc == '':
                     continue
                 host.tcObj.remove( host )
+
+            print "PROFILE: Hosts' TC removed in {0}".format( time.time() - startTime )
+            startTime = time.time()
+    
 
     def parseLogs(self):
         """

@@ -1797,10 +1797,10 @@ empty
                 counter = nextCounter
             if self.reservationFixed is None:
                 if counter != len(nodeList):
-                    raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved. Insanity!".format( self.name, counter, totalNodes ) )
+                    raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved and the list of nodes contains {3}. Insanity!".format( self.name, counter, totalNodes, len(nodeList) ) )
             else:
                 if counter > len(nodeList):
-                    raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but only  {2} were available. Insanity!".format( self.name, counter, totalNodes ) )
+                    raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but only  {2} were available and the list of nodes contains {3}. Insanity!".format( self.name, counter, totalNodes, len(nodeList) ) )
             # / Supervisor host
         if self.nNodes:
             # Master host part 1

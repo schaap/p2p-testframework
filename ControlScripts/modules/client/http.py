@@ -19,6 +19,11 @@ class http(client):
     
     Due to the dual client setup the params parameter is ignored.
     
+    Please note that it is most likely required to use a workload for any non-seeding executions in order
+    to delay their execution until at least 30 seconds after the seeding executions have started: lighttpd
+    has some setup time via this module (especially with SSL) which would cause the leechers to connect
+    and fail too early.
+    
     Extra parameters:
     - useSSL :      Set to anything but "no" to enable HTTPS instead of HTTP; may be specified multiple
                     times, last declaration counts; optional, defaults to "no"
@@ -262,7 +267,6 @@ class http(client):
                 connperhost = 16
             # Build the huge command
             command = (
-                        'sleep 30; '
                         'echo | ./aria2c '
                         '-j {0} '                               # maximum concurrent downloads
                         '-s {0} '                               # split file in n parts
@@ -283,7 +287,6 @@ class http(client):
                         '{4}'                                   # URI lists
                         '__EOF__\n'                             # end input of URI lists
                         # (SSL options are given anyway, since they don't matter for non-SSL)
-                        # The sleep 30 is a hack to work around slower setup of lighttpd which would cause aria2 to fail when connecting to the server
                     ).format(
                              len(servers),
                              connperhost,

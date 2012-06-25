@@ -177,11 +177,14 @@ class swift(client):
             if not self.wait:
                 allParams += ' --wait 900s'
         else:
+            count = 0
+            fileparam = ' --hash {0} --file "{1}"'.format( '{0}', posixpath.join( self.getExecutionClientDir(execution), 'downloaded_file_{1}' ) )
             for f in execution.files:
                 roothash = f.getRootHash(self.chunkSize / 1024)
                 if not roothash:
                     raise Exception( "The swift client, when leeching, requires the correct root hash of each file to be set. Execution {0} of client {1} on host {2} is leeching, but file {3} does not have a root hash set for chunksize {4}.".format( execution.getNumber(), self.name, execution.host.name, f.name, self.chunkSize ) )
-                allParams += ' --hash {0} --file "{1}"'.format( roothash, f.getFile(execution.host) )
+                allParams += fileparam.format( roothash,  count )
+                count += 1
         if self.wait:
             allParams += ' --wait {0}s'.format( self.wait )
         if self.listenAddress:

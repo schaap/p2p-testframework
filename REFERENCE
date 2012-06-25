@@ -215,7 +215,12 @@ Please note that the options for builder and source modules are given here as we
                         and builder:scons modules.
 
 == client:http ==
-Uses lighttpd and aria2 to provided HTTP(S) downloads
+Uses lighttpd and aria2 to provided HTTP(S) downloads.
+
+Please note that it is most likely required to use a workload for any non-seeding executions in order
+to delay their execution until at least 30 seconds after the seeding executions have started: lighttpd
+has some setup time via this module (especially with SSL) which would cause the leechers to connect
+and fail too early.
 
 - useSSL :      Set to anything but "no" to enable HTTPS instead of HTTP; may be specified multiple
                 times, last declaration counts; optional, defaults to "no"
@@ -393,6 +398,9 @@ Creates a simple text file for each execution with the timeout in seconds (float
 Runs a given gnuplot script for each parsed log in an attempt to create nice graphs.
 
 - script       Path to the fnuplot script to be run
+- showErrors   Set to 'yes' to have processor:gnuplot show errors found when running gnuplot; these are normally
+               hidden since it's not uncommon to have gnuplot scripts that can run for only a part of the executions
+               but hence would spam the log with output. Be sure to enable this while testing new gnuplot scripts.
 
 = viewer =
 - [none]

@@ -22,6 +22,9 @@ class file(coreObject):
                             # legacy format) to the actual roothash
     metaFile = None         # The meta file of the file, such as a torrent file.
 
+    onHosts = None          # Temporary list of hosts where this client will run; do not use
+    onSeedingHosts = None   # Temporary list of hosts where this client will run; do not use
+
     def __init__(self, scenario):
         """
         Initialization of a generic file object.
@@ -30,6 +33,8 @@ class file(coreObject):
         """
         coreObject.__init__(self, scenario)
         self.rootHashes = {}
+        self.onHosts = []
+        self.onSeedingHosts = []
 
     def parseSetting(self, key, value):
         """
@@ -58,7 +63,7 @@ class file(coreObject):
             self.name = value
         elif key == "rootHash":
             Campaign.logger.log( "Warning: The rootHash parameter to a file is deprecated due to ambiguity. Please use rootHash[1] instead." )
-            if self.rootHashes[1]:
+            if 1 in self.rootHashes:
                 parseError( 'Root hash for chunksize 1 already set: {0}'.format( self.rootHash ) )
             if not isinstance( value, basestring ) or len( value ) != 40 or reduce( lambda x, y: x or not ( ( y >= '0' and y <= '9' ) or ( y >= 'A' and y <= 'F' ) or ( y >= 'a' and y <= 'f' ) ), value, False ):
                 parseError( 'Valid root hashes consist of exactly 40 hexadecimal digits, unlike "{0}"'.format( value ) )
