@@ -319,7 +319,7 @@ class ClientRunner(BusyExecutionThread):
     def cleanup(self):
         """Cleans up the thread's execution, which is just setting self.cleanup by default."""
         # Also kill clients that are already/still running
-        if self.execution.client.isRunning( self.execution ):
+        if not self.execution.client.isStopped( self.execution ) and self.execution.client.isRunning( self.execution ):
             self.execution.client.kill( self.execution )
 
 class ClientKiller(BusyExecutionThread):
@@ -332,7 +332,7 @@ class ClientKiller(BusyExecutionThread):
         
         Also be sure to place yield at the end!
         """
-        if self.execution.client.isRunning( self.execution ):
+        if not self.execution.client.isStopped( self.execution ) and self.execution.client.isRunning( self.execution ):
             self.execution.client.kill( self.execution )
         yield
 
@@ -843,7 +843,8 @@ class ScenarioRunner:
         
             killThreads = []
             for execution in self.getObjects('execution'):
-                killThreads.append( ClientKiller( execution ) )
+                if not execution.client.isStopped( execution ):
+                    killThreads.append( ClientKiller( execution ) )
             self.threads += killThreads
             if self.doParallel:
                 for thread in killThreads:
@@ -853,7 +854,7 @@ class ScenarioRunner:
                         thread.join( 60 )
                         if thread.isAlive():
                             Campaign.logger.log( "Warning! A client wasn't killed after 60 seconds: {0} on host {1}".format( thread.execution.client.name, thread.execution.host.name ) )
-            else:
+            elif len(killThreads) > 0:
                 killThreads[0].runSequentially(killThreads)
 
             print "PROFILE: Threads killed in {0}".format( time.time() - startTime )
@@ -961,7 +962,7 @@ class ScenarioRunner:
         print "Checking and killing clients"
         for e in self.getObjects('execution'):
             try:
-                if e.client.hasStarted( e ) and e.client.isRunning( e, cleanupConnections[e.host] ):
+                if not e.client.isStopped( e ) and e.client.hasStarted( e ) and e.client.isRunning( e, cleanupConnections[e.host] ):
                     e.client.kill( e, cleanupConnections[e.host] )
             except Exception as exc:
                 Campaign.logger.log( "Exception while cleaning up, will be discarded: {0}".format( exc.__str__() ) )

@@ -34,7 +34,8 @@ class client(coreObject):
     sourceObj = None            # The instance of the source module requested
 
     pids = {}                   # The process IDs of the running clients (dictionary execution-number->PID)
-    pid__lock = None            # Lock object to guard the pids dictionary
+    pid__lock = None            # Lock object to guard the pids dictionary and pids_finished dictionary
+    pids_finished = {}          # Dictionary execution-number->True for those execution numbers that have already finished
     
     profile = False             # Flag to include external profiling code
     logStart = False            # Flag to include logging of the starting time of the client on the remote host
@@ -65,6 +66,7 @@ class client(coreObject):
         coreObject.__init__(self, scenario)
         self.pid__lock = threading.Lock()
         self.pids = {}
+        self.pids_finished = {}
         self.onHosts = []
 
     def parseSetting(self, key, value):
@@ -664,22 +666,48 @@ class client(coreObject):
         @return True iff the client is running.
         """
         pid = ''
+        done = False
         try:
             self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
                 Campaign.logger.log( "Execution {0} of client {1} on host {2} is not known by PID when checking for isRunning. Ignoring.".format( execution.getNumber(), execution.client.name, execution.host.name ) )
                 return False
             pid = self.pids[execution.getNumber()]
+            done = execution.getNumber() in self.pids_finished
         finally:
             try:
                 self.pid__lock.release()
             except RuntimeError:
                 pass
+        if done:
+            return False
         connection = reuseConnection
         if not connection:
             connection = execution.getRunnerConnection()
         result = execution.host.sendCommand( 'kill -0 {0} && echo "Y" || echo "N"'.format( pid ), connection )
-        return re.match( '^Y', result ) is not None
+        if re.match( '^Y', result ) is None:
+            self.pids_finished[execution.getNumber()] = True
+            return False
+        return True
+
+    def isStopped(self, execution):
+        """
+        Return whether the client is known not to be running anymore.
+        If this returns True then isStarted() will return True, isRunning() will return False
+        and kill() won't do anything when given the same execution.
+
+        @param  execution       The execution for which to check if the client is known not to be running.
+
+        @return True iff the client is known not to be running anymore.
+        """
+        try:
+            self.pid__lock.acquire()
+            return execution.getNumber() in self.pids_finished
+        finally:
+            try:
+                self.pid__lock.release()
+            except RuntimeError:
+                pass
 
     def kill(self, execution, reuseConnection = None ):
         """
@@ -697,12 +725,15 @@ class client(coreObject):
         # stinks, basically. In other words: it is not possible to track all children recursively of this process, so
         # we're not going to try. Child processes started by this method MUST behave correctly when sent the signals
         # to stop. This means that wrapper scripts need to trap on signals and pass them on to their detected children.
+        done = False
         try:
             self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:
                 # An execution for which no PID has been found is assumed dead and hence kill 'succeeded'
                 return
             theProgramPID = self.pids[execution.getNumber()]
+            if execution.getNumber() in self.pids_finished:
+                return
         finally:
             try:
                 self.pid__lock.release()
@@ -734,6 +765,7 @@ class client(coreObject):
                     try:
                         self.pid__lock.acquire()
                         del self.pids[execution.getNumber()]
+                        self.pids_finished[execution.getNumber()] = True
                     finally:
                         try:
                             self.pid__lock.release()
