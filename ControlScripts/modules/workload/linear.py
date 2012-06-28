@@ -57,15 +57,18 @@ class linear(workload):
             if self.interval:
                 parseError( "Interval was already specified: {0}".format( self.interval ) )
             if not isPositiveFloat( value, True ):
-                parseError( "Duration should be a non-zero positive floating point number." )
+                if value == "0":
+                    parseError( "Duration should be a non-zero positive floating point number. Try internval=0 if you want no spread at all." )
+                else:
+                    parseError( "Duration should be a non-zero positive floating point number." )
             self.duration = float(value)
         elif key == 'interval':
             if self.duration:
                 parseError( "Duration was already specified: {0}".format( self.duration ) )
             if self.interval:
                 parseError( "Interval was already specified: {0}".format( self.interval ) )
-            if not isPositiveFloat( value, True ):
-                parseError( "Interval should be a non-zero positive floating point number." )
+            if not isPositiveFloat( value, False):
+                parseError( "Interval should be a positive floating point number." )
             self.interval = float(value)
         elif key == 'rate':
             if self.duration:
@@ -88,7 +91,7 @@ class linear(workload):
         An Exception is raised in the case of insanity.
         """
         workload.checkSettings(self)
-        if not ( self.duration or self.interval ):
+        if self.duration is None and self.interval is None:
             raise Exception( "One of duration, interval or rate is requried for a linear workload." ) 
 
     def resolveNames(self):
@@ -117,7 +120,7 @@ class linear(workload):
             return
 
         timeout = self.offset
-        if self.interval:
+        if self.interval is not None:
             interval = self.interval
         elif len(executions) > 1:
             interval = self.duration / (len(executions) - 1)

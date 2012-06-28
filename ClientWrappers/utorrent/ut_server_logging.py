@@ -350,7 +350,7 @@ def interact(webport, metadirs, stopWhenSeeding):
                 print >> sys.stderr, "Client did not die after 5 secs, giving up on it, anyway"
                 break
 
-def patchLinuxConfig(port, webport, workingDir, _): # _ == clientDir
+def patchLinuxConfig(port, webport, workingDir, _, useDHT): # _ == clientDir
     print >> sys.stderr, "WARNING: The settings of the Linux client are not up to date. They are especially not equal to the Windows settings."
     f = open( os.path.join( workingDir, 'utserver.conf' ), 'w' )
     f.write( "token_auth_enable: 0\n" )
@@ -359,6 +359,8 @@ def patchLinuxConfig(port, webport, workingDir, _): # _ == clientDir
     f.write( "auto_bandwidth_management: 0\n" )
     f.write( "bind_port: {0}\n".format( port ) )
     f.write( "ut_webui_port: {0}\n".format( webport ) )
+    if not useDHT:
+        f.write( "dht: 0\n" )
     f.close()
 
 def runLinuxClient(workingDir, _): # _ == clientDir
@@ -368,7 +370,7 @@ def runLinuxClient(workingDir, _): # _ == clientDir
     # pylint: enable-msg=W0603
     utorrent_process = subprocess.Popen(["./utserver", "-configfile", "{0}/utserver.conf".format(workingDir), "-settingspath", workingDir, "-pidfile", "{0}/utserver.pid".format( workingDir ), "-logfile", "{0}/utserver.log".format( workingDir )])
 
-def patchWindowsConfig(port, webport, workingDir, clientDir):
+def patchWindowsConfig(port, webport, workingDir, clientDir, useDHT):
     f = open( os.path.join( clientDir, 'settings.dat' ), 'r' )
     settings = bdecode( f.read() )
     f.close()
@@ -377,6 +379,10 @@ def patchWindowsConfig(port, webport, workingDir, clientDir):
     settings['webui.port'] = webport
     settings['dir_active_download'] = posixToNT( os.path.abspath( os.path.join( workingDir, 'download_data' ) ) )
     settings['dir_autoload'] = posixToNT( os.path.abspath(os.path.join(workingDir, 'torrents')) )
+    if useDHT:
+        settings['dht'] = 1
+    else:
+        settings['dht'] = 0
     f = open( os.path.join( workingDir, 'settings.dat' ), 'w' )
     f.write( bencode( settings ) )
     f.close()
@@ -459,17 +465,18 @@ def mainFunction():
     clientDir = sys.argv[1]
     workingDir = sys.argv[2]
     stopWhenSeeding_ = sys.argv[3]
-    metaDirCount = int(sys.argv[4])
-    if len(sys.argv) < 6 + metaDirCount:
+    useDHT = sys.argv[4] == "1"
+    metaDirCount = int(sys.argv[5])
+    if len(sys.argv) < 7 + metaDirCount:
         raise Exception( "Expected {0} meta file dirs, but only {1} arguments given".format( metaDirCount, len(sys.argv) ) )
-    dataDirCount = int(sys.argv[5 + metaDirCount])
-    if len(sys.argv) < 6 + metaDirCount + dataDirCount:
+    dataDirCount = int(sys.argv[6 + metaDirCount])
+    if len(sys.argv) < 7 + metaDirCount + dataDirCount:
         raise Exception( "Expected {0} meta file dirs and {1} data dirs, but only {2} arguments given".format( metaDirCount, dataDirCount, len(sys.argv) ) )
     metadirs = []
     datadirs = []
-    for i in range(5, 5+metaDirCount):
+    for i in range(6, 6+metaDirCount):
         metadirs.append( sys.argv[i] )
-    for i in range(6+metaDirCount, 6+metaDirCount+dataDirCount):
+    for i in range(7+metaDirCount, 7+metaDirCount+dataDirCount):
         datadirs.append( sys.argv[i] )
     
     # Setup signal handling
@@ -548,9 +555,9 @@ def mainFunction():
     
     # [Read,] change and save config file
     if haveWindows:
-        patchWindowsConfig(port, webport, workingDir, clientDir)
+        patchWindowsConfig(port, webport, workingDir, clientDir, useDHT)
     else:
-        patchLinuxConfig(port, webport, workingDir, clientDir)
+        patchLinuxConfig(port, webport, workingDir, clientDir, useDHT)
     
     xvfb_process = None
     utorrent_process = None

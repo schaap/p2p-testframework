@@ -15,10 +15,13 @@ class utorrent(client):
     - stopWhenSeeding   If set to "yes" this will kill the client once the "Seeding" state has been reached.
                         In order to make sure this goes right, please make sure the string "Seeding" is not to
                         be found in the names of torrents or other (indirect) parameters of the torrent.
+    - dht               If set to "yes" this will enable the use of DHT for uTorrent, which is otherwise
+                        disabled.
     """
 
     useWine = False
     stopWhenSeeding = False
+    useDHT = False
 
     def __init__(self, scenario):
         """
@@ -51,6 +54,9 @@ class utorrent(client):
         elif key == 'stopWhenSeeding':
             if value == 'yes':
                 self.stopWhenSeeding = True
+        elif key == 'dht':
+            if value == 'yes':
+                self.useDHT = True
         else:
             client.parseSetting(self, key, value)
 
@@ -130,15 +136,20 @@ class utorrent(client):
         if not execution.isSeeder() and self.stopWhenSeeding:
             stopWhenSeeding = 1
         
+        dhtArg = 0
+        if self.useDHT:
+            dhtArg = 1
+        
         # Build command and prepare
         client.prepareExecution(self, execution, simpleCommandLine = 
-                                    '{5} LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {4} 1 {2} 0 > {3}/log.log 2> {3}/errlog.log'.format( 
+                                    '{5} LD_LIBRARY_PATH=$LD_LIBRARY_PATH:~/lib {0}/ut_server_logging.py {0} {1} {4} {6} 1 {2} 0 > {3}/log.log 2> {3}/errlog.log'.format( 
                                         self.getClientDir(execution.host),
                                         self.getExecutionClientDir(execution),
                                         torrentDir,  
                                         self.getExecutionLogDir(execution),
                                         stopWhenSeeding,
-                                        torrentLinks
+                                        torrentLinks,
+                                        dhtArg
                                     ), # simpleCommandLine
                                     linkDataIn = dataDir
                                 )
