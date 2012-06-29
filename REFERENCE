@@ -402,6 +402,11 @@ Runs a given gnuplot script for each parsed log in an attempt to create nice gra
                hidden since it's not uncommon to have gnuplot scripts that can run for only a part of the executions
                but hence would spam the log with output. Be sure to enable this while testing new gnuplot scripts.
 
+== processor:statistics ==
+Calculates some scenario wide statistics for the leechers and seeders (both memory/CPU related and download related).
+
+- [none]
+
 = viewer =
 - [none]
 
