@@ -465,6 +465,16 @@ class execution(coreObject):
             elif required:
                 raise Exception( "File {0} has no metafile associated, but is required to have one by our caller.".format( f.getName() ) )
         return l
+    
+    def isFake(self):
+        """
+        Small helper method to allow detection of reparses using fake execution objects.
+        
+        This should always return False in real scenarios.
+        
+        @return    True iff this is a fake execution object.
+        """
+        return False
 
     @staticmethod
     def APIVersion():

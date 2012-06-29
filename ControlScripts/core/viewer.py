@@ -96,6 +96,39 @@ class viewer(coreObject):
         """
         return self.number
 
+    def canReview(self):
+        """
+        Return whether this viewer can be used to review after a run has already been torn down.
+        
+        This mainly signals that this parser functions within the following constraints:
+        - resolveNames is never called
+        - host, client and file object are explicitly unavailable
+        - Only part of the scenario object is available:
+            - scenario.isFake() is available and returns True
+            - scenario.name is available and correct
+            - scenario.getObjects(...) is available and will return all executions but an empty list otherwise
+            - scenario.getObjectsDict(...) is available and will return all executions but an empty dictionary otherwise
+            - The executions returned by this scenario are limited as described below
+            - The methods are not available during initialization
+        - Only part of the static Campaign object is available:
+            - Campaign.logger is available as normally and logs to stdout
+            - Campaign.which is available as normally
+        - Only part of the execution object is available:
+            - execution.isFake() is available and returns True
+            - execution.getNumber() is available and limited
+            - execution.client is available but incomplete
+                - execution.client.name is available and reads '__reparse__'
+                - execution.client.isSideService() is available
+                    - returns True unless any log exists for the execution
+            - execution.timeout is available and 0.0 unless the data was saved using processor:savetimeout
+            - execution.isSeeder() is available and False unless the data was saved using processor:isSeeder (and this was a seeder)
+            - execution.host is available but limited 
+                - execution.host.name is available and reads '__reparse__' unless the data was saved using processor:savehostname
+        
+        @return    True iff this viewer can review.
+        """
+        return False
+
     @staticmethod
     def APIVersion():
         return "2.4.0-core"

@@ -1077,6 +1077,16 @@ class ScenarioRunner:
         Campaign.logger.log( "=== Scenario {0} completed ===".format( self.name ), True )
         print ""
 
+    def isFake(self):
+        """
+        Small helper method to allow detection of reparses using fake execution objects.
+        
+        This should always return False in real scenarios.
+        
+        @return    True iff this is a fake execution object.
+        """
+        return False
+
 class CampaignRunner:
     """
     Campaign runner class both for initialization of the full environment as well as for each campaign individually.
