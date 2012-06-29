@@ -18,6 +18,9 @@ class cpulog(parser):
     -- relative time (seconds, float)
     -- % CPU
     -- resident memory size (bytes)
+    - peaks.data
+    -- total CPU time (seconds, float)
+    -- peak resident memory size (bytes)
     """
 
     def __init__(self, scenario):
@@ -89,16 +92,22 @@ class cpulog(parser):
         """
         logfile = os.path.join(logDir, 'cpu.log')
         datafile = os.path.join(outputDir, 'cpu.data')
+        peakfile = os.path.join(outputDir, 'peak.data')
         if not os.path.exists( logfile ) or not os.path.isfile( logfile ):
             return
         if os.path.exists( datafile ) and not execution.isFake():
             raise Exception( "parser:cpulog wants to create cpu.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
+        if os.path.exists( peakfile ) and not execution.isFake():
+            raise Exception( "parser:cpulog wants to create peak.data, but that already exists for execution {0} of client {1} on host {2}".format( execution.getNumber(), execution.client.name, execution.host.name ) )
         fl = None
         fd = None
+        fp = None
         try:
             fl = open( logfile, 'r' )
             fd = open( datafile, 'w' )
+            fp = open( peakfile, 'w' )
             fd.write( "time cpu% mem\n0 0 0\n" )
+            fp.write( "cputime maxmem\n")
             startTime = -1
             startDate = None
             datePattern = cpulog.fullDatePattern
@@ -115,6 +124,8 @@ class cpulog(parser):
             cstime = 0
             cpuTime = 0.0
             prevRelTime = -1.0
+            maxcputime = 0.0
+            maxmemsize = 0
             for line in fl:
                 # First line must be clocks ticks per sec (sysconf(_SC_CLK_TCK))
                 if clockticks == -1:
@@ -154,13 +165,23 @@ class cpulog(parser):
                     stime = newstime
                     cutime = newcutime
                     cstime = newcstime
+                    maxcputime = 1.0 * (utime + stime + cutime + cstime) / clockticks
+                    # By definition maxcputime will always grow (since the base data is cumulative and will always grow)
                     continue 
                 # VSZ, RSS
                 m = re.match('^[ \\t]*([0-9]*)[ \\t]+([0-9]*)$', line)
                 if m:
+                    if int(m.group(2)) > maxmemsize:
+                        maxmemsize = int(m.group(2))
                     fd.write( '{0} {1} {2}\n'.format( relTime, cpuTime, m.group(2) ) )
                     prevRelTime = relTime
+            fp.write( '{0} {1}\n'.format( maxcputime, maxmemsize ) )
         finally:
+            try:
+                if fp:
+                    fp.close()
+            except Exception:
+                pass
             try:
                 if fd:
                     fd.close()

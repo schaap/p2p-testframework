@@ -1780,6 +1780,7 @@ empty
                 if res.splitlines()[-1] != "OK":
                     raise Exception( "Can't connect to a node of host {0}. Observed output: {1}".format( self.name, res ) )
             print "Nodes on DAS4 available: {0}".format( nodes )
+            Campaign.logger.log( "Nodes on DAS4 available: {0}".format( nodes ), False )
             # Divide all nodes over the master hosts
             counter = 0
             for h in [h for h in self.scenario.getObjects('host') if isinstance( h, das4 ) and h.nNodes]:
@@ -1797,6 +1798,13 @@ empty
                 counter = nextCounter
             if self.reservationFixed is None:
                 if counter != len(nodeList):
+                    Campaign.logger.log( "DEBUG info list of handed out nodes:" )
+                    for h in [h for h in self.scenario.getObjects('host') if isinstance( h, das4 ) and h.nNodes]:
+                        for n in h.nodeSet:
+                            Campaign.logger.log( "- {0} for host {1}".format( n, h.name ) )
+                    Campaign.logger.log( "DEBUG info list of reserved nodes:" )
+                    for n in nodeList:
+                        Campaign.logger.log( "- {0}".format( n ) )
                     raise Exception( "After handing out all the nodes to the DAS4 host objects from host {0}, {1} nodes have been handed out, but {2} were reserved and the list of nodes contains {3}. Insanity!".format( self.name, counter, totalNodes, len(nodeList) ) )
             else:
                 if counter > len(nodeList):
@@ -1923,7 +1931,7 @@ empty
                     if not self.slaves[h].isInCleanup():
                         self.slaves[h].cleanup()
             if self.reservationFixed is None:
-                resp = self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
+                self.sendMasterCommand( 'preserve -c {0}'.format( self.reservationID ) )
             for t in self.keepAliveTimers:
                 try:
                     t.cancel()
