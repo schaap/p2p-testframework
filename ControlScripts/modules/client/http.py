@@ -395,7 +395,7 @@ class http(client):
         @return The list of parser instances.
         """
         if self.parsers:
-            return self.parsers
+            return client.loadDefaultParsers(self, execution)
         else:
             if execution.isSeeder():
                 parserType = 'lighttpd'
