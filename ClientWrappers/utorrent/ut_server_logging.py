@@ -272,6 +272,14 @@ def interact(webport, metadirs, stopWhenSeeding):
         # Load torrents if this is the first contact
         if not torrentLoaded:
             conn = uTorrentConnection( webport )
+            torrentCounter = 0
+            for d in metadirs:
+                torrentCounter += len([os.path.join(d, f) for f in os.listdir(d) if f[-8:] == '.torrent' and os.path.isfile(os.path.join(d,f))])
+            page2 = conn.doRequest( '/gui/?action=setsetting&s=max_active_torrent&v={0}&s=max_active_downloads&v={0}'.format( ( torrentCounter + 1 ) * 2 ) )
+            print >> sys.stderr, "DEBUG SETSETTINGS:\n{0}".format( page2 )
+            page2 = conn.doRequest( '/gui/?action=getsettings' )
+            print >> sys.stderr, "DEBUG GETSETTINGS:\n{0}".format( page2 )
+            torrentCounter = 0
             for d in metadirs:
                 for torrentFile in [os.path.join(d, f) for f in os.listdir(d) if f[-8:] == '.torrent' and os.path.isfile(os.path.join(d,f))]:
                     fObj = open(torrentFile, 'rb')
@@ -297,7 +305,7 @@ def interact(webport, metadirs, stopWhenSeeding):
                     data = data.replace('{{BOUNDARY}}', bnd)
                     headers = {}
                     headers['Content-Type'] = 'multipart/form-data; boundary=' + bnd
-                    #page2 = 
+                    #page2 =
                     conn.doRequest('/gui/?action=add-file', data = data, method='POST', headers = headers)
                     #print >> sys.stderr, "DEBUG ADD:\n{0}".format( page2 )
             print >> sys.stderr, time.time()
@@ -323,10 +331,15 @@ def interact(webport, metadirs, stopWhenSeeding):
             downloadDone += t[5]
             uploadDone += t[6]
         print time.time()
+        print >> sys.stderr, "DEBUG COUNT: {0}".format( len(status['torrents']) )
+        if len(status['torrents']) != torrentCounter:
+            print >> sys.stderr, "WARNING! Only {0} of {1} torrents seem to be loaded.".format( len(status['torrents']), torrentCounter )
+        #for tor in status['torrents']:
+        #    print >> sys.stderr, "DEBUG TORRENTS: ", tor 
         if len(status['torrents']) == 0:
             print "0 0 0"
         else:
-            print "{0} {1} {2}".format( percentDone / (len(status['torrents']) * 10.0), downloadDone, uploadDone )
+            print "{0} {1} {2}".format( percentDone / (torrentCounter * 10.0), downloadDone, uploadDone )
         if stillBusy == 0 and stopWhenSeeding:
             if seedStopping == 0:
                 print >> sys.stderr, time.time()
@@ -350,7 +363,7 @@ def interact(webport, metadirs, stopWhenSeeding):
                 print >> sys.stderr, "Client did not die after 5 secs, giving up on it, anyway"
                 break
 
-def patchLinuxConfig(port, webport, workingDir, _, useDHT): # _ == clientDir
+def patchLinuxConfig(port, webport, workingDir, _, useDHT, nTorrents): # _ == clientDir
     print >> sys.stderr, "WARNING: The settings of the Linux client are not up to date. They are especially not equal to the Windows settings."
     f = open( os.path.join( workingDir, 'utserver.conf' ), 'w' )
     f.write( "token_auth_enable: 0\n" )
@@ -359,6 +372,8 @@ def patchLinuxConfig(port, webport, workingDir, _, useDHT): # _ == clientDir
     f.write( "auto_bandwidth_management: 0\n" )
     f.write( "bind_port: {0}\n".format( port ) )
     f.write( "ut_webui_port: {0}\n".format( webport ) )
+    f.write( "max_active_downloads: {0}\n".format( nTorrents + 1 ) )
+    f.write( "max_active_torrent: {0}\n".format( nTorrents + 1 ) )
     if not useDHT:
         f.write( "dht: 0\n" )
     f.close()
@@ -370,7 +385,7 @@ def runLinuxClient(workingDir, _): # _ == clientDir
     # pylint: enable-msg=W0603
     utorrent_process = subprocess.Popen(["./utserver", "-configfile", "{0}/utserver.conf".format(workingDir), "-settingspath", workingDir, "-pidfile", "{0}/utserver.pid".format( workingDir ), "-logfile", "{0}/utserver.log".format( workingDir )])
 
-def patchWindowsConfig(port, webport, workingDir, clientDir, useDHT):
+def patchWindowsConfig(port, webport, workingDir, clientDir, useDHT, nTorrents):
     f = open( os.path.join( clientDir, 'settings.dat' ), 'r' )
     settings = bdecode( f.read() )
     f.close()
@@ -379,6 +394,8 @@ def patchWindowsConfig(port, webport, workingDir, clientDir, useDHT):
     settings['webui.port'] = webport
     settings['dir_active_download'] = posixToNT( os.path.abspath( os.path.join( workingDir, 'download_data' ) ) )
     settings['dir_autoload'] = posixToNT( os.path.abspath(os.path.join(workingDir, 'torrents')) )
+    settings['max_active_downloads'] = nTorrents + 1
+    settings['max_active_torrent'] = nTorrents + 1
     if useDHT:
         settings['dht'] = 1
     else:
@@ -552,12 +569,17 @@ def mainFunction():
         haveLinux = False
     if not (haveWindows or haveLinux):
         raise Exception( "ERROR: No client found." ) 
-    
+
+    # Count number of torrent files
+    nTorrents = 0    
+    for d in metadirs:
+        nTorrents += len([os.path.join(d, f) for f in os.listdir(d) if f[-8:] == '.torrent' and os.path.isfile(os.path.join(d,f))])
+
     # [Read,] change and save config file
     if haveWindows:
-        patchWindowsConfig(port, webport, workingDir, clientDir, useDHT)
+        patchWindowsConfig(port, webport, workingDir, clientDir, useDHT, nTorrents)
     else:
-        patchLinuxConfig(port, webport, workingDir, clientDir, useDHT)
+        patchLinuxConfig(port, webport, workingDir, clientDir, useDHT, nTorrents)
     
     xvfb_process = None
     utorrent_process = None

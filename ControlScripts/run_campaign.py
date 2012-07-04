@@ -625,14 +625,14 @@ class ScenarioRunner:
         # All hosts that are actually used in executions
         executionHosts = set([execution.host for execution in self.getObjects('execution')])
         
-        print "PROFILE: Setup starting @ 0"
+        Campaign.logger.log( "PROFILE: Setup starting @ 0", True )
         startTime = time.time()
         
         # Prepare all hosts
         for host in executionHosts:
             host.prepare()
         
-        print "PROFILE: Hosts prepared in {0}".format( time.time()-startTime )
+        Campaign.logger.log( "PROFILE: Hosts prepared in {0}".format( time.time()-startTime ), True )
         startTime = time.time()
 
         # Executions may by now have been altered by the host.prepare() calls, so rebuild the host list
@@ -643,14 +643,14 @@ class ScenarioRunner:
         for workload in self.getObjects('workload'):
             workload.applyWorkload()
 
-        print "PROFILE: Workloads prepared in {0}".format( time.time()-startTime )
+        Campaign.logger.log( "PROFILE: Workloads prepared in {0}".format( time.time()-startTime ), True )
         startTime = time.time()
 
         # Prepare all clients
         for client in self.getObjects('client'):
             client.prepare()
 
-        print "PROFILE: Clients prepared in {0}".format( time.time()-startTime )
+        Campaign.logger.log( "PROFILE: Clients prepared in {0}".format( time.time()-startTime ), True )
         startTime = time.time()
 
         # Prepare TC and clients
@@ -737,14 +737,14 @@ class ScenarioRunner:
                         raise Exception( "Host {0} could not initiate the requested traffic control.".format( host.name ) )
             # If we've reached this point, then we have a succeeding tc.check(), unless no TC was requested at all
 
-            print "PROFILE: Host TC done in {0}".format( time.time()-startTime )
+            Campaign.logger.log( "PROFILE: Host TC done in {0}".format( time.time()-startTime ), True )
             startTime = time.time()
     
             # If we're not just testing: prepare clients for this host
             if not testRun:
                 for client in host.clients:
                     client.prepareHost( host )
-                print "PROFILE: Clients prepared their hosts in {0}".format( time.time()-startTime )
+                Campaign.logger.log( "PROFILE: Clients prepared their hosts in {0}".format( time.time()-startTime ), True )
                 startTime = time.time()
 
 
@@ -757,7 +757,7 @@ class ScenarioRunner:
                 # Send all files to the host that have this host as seeder
                 for f in host.seedingFiles:
                     f.sendToSeedingHost( host )
-            print "PROFILE: Files prepared their hosts in {0}".format( time.time()-startTime )
+            Campaign.logger.log( "PROFILE: Files prepared their hosts in {0}".format( time.time()-startTime ), True )
 
     def executeRun(self):
         """
@@ -766,14 +766,14 @@ class ScenarioRunner:
         This method assumes everything is set to go.
         Clients will be prepared for execution, TC will be applied and the clients then run.
         """
-        print "PROFILE: Run starting @ 0"
+        Campaign.logger.log( "PROFILE: Run starting @ 0", True )
         startTime = time.time()
         
         # Prepare all clients for execution
         for execution in self.getObjects('execution'):
             execution.client.prepareExecution( execution )
 
-        print "PROFILE: Clients prepared their executions in {0}".format( time.time() - startTime )
+        Campaign.logger.log( "PROFILE: Clients prepared their executions in {0}".format( time.time() - startTime ), True )
         startTime = time.time()
         
         # All hosts that are part of an execution
@@ -786,7 +786,7 @@ class ScenarioRunner:
                     continue
                 host.tcObj.install( host, list(set([host.getSubnet() for host in executionHosts])) )
 
-            print "PROFILE: Hosts have TC installed in {0}".format( time.time() - startTime )
+            Campaign.logger.log( "PROFILE: Hosts have TC installed in {0}".format( time.time() - startTime ), True )
             startTime = time.time()
             
             # Start all clients
@@ -795,7 +795,7 @@ class ScenarioRunner:
                 execThreads.append( ClientRunner( execution ) )
             self.threads += execThreads
 
-            print "PROFILE: Execution threads created in {0}".format( time.time() - startTime )
+            Campaign.logger.log( "PROFILE: Execution threads created in {0}".format( time.time() - startTime ), True )
             startTime = time.time()
             
             print "Preparing connections to run clients over"
@@ -803,7 +803,8 @@ class ScenarioRunner:
             for thread in execThreads:
                 thread.prepareConnection()
 
-            print "PROFILE: Connections prepared in {0}".format( time.time() - startTime )
+            Campaign.logger.log( "PROFILE: Connections prepared in {0}".format( time.time() - startTime ), True )
+            startTime = time.time()
             
             # Precalculate when we should be done
             endTime = time.time() + self.timelimit
@@ -838,7 +839,7 @@ class ScenarioRunner:
     
             print "All clients should be done now, checking and killing if needed."
             
-            print "PROFILE: After-run starting @ 0"
+            Campaign.logger.log( "PROFILE: After-run starting after {0}".format( time.time() - startTime ), True )
             startTime = time.time()
         
             killThreads = []
@@ -857,9 +858,9 @@ class ScenarioRunner:
             elif len(killThreads) > 0:
                 killThreads[0].runSequentially(killThreads)
 
-            print "PROFILE: Threads killed in {0}".format( time.time() - startTime )
+            Campaign.logger.log( "PROFILE: Threads killed in {0}".format( time.time() - startTime ), True )
             startTime = time.time()
-    
+        
         finally:
             print "Removing all traffic control from hosts."
             for host in executionHosts:
@@ -867,7 +868,7 @@ class ScenarioRunner:
                     continue
                 host.tcObj.remove( host )
 
-            print "PROFILE: Hosts' TC removed in {0}".format( time.time() - startTime )
+            Campaign.logger.log( "PROFILE: Hosts' TC removed in {0}".format( time.time() - startTime ), True )
             startTime = time.time()
     
 

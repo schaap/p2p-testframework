@@ -44,7 +44,8 @@ class fakedata(core.file.file):
     - torrentCache      Path to a local directory. If set, this directory is taken to contain a cache of torrents for fakedata
                         files. Each torrent is named '{0}_{1}.torrent'.format( self.size, self.slaveNumber ) (no _{1} if
                         multiple is 1). Any present torrent files will be used from cache, others will be added to the cache.
-                        Optional, must point to an existing directory.
+                        Optional, must point to an existing directory. Please note that the filename, if specified, must be
+                        equal to 'fakedata' if a torrent cache is specified: this prevents erroneously named cached torrents.
     - rootHashCache     Path to a local file. If set, this file is taken to be a root hash cache for fakedata files. The cache
                         is a binary file containing a pickled python dictionary. Any present root hashes will be used from
                         cache, others will be added. Optional, must point to a writable (possibly not existing) file.
@@ -204,6 +205,8 @@ class fakedata(core.file.file):
                 raise Exception( "Generation of root hash for chunksize {0} was requested, but that root hash was already set on the file.".format( cs ) )
         if self.torrentCacheDir and not self.generateTorrent:
             raise Exception( "A torrent cache without generating torrents? You've forgotten something." )
+        if self.generateTorrent and self.torrentCacheDir and self.filename != 'fakedata':
+            raise Exception( "If generateTorrent is specified and a cache directory for torrent is specified as well, the filename must be 'fakedata' (default). This prevents erroneously cached torrents.")
         if self.rootHashCacheFile and len( self.generateRootHashes ) == 0:
             raise Exception( "A root hash cache without generating root hashes? You've forgotten something." )
 

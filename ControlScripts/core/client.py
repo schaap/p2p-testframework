@@ -531,24 +531,24 @@ class client(coreObject):
                     fileObj.write( prependCommands )
                 if simpleCommandLine:
                     if execution.host.getAddress() != '':
-                        if execution.isSeeder:
+                        if execution.isSeeder():
                             print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
                         else:
                             print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__, execution.host.getAddress() )
                     else:
-                        if execution.isSeeder:
+                        if execution.isSeeder():
                             print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
                         else:
                             print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with simple command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, simpleCommandLine, self.__class__.__name__ )
                     fileObj.write( '{0} &\n'.format( simpleCommandLine ) )
                 else:
                     if execution.host.getAddress() != '':
-                        if execution.isSeeder:
+                        if execution.isSeeder():
                             print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
                         else:
                             print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} ({5}) with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__, execution.host.getAddress() )
                     else:
-                        if execution.isSeeder:
+                        if execution.isSeeder():
                             print "DEBUG: Preparing execution {0} of seeder client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
                         else:
                             print "DEBUG: Preparing execution {0} of leecher client:{4} {1} on host {2} with complex command line:\n{3}".format( execution.getNumber(), self.name, execution.host.name, complexCommandLine, self.__class__.__name__ )
@@ -725,7 +725,6 @@ class client(coreObject):
         # stinks, basically. In other words: it is not possible to track all children recursively of this process, so
         # we're not going to try. Child processes started by this method MUST behave correctly when sent the signals
         # to stop. This means that wrapper scripts need to trap on signals and pass them on to their detected children.
-        done = False
         try:
             self.pid__lock.acquire()
             if execution.getNumber() not in self.pids:

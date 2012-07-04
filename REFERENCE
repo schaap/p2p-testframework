@@ -178,7 +178,8 @@ Creates fake data on the remote host that is always the same, non-trivial, of co
 - torrentCache      Path to a local directory. If set, this directory is taken to contain a cache of torrents for fakedata
                     files. Each torrent is named '{0}_{1}.torrent'.format( self.size, self.slaveNumber ) (no _{1} if
                     multiple is 1). Any present torrent files will be used from cache, others will be added to the cache.
-                    Optional, must point to an existing directory.
+                    Optional, must point to an existing directory.  Please note that the filename, if specified, must be
+                    equal to 'fakedata' if a torrent cache is specified: this prevents erroneously named cached torrents.
 - rootHashCache     Path to a local file. If set, this file is taken to be a root hash cache for fakedata files. The cache
                     is a binary file containing a pickled python dictionary. Any present root hashes will be used from
                     cache, others will be added. Optional, must point to a writable (possibly not existing) file.

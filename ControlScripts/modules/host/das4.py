@@ -1798,6 +1798,9 @@ empty
                 counter = nextCounter
             if self.reservationFixed is None:
                 if counter != len(nodeList):
+                    Campaign.logger.log( "DEBUG info jobID: {0}".format( self.reservationID ) )
+                    res = self.sendMasterCommand('preserve -llist | grep "^{0}[[:space:]]"'.format( self.reservationID ) )
+                    Campaign.logger.log( "DEBUG preserve -llist: {0}".format( res ) )
                     Campaign.logger.log( "DEBUG info list of handed out nodes:" )
                     for h in [h for h in self.scenario.getObjects('host') if isinstance( h, das4 ) and h.nNodes]:
                         for n in h.nodeSet:
