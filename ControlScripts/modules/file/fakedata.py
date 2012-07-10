@@ -308,8 +308,7 @@ class fakedata(core.file.file):
                                     self.rootHashMap[(self.size, count)][cs] = meta.calculateMerkleRootHash( filename, True, cs )
                             if needTorrent:
                                 # Only generate torrent file if needed and not cached
-                                # About blocksize: uTorrent doesn't understand 1K blocksizes
-                                meta.generateTorrentFile( filename, torrentName, blocksize = 1024*1024 )
+                                meta.generateTorrentFile( filename, torrentName )
                             # Better remove the file after calculating and generating: don't need it anymore and we might need the space
                             os.remove(filename)
                 finally:

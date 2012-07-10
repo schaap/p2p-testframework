@@ -167,7 +167,7 @@ class local(core.file.file):
         core.file.file.sendToHost(self, host)
         if not self.getFileDir(host):
             return
-        host.sendCommand( 'mkdir -p "{0}/files/"'.format( self.getFileDir(host) ) )
+        host.sendCommand( '[ -d "{0}/files/" ] || mkdir -p "{0}/files/"'.format( self.getFileDir(host) ) )
 
     def sendToSeedingHost(self, host):
         """

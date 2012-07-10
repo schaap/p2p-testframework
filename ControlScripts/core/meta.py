@@ -171,7 +171,7 @@ class meta:
         return h
 
     @staticmethod
-    def generateTorrentFile( path, torrentPath, blocksize = 1024, name = None, announce = 'http://127.0.0.1/announce', nodes = None, httpSeeds = None, URIList = None, private = False ):
+    def generateTorrentFile( path, torrentPath, blocksize = 1024 * 1024, name = None, announce = 'http://127.0.0.1/announce', nodes = None, httpSeeds = None, URIList = None, private = False ):
         """
         Creates a .torrent file for the given path.
 
