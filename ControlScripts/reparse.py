@@ -280,6 +280,7 @@ for dirName in dirNames:
         if len(executionNumbers) == 0:
             print "Warning! Could not find the execution numbers of directory {0}, skipping.".format( dirName )
             continue
+    realExecutionNumbers = []
     for e in executionNumbers:
         logDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'logs' )
         parsedLogDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'parsedLogs' )
@@ -287,7 +288,10 @@ for dirName in dirNames:
             print "Warning! Execution {0} of directory {1} seems not to have a completely set up directory. Skipping execution.".format( e, dirName )
             continue
         executionObject = FakeExecution( e, dirName )
+        if not executionObject.client.isSideService():
+            realExecutionNumbers.append( e )
         scenarioObject.addExecution( executionObject )
+    executionNumbers = realExecutionNumbers
     for e in extraExecutionNumbers:
         logDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'logs' )
         parsedLogDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'parsedLogs' )
