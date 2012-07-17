@@ -299,6 +299,7 @@ for dirName in dirNames:
     for e in executionNumbers:
         logDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'logs' )
         parsedLogDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'parsedLogs' )
+        executionObject = FakeExecution( e, dirName )
         for p in parserObjects:
             try:
                 p.parseLogs( executionObject, logDir, parsedLogDir )

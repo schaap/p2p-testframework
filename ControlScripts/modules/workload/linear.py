@@ -20,7 +20,7 @@ class linear(workload):
     Extra parameters:
     - duration        Time in seconds over which the peers should arrive. Arrival rate is calculated.
     - rate            Arrival rate in number of peers per second. Duration is calculated.
-    - interval        Interval between the arrival of 2 peers in seconds. Duration is calculated.
+    - interval        Interval between the arrival of 2 peers in seconds. May be 0. Duration is calculated.
     """
     
     duration = None     # Duration of the full linear workload

@@ -319,7 +319,7 @@ Creates a division of the clients to arrive at a linear rate
 Only one may be specified:
 - duration        Time in seconds over which the peers should arrive. Arrival rate is calculated.
 - rate            Arrival rate in number of peers per second. Duration is calculated.
-- interval        Interval between the arrival of 2 peers in seconds. Duration is calculated.
+- interval        Interval between the arrival of 2 peers in seconds. May be 0. Duration is calculated.
 
 == workload:poisson ==
 Creates a division of the clients to arrive like a poisson process
