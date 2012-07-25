@@ -395,6 +395,11 @@ Creates a simple text file for each execution with the timeout in seconds (float
 
 - [none]
 
+== processor:savefiles ==
+Creates a simple text file for each execution with the name sof the files associated with that execution.
+
+- [none]
+
 == processor:gnuplot ==
 Runs a given gnuplot script for each parsed log in an attempt to create nice graphs.
 

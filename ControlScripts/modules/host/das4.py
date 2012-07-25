@@ -1987,7 +1987,8 @@ empty
             finally:
                 if gotLock:
                     self.muxIO__lock[0].release()
-            del self.muxIO
+            if self.muxIO:
+                del self.muxIO
             self.muxIO = None
             Campaign.debuglogger.closeChannel( 'das4_master_mux' )
             Campaign.debuglogger.log( 'das4_master', 'MUX CHANNEL REMOVED' )
@@ -2004,11 +2005,13 @@ empty
                     else:
                         res = e.__str__() + '\n' + traceback.format_exc() 
                 self.tempPersistentDirectory = None
-            del self.masterIO
+            if self.masterIO:
+                del self.masterIO
             self.masterIO = None
             Campaign.debuglogger.closeChannel( 'das4_master' )
             self.masterConnection.close()
-            del self.masterConnection
+            if self.masterConnection:
+                del self.masterConnection
             self.masterConnection = None
             delset = [node for node in self.sftpConnections]
             for node in delset:
@@ -2050,11 +2053,14 @@ empty
                             res = e.__str__() + '\n' + traceback.format_exc() 
                     self.tempPersistentDirectory = None
                 # / Master host
-            del self.muxIO
+            if self.muxIO:
+                del self.muxIO
             self.muxIO = None
-            del self.masterIO
+            if self.masterIO:
+                del self.masterIO
             self.masterIO = None
-            del self.masterConnection
+            if self.masterConnection:
+                del self.masterConnection
             self.masterConnection = None
             if showError:
                 raise Exception( "Could not remove the persistent temporary directory {2} from the DAS4 in host {0}. Reponse: {1}".format( self.name, res, self.tempPersistentDirectory ) )
