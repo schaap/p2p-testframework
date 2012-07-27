@@ -154,7 +154,7 @@ class statistics(processor):
                         if l[:7] == 'cputime':
                             # header
                             continue
-                        m = re.match( '^([^ ]*) ([0-9]*)', l )
+                        m = re.match( '^([^ ]*) ([0-9]*) ([0-9]*)', l )
                         if not m:
                             # should be last line only
                             continue

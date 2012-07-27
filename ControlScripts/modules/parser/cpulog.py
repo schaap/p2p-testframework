@@ -18,9 +18,11 @@ class cpulog(parser):
     -- relative time (seconds, float)
     -- % CPU
     -- resident memory size (bytes)
+    -- virtual memory size (bytes)
     - peaks.data
     -- total CPU time (seconds, float)
     -- peak resident memory size (bytes)
+    -- peak virtual memory size (bytes)
     """
 
     def __init__(self, scenario):
@@ -126,6 +128,7 @@ class cpulog(parser):
             prevRelTime = -1.0
             maxcputime = 0.0
             maxmemsize = 0
+            maxvirtmemsize = 0
             for line in fl:
                 # First line must be clocks ticks per sec (sysconf(_SC_CLK_TCK))
                 if clockticks == -1:
@@ -173,9 +176,11 @@ class cpulog(parser):
                 if m:
                     if int(m.group(2)) > maxmemsize:
                         maxmemsize = int(m.group(2))
-                    fd.write( '{0} {1} {2}\n'.format( relTime, cpuTime, m.group(2) ) )
+                    if int(m.group(1)) > maxvirtmemsize:
+                        maxvirtmemsize = int(m.group(1))
+                    fd.write( '{0} {1} {2}\n'.format( relTime, cpuTime, m.group(2), m.group(1) ) )
                     prevRelTime = relTime
-            fp.write( '{0} {1}\n'.format( maxcputime, maxmemsize ) )
+            fp.write( '{0} {1} {2}\n'.format( maxcputime, maxmemsize, maxvirtmemsize ) )
         finally:
             try:
                 if fp:
