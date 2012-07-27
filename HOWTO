@@ -9,6 +9,8 @@ To run a test you first have to build the scenario and campaign files. In the sc
 
 One thing we will not explicitly do here, but what you should do when writing your own scenarios (and what I did when writing this), is referring to the documentation. The base entry point is the README file, which documents the parameters to all the generic objects. Apart from that you should always open the file of every module you use: module specific documentation is placed at the beginning of the module file. Finding these files is simple: as an example module file:local is located in ControlScripts/modules/file/local . This is actually the very reason the module is called file:local. This is, by the way, also the way that is used throughout the framework to refer to specific files.
 
+Once you got the hang of the basic syntax the REFERENCE becomes very useful. I found going through it every time I wrote a test was actually the fastest way not to miss anything. The REFERENCE, of course, only contains the documentation for the modules delivered with the framework.
+
 = file: TestSpecs/files/my_file =
 
     [file:local]
