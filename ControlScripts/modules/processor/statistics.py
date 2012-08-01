@@ -26,17 +26,21 @@ class statistics(processor):
     Processed log files created:
     - stats.leecher
     -- number of leechers
-    -- maximum of peak memory usage of each leecher (bytes)
-    -- average of peak memory usage of each leecher (bytes)
+    -- maximum of peak residential memory usage of each leecher (bytes)
+    -- average of peak residential memory usage of each leecher (bytes)
     -- average of final cumulative CPU time of each leecher (seconds, float)
     -- number of completed leechers
     -- average of download time of each complete leecher (seconds, float)
     -- average of final completion of each leecher (percentage, float)
+    -- maximum of peak virtual memory usage of each leecher (bytes)
+    -- average of peak virtual memory usage of each leecher (bytes)
     - stats.seeder
     -- number of seeders
     -- maximum of peak memory usage of each seeder (bytes)
     -- average of peak memory usage of each seeder (bytes)
     -- average of final cumulative CPU time of each seeder (seconds, float)
+    -- maximum of peak virtual memory usage of each seeder (bytes)
+    -- average of peak virtual memory usage of each seeder (bytes)
     """
 
     def __init__(self, scenario):
@@ -114,6 +118,10 @@ class statistics(processor):
         totaldownloadtimeleech = 0
         leechcompletedcount = 0
         totalcompletionleech = 0
+        maxvirtmemseed = 0
+        totalvirtmemseed = 0
+        maxvirtmemleech = 0
+        totalvirtmemleech = 0
         for execution in self.scenario.getObjects('execution'):
             if execution.client.isSideService():
                 continue
@@ -154,22 +162,29 @@ class statistics(processor):
                         if l[:7] == 'cputime':
                             # header
                             continue
-                        m = re.match( '^([^ ]*) ([0-9]*) ([0-9]*)', l )
+                        m = re.match( '^([^ ]*) ([0-9]*) ([0-9]*) {[0-9]*)', l )
                         if not m:
                             # should be last line only
                             continue
                         cputime = float(m.group(1))
                         peakmem = int(m.group(2))
+                        peakvirtmem = int(m.group(3))
                         if execution.isSeeder():
                             totalCPUseed += cputime
                             totalmemseed += peakmem
                             if peakmem > maxmemseed:
                                 maxmemseed = peakmem
+                            totalvirtmemseed += peakvirtmem
+                            if peakvirtmem > maxvirtmemseed:
+                                maxvirtmemseed = peakvirtmem
                         else:
                             totalCPUleech += cputime
                             totalmemleech += peakmem
                             if peakmem > maxmemleech:
                                 maxmemleech = peakmem
+                            totalvirtmemleech += peakvirtmem
+                            if peakvirtmem > maxvirtmemleech:
+                                maxvirtmemleech = peakvirtmem
                         # Should be only one line, so be done with it
                         break
                 finally:
@@ -188,6 +203,7 @@ class statistics(processor):
             avgmemleech = int((float(totalmemleech) / leechcount))
             avgcpuleech = float(totalCPUleech) / leechcount
             avgcompletion = float(totalcompletionleech) / leechcount
+            avgvirtmemleech = int(totalvirtmemleech / leechcount)
         if leechcompletedcount > 0:
             avgcompletiontime = float(totaldownloadtimeleech) / leechcompletedcount
         avgmemseed = 0
@@ -195,18 +211,19 @@ class statistics(processor):
         if seedcount > 0:
             avgmemseed = int(totalmemseed / seedcount)
             avgcpuseed = totalCPUseed / seedcount
+            avgvirtmemseed = int(totalvirtmemseed / seedcount)
         
         fObj = None
         try:
             fObj = open( os.path.join( outputDir, 'stats.leecher' ), 'w' )
-            fObj.write( '{0} {1} {2} {3} {4} {5} {6}\n'.format( leechcount, maxmemleech, avgmemleech, avgcpuleech, leechcompletedcount, avgcompletiontime, avgcompletion ) )
+            fObj.write( '{0} {1} {2} {3} {4} {5} {6} {7} {8}\n'.format( leechcount, maxmemleech, avgmemleech, avgcpuleech, leechcompletedcount, avgcompletiontime, avgcompletion, maxvirtmemleech, avgvirtmemleech ) )
         finally:
             if fObj:
                 fObj.close()
         fObj = None
         try:
             fObj = open( os.path.join( outputDir, 'stats.seeder' ), 'w' )
-            fObj.write( '{0} {1} {2} {3}\n'.format( seedcount, maxmemseed, avgmemseed, avgcpuseed ) )
+            fObj.write( '{0} {1} {2} {3} {4} {5}\n'.format( seedcount, maxmemseed, avgmemseed, avgcpuseed, maxvirtmemseed, avgvirtmemseed ) )
         finally:
             if fObj:
                 fObj.close()
