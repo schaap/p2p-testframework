@@ -178,7 +178,7 @@ class cpulog(parser):
                         maxmemsize = int(m.group(2))
                     if int(m.group(1)) > maxvirtmemsize:
                         maxvirtmemsize = int(m.group(1))
-                    fd.write( '{0} {1} {2}\n'.format( relTime, cpuTime, m.group(2), m.group(1) ) )
+                    fd.write( '{0} {1} {2} {3}\n'.format( relTime, cpuTime, m.group(2), m.group(1) ) )
                     prevRelTime = relTime
             fp.write( '{0} {1} {2}\n'.format( maxcputime, maxmemsize, maxvirtmemsize ) )
         finally:
