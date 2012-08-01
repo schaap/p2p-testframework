@@ -109,7 +109,7 @@ class cpulog(parser):
             fd = open( datafile, 'w' )
             fp = open( peakfile, 'w' )
             fd.write( "time cpu% mem\n0 0 0\n" )
-            fp.write( "cputime maxmem\n")
+            fp.write( "cputime maxmem maxvirtmem\n")
             startTime = -1
             startDate = None
             datePattern = cpulog.fullDatePattern
