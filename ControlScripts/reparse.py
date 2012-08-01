@@ -5,6 +5,7 @@ from core.parsing import isPositiveInt, getParameterName, getParameterValue
 import os
 import traceback
 import sys
+import time
 
 if __name__ != "__main__":
     raise Exception( "Do not import" )
@@ -171,6 +172,8 @@ for dirName in dirNames:
     if not ( os.path.exists( execDir ) and os.path.isdir( dirName ) and os.path.exists( processedDir ) and os.path.isdir( processedDir ) and os.path.exists( viewDir ) and os.path.isdir( viewDir ) ):
         print "Warning! Directory {0} seems not to be a scenario directory, skipping.".format( dirName )
         continue
+    print "=== {0} ===".format( dirName )
+    print time.strftime( "%H.%M.%S", time.localtime() )
 
     scenarioObject = FakeScenario(os.path.basename(dirName))
     
@@ -300,6 +303,7 @@ for dirName in dirNames:
             continue
         executionObject = FakeExecution( e, dirName )
         scenarioObject.addExecution( executionObject )
+    print "- Parsing"
     for e in executionNumbers:
         logDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'logs' )
         parsedLogDir = os.path.join( execDir, 'exec_{0}'.format( e ), 'parsedLogs' )
@@ -310,12 +314,14 @@ for dirName in dirNames:
             except Exception as e:
                 print "Warning! Exception occurred while running parser {0} on execution {1} of directory {2}, ignoring.".format( p.__class__.__name__, e, dirName )
                 print traceback.format_exc()
+    print "- Processing"
     for p in processorObjects:
         try:
             p.processLogs( os.path.join( dirName, 'executions' ), processedDir )
         except Exception as e:
             print "Warning! Exception occurred while running processor {0} on directory {1}, ignoring.".format( p.__class__.__name__, dirName )
             print traceback.format_exc()
+    print "- Viewing"
     for v in viewerObjects:
         try:
             v.createView( processedDir, viewDir )
